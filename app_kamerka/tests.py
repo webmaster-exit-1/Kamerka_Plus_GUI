@@ -354,7 +354,7 @@ class GUIVisualTests(TestCase):
     def setUp(self):
         self.search = Search.objects.create(
             coordinates="40.7128,-74.0060", country="US",
-            ics="test", coordinates_search="test"
+            ics="['hikvision']", coordinates_search="['40.7128,-74.0060']"
         )
         self.device = Device.objects.create(
             search=self.search, ip="192.168.1.1", product="Hikvision Camera",
@@ -391,9 +391,13 @@ class GUIVisualTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_map_page_loads(self):
-        """Verify the map page renders."""
+        """Verify the map page renders with the map div and device markers."""
         response = self.client.get('/map')
         self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        self.assertIn('google_world_map', content)
+        self.assertIn('new google.maps.LatLng(', content)
+        self.assertIn('192.168.1.1', content)
 
     def test_gallery_page_loads(self):
         """Verify the gallery page renders."""
@@ -401,9 +405,14 @@ class GUIVisualTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_results_page_loads(self):
-        """Verify the results page renders for an existing search."""
+        """Verify the results page renders with the map and device markers."""
         response = self.client.get('/results/{}'.format(self.search.id))
         self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        self.assertIn('google_world_map', content)
+        self.assertIn('Google World Map', content)
+        self.assertIn('new google.maps.LatLng(', content)
+        self.assertIn('192.168.1.1', content)
 
     def test_search_main_contains_form_tabs(self):
         """Verify the main search page has all expected search category tabs."""
@@ -459,7 +468,7 @@ class ICSMapVisualTests(TestCase):
     def setUp(self):
         self.search = Search.objects.create(
             coordinates="40.7128,-74.0060", country="US",
-            ics="['modbus','siemens']", coordinates_search="test"
+            ics="['modbus','siemens']", coordinates_search="['40.7128,-74.0060']"
         )
         # Create one device for each ICS type to populate the map
         self.devices = {}
