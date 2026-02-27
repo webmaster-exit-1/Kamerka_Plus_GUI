@@ -705,6 +705,36 @@ class NmapUploadTests(TestCase):
         self.assertGreater(len(expected), 10,
                            "Test string must exceed the old max_length=10 to be meaningful")
 
+    def test_nmap_host_worker_all_65535_ports(self):
+        """
+        Regression: Device.port must handle all 65 535 open ports without
+        crashing or truncating.  Storing every port as '1, 2, 3, …, 65535'
+        requires ~448 000 characters – far beyond the old max_length=1000
+        varchar limit.  Device.port is now a TextField (PostgreSQL text type)
+        with no length restriction.
+        """
+        from kamerka.tasks import nmap_host_worker
+
+        search = self._make_search()
+        svc_mock = lambda p: MagicMock(port=p, state='open')
+        host = MagicMock()
+        host.hostnames = ['lb-140-82-113-3-iad.github.com']
+        host.address = '140.82.113.3'
+        host.services = [svc_mock(p) for p in range(1, 65536)]
+
+        nmap_host_worker(
+            host_arg=host,
+            max_reader=self._make_mock_reader(self.GITHUB_MAXMIND),
+            search=search,
+        )
+
+        device = Device.objects.get(search=search, ip='140.82.113.3')
+        expected = ', '.join(str(p) for p in range(1, 65536))
+        self.assertEqual(len(device.port), len(expected),
+                         "Port string length mismatch – was it truncated?")
+        self.assertEqual(device.port, expected,
+                         "Full 65 535-port string must be stored intact")
+
     def test_nmap_host_worker_no_crash_on_empty_hostnames(self):
         """nmap_host_worker must not raise IndexError when hostnames list is empty."""
         from kamerka.tasks import nmap_host_worker

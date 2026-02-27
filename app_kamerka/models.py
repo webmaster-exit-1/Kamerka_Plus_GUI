@@ -16,7 +16,7 @@ class Device(models.Model):
     product = models.CharField(max_length=500, default="")
     org = models.CharField(max_length=100, default="", null=True)
     data = models.CharField(max_length=1000, default="")
-    port = models.CharField(max_length=1000, default="")
+    port = models.TextField(default="")
     type = models.CharField(max_length=100, default="")
     city = models.CharField(max_length=100, default="", null=True)
     lon = models.CharField(max_length=100, default="")
