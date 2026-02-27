@@ -14,18 +14,18 @@ urlpatterns = [
     path("results/<id>", views.results, name='results'),
 
     path("results/<id>/<device_id>/<ip>", views.device, name='device'),
-    path(r'^celery-progress/', include('celery_progress.urls')),
+    path('celery-progress/', include('celery_progress.urls')),
     path("<id>/nearby/<query>", views.nearby, name='nearby'),
     path("<id>/update_coordinates/<coordinates>", views.update_coordinates, name='update_coordinates'),
 
-    path("<id>/twitter/nearby", views.twitter_nearby, name='twitter_nearby'),
-    path("<id>/twitter/show", views.twitter_show, name='twitter_show'),
+    path("<id>/wappalyzer/scan", views.wappalyzer_scan_view, name='wappalyzer_scan'),
+    path("<id>/nuclei/scan", views.nuclei_scan_view, name='nuclei_scan'),
+    path("get_wappalyzer_results/<id>", views.get_wappalyzer_results, name="get_wappalyzer_results"),
+    path("get_nuclei_results/<id>", views.get_nuclei_results, name="get_nuclei_results"),
+    path("<id>/rtsp/scan", views.rtsp_scan_view, name='rtsp_scan'),
 
-    path("<id>/flickr/nearby", views.flickr_nearby, name='flickr_nearby'),
     path("<id>/shodan/scan", views.shodan_scan, name='shodan_scan'),
     path('get-task-info/', views.get_task_info, name="get_task_info"),
-    path('get_flickr_results/<id>', views.get_flickr_results, name="get_flickr_results"),
-    path('get_flickr_coordinates/<id>', views.get_flickr_coordinates, name="get_flickr_coordinates"),
     path('get_shodan_scan_results/<id>', views.get_shodan_scan_results, name="get_shodan_scan_results"),
     path('get_nearby_devices/<id>', views.get_nearby_devices, name="get_nearby_devices"),
 
@@ -38,5 +38,7 @@ urlpatterns = [
     path('get_whois/<id>', views.get_whois, name="get_whois"),
     path('scan/<id>', views.scan_dev, name="scan"),
     path('exploit/<id>', views.exploit_dev, name="exploit"),
-    # path('show_bosch_usernames/<id>', views.show_bosch_usernames, name="show_bosch_usernames"),
+
+    path('export/csv/<id>', views.export_csv, name="export_csv"),
+    path('export/kml/<id>', views.export_kml, name="export_kml"),
 ]

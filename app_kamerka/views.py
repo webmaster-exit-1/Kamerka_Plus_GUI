@@ -1,5 +1,6 @@
 import ast
 import json
+import os
 from collections import Counter
 import requests
 from django.core.files.storage import FileSystemStorage
@@ -13,11 +14,11 @@ from django.http import HttpResponseRedirect
 from django.shortcuts import render
 
 from app_kamerka import forms
-from app_kamerka.models import Search, Device, DeviceNearby, FlickrNearby, ShodanScan, BinaryEdgeScore, Whois, \
-    TwitterNearby, Bosch
-from kamerka.tasks import shodan_search, devices_nearby, twitter_nearby_task, flickr, shodan_scan_task, \
+from app_kamerka.models import Search, Device, DeviceNearby, ShodanScan, BinaryEdgeScore, Whois, \
+    Bosch, WappalyzerResult, NucleiResult
+from kamerka.tasks import shodan_search, devices_nearby, shodan_scan_task, \
     binary_edge_scan, whoisxml, check_credits, send_to_field_agent_task, nmap_scan, validate_nmap, validate_maxmind, scan, \
-    exploit
+    exploit, wappalyzer_scan, nuclei_scan, shodan_csv_export, shodan_kml_export, nmap_rtsp_scan
 
 
 # Create your views here.
@@ -299,9 +300,7 @@ def devices(request):
 def map(request):
     all_devices = Device.objects.all()
 
-    google_maps_key = keys['keys']['google_maps']
-
-    context = {"devices": all_devices, 'google_maps_key': google_maps_key}
+    context = {"devices": all_devices}
 
     return render(request, "map.html", context=context)
 
@@ -317,7 +316,6 @@ def results(request, id):
     ports = Device.objects.filter(search_id=id).values('port').annotate(c=Count('port')).order_by('-c')[:7]
     city = Device.objects.filter(search_id=id).values('city').annotate(c=Count('city')).order_by('-c')[:7]
     category = Device.objects.filter(search_id=id).values('type').annotate(c=Count('type')).order_by('-c')
-    google_maps_key = keys['keys']['google_maps']
 
 
     categories_list = list(category)
@@ -358,8 +356,7 @@ def results(request, id):
                'ports': ports_list,
                "vulns": sort,
                "category": categories_list,
-               "city": cities_list,
-               'google_maps_key': google_maps_key}
+               "city": cities_list}
 
     return render(request, 'results.html', context)
 
@@ -398,9 +395,9 @@ def update_coordinates(request,id, coordinates):
 def device(request, id, device_id, ip):
     all_devices = Device.objects.get(search_id=id, id=device_id)
     nearby = DeviceNearby.objects.filter(device_id=all_devices.id)
-    flickr = FlickrNearby.objects.filter(device_id=all_devices.id)
     shodan = ShodanScan.objects.filter(device_id=all_devices.id)
-    google_maps_key = keys['keys']['google_maps']
+    wappalyzer = WappalyzerResult.objects.filter(device_id=all_devices.id)
+    nuclei = NucleiResult.objects.filter(device_id=all_devices.id)
 
     try:
         all_devices.indicator = ast.literal_eval(all_devices.indicator)
@@ -414,9 +411,9 @@ def device(request, id, device_id, ip):
 
     context = {'device': all_devices,
                'nearby': nearby,
-               'flickr': flickr,
                "shodan": shodan,
-               'google_maps_key': google_maps_key,
+               "wappalyzer": wappalyzer,
+               "nuclei": nuclei,
                "passwd": info}
 
     return render(request, 'device.html', context)
@@ -435,48 +432,39 @@ def sources(request):
     return render(request, 'sources.html', {})
 
 
-def twitter_nearby(request, id):
-    if request.is_ajax() and request.method == 'GET':
-
-        tw = TwitterNearby.objects.filter(device_id=id)
-
-        if tw:
-            print('already')
+def wappalyzer_scan_view(request, id):
+    if request.method == 'GET':
+        wap_results = WappalyzerResult.objects.filter(device_id=id)
+        if wap_results:
             return HttpResponse(json.dumps({'Error': "Already in database"}), content_type='application/json')
-
-        a = Device.objects.filter(id=id)
-        tw_task = twitter_nearby_task.delay(lat=a[0].lat, lon=a[0].lon, id=id)
-        return HttpResponse(json.dumps({'task_id': tw_task.id}), content_type='application/json')
+        wap_task = wappalyzer_scan.delay(id=id)
+        return HttpResponse(json.dumps({'task_id': wap_task.id}), content_type='application/json')
     else:
         return HttpResponse(json.dumps({'task_id': None}), content_type='application/json')
 
 
-def twitter_show(request, id):
-    if request.is_ajax() and request.method == 'GET':
-        a = TwitterNearby.objects.filter(device_id=id)
-
-        response_data = serializers.serialize('json', a)
-        if not response_data:
-            return HttpResponse(json.dumps({'Error': "No records"}), content_type='application/json')
-        else:
-            return HttpResponse(response_data, content_type="application/json")
-
-
-def flickr_nearby(request, id):
-    if request.is_ajax() and request.method == 'GET':
-
-        fl = FlickrNearby.objects.filter(device_id=id)
-
-        if fl:
-            print('already')
-            return HttpResponse(json.dumps({'Error': "Already in database"}), content_type='application/json')
-
-        a = Device.objects.get(id=id)
-
-        flickr_task = flickr.delay(lat=a.lat, lon=a.lon, id=id)
-        return HttpResponse(json.dumps({'task_id': flickr_task.id}), content_type='application/json')
+def nuclei_scan_view(request, id):
+    if request.method == 'GET':
+        severity = request.GET.get('severity', None)
+        templates_dir = request.GET.get('templates_dir', None)
+        nuclei_task = nuclei_scan.delay(id=id, templates_dir=templates_dir, severity=severity)
+        return HttpResponse(json.dumps({'task_id': nuclei_task.id}), content_type='application/json')
     else:
         return HttpResponse(json.dumps({'task_id': None}), content_type='application/json')
+
+
+def get_wappalyzer_results(request, id):
+    if request.method == 'GET':
+        wap_results = WappalyzerResult.objects.filter(device_id=id)
+        response_data = serializers.serialize('json', wap_results)
+        return HttpResponse(response_data, content_type="application/json")
+
+
+def get_nuclei_results(request, id):
+    if request.method == 'GET':
+        nuclei_results = NucleiResult.objects.filter(device_id=id)
+        response_data = serializers.serialize('json', nuclei_results)
+        return HttpResponse(response_data, content_type="application/json")
 
 
 def shodan_scan(request, id):
@@ -552,22 +540,45 @@ def exploit_dev(request, id):
         else:
             return HttpResponse(json.dumps({'Error': "Connection Error"}), content_type='application/json')
 
-def get_flickr_results(request, id):
-    if request.is_ajax() and request.method == 'GET':
-        nearby_flickr = FlickrNearby.objects.filter(device_id=id)
+def export_csv(request, id):
+    """Export search results as CSV for SandDance visualization."""
+    import tempfile
+    fd, output_path = tempfile.mkstemp(suffix='.csv')
+    os.close(fd)
+    shodan_csv_export(id, output_path)
+    try:
+        with open(output_path, 'r') as f:
+            response = HttpResponse(f.read(), content_type='text/csv')
+            response['Content-Disposition'] = 'attachment; filename="shodan_export_{}.csv"'.format(id)
+            return response
+    finally:
+        if os.path.exists(output_path):
+            os.remove(output_path)
 
-        response_data = serializers.serialize('json', nearby_flickr)
 
-        return HttpResponse(response_data, content_type="application/json")
+def export_kml(request, id):
+    """Export search results as KML for Mapbox geospatial intelligence."""
+    import tempfile
+    fd, output_path = tempfile.mkstemp(suffix='.kml')
+    os.close(fd)
+    shodan_kml_export(id, output_path)
+    try:
+        with open(output_path, 'r') as f:
+            response = HttpResponse(f.read(), content_type='application/vnd.google-earth.kml+xml')
+            response['Content-Disposition'] = 'attachment; filename="shodan_export_{}.kml"'.format(id)
+            return response
+    finally:
+        if os.path.exists(output_path):
+            os.remove(output_path)
 
 
-def get_flickr_coordinates(request, id):
-    if request.is_ajax() and request.method == 'GET':
-        nearby_flickr = FlickrNearby.objects.filter(device_id=id)
-
-        response_data = serializers.serialize('json', nearby_flickr)
-
-        return HttpResponse(response_data, content_type="application/json")
+def rtsp_scan_view(request, id):
+    """Trigger RTSP enumeration scan for a device."""
+    if request.method == 'GET':
+        rtsp_task = nmap_rtsp_scan.delay(id=id)
+        return HttpResponse(json.dumps({'task_id': rtsp_task.id}), content_type='application/json')
+    else:
+        return HttpResponse(json.dumps({'task_id': None}), content_type='application/json')
 
 
 def get_nearby_devices_coordinates(request, id):

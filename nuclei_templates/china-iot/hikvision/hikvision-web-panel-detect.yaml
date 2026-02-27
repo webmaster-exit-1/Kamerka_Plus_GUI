@@ -1,0 +1,26 @@
+id: hikvision-web-panel-detect
+
+info:
+  name: Hikvision Web Panel Detection
+  author: kamerka-fork
+  severity: info
+  description: Detects the presence of a Hikvision web management panel.
+  tags: china-iot,hikvision,panel
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/doc/page/login.asp"
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        words:
+          - "Hikvision"
+          - "hikvision"
+          - "HIKVISION"
+        condition: or
+
+      - type: word
+        words:
+          - "doc/page/login.asp"

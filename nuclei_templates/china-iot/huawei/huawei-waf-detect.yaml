@@ -1,0 +1,28 @@
+id: huawei-waf-detect
+
+info:
+  name: Huawei WAF Detection
+  author: kamerka-fork
+  severity: info
+  description: Detects the presence of a Huawei Web Application Firewall.
+  tags: china-iot,huawei,waf
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "HWWAFSESID"
+          - "huawei"
+        condition: or
+
+      - type: word
+        words:
+          - "Huawei"
+          - "USG"
+        condition: and

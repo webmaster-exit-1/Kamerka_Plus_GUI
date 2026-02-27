@@ -1,5 +1,4 @@
 from django.db import models
-from jsonfield import JSONField
 
 
 # Create your models here.
@@ -45,20 +44,22 @@ class DeviceNearby(models.Model):
     org = models.CharField(max_length=100)
 
 
-class TwitterNearby(models.Model):
+class WappalyzerResult(models.Model):
     device = models.ForeignKey(Device, on_delete=models.CASCADE)
-    lat = models.CharField(max_length=100)
-    lon = models.CharField(max_length=100)
-    link = models.CharField(max_length=100)
-    tweet = models.CharField(max_length=100)
+    technologies = models.JSONField(default=dict)
+    raw_output = models.TextField(default="")
+    scan_date = models.DateTimeField(auto_now_add=True)
 
 
-class FlickrNearby(models.Model):
+class NucleiResult(models.Model):
     device = models.ForeignKey(Device, on_delete=models.CASCADE)
-    lat = models.CharField(max_length=100)
-    lon = models.CharField(max_length=100)
-    url = models.CharField(max_length=100)
-    title = models.CharField(max_length=100)
+    template_id = models.CharField(max_length=200, default="")
+    name = models.CharField(max_length=500, default="")
+    severity = models.CharField(max_length=50, default="")
+    matched_at = models.CharField(max_length=500, default="")
+    description = models.TextField(default="")
+    raw_output = models.TextField(default="")
+    scan_date = models.DateTimeField(auto_now_add=True)
 
 
 class ShodanScan(models.Model):
@@ -72,8 +73,8 @@ class ShodanScan(models.Model):
 
 class BinaryEdgeScore(models.Model):
     device = models.ForeignKey(Device, on_delete=models.CASCADE)
-    grades = JSONField()
-    cve = JSONField()
+    grades = models.JSONField(default=dict)
+    cve = models.JSONField(default=dict)
     score = models.CharField(max_length=3)
 
 

