@@ -1,5 +1,6 @@
 import ast
 import json
+import os
 from collections import Counter
 import requests
 from django.core.files.storage import FileSystemStorage
@@ -548,7 +549,8 @@ def exploit_dev(request, id):
 def export_csv(request, id):
     """Export search results as CSV for SandDance visualization."""
     import tempfile
-    output_path = tempfile.mktemp(suffix='.csv')
+    fd, output_path = tempfile.mkstemp(suffix='.csv')
+    os.close(fd)
     shodan_csv_export(id, output_path)
     try:
         with open(output_path, 'r') as f:
@@ -556,7 +558,6 @@ def export_csv(request, id):
             response['Content-Disposition'] = 'attachment; filename="shodan_export_{}.csv"'.format(id)
             return response
     finally:
-        import os
         if os.path.exists(output_path):
             os.remove(output_path)
 
@@ -564,7 +565,8 @@ def export_csv(request, id):
 def export_kml(request, id):
     """Export search results as KML for Mapbox geospatial intelligence."""
     import tempfile
-    output_path = tempfile.mktemp(suffix='.kml')
+    fd, output_path = tempfile.mkstemp(suffix='.kml')
+    os.close(fd)
     shodan_kml_export(id, output_path)
     try:
         with open(output_path, 'r') as f:
@@ -572,7 +574,6 @@ def export_kml(request, id):
             response['Content-Disposition'] = 'attachment; filename="shodan_export_{}.kml"'.format(id)
             return response
     finally:
-        import os
         if os.path.exists(output_path):
             os.remove(output_path)
 

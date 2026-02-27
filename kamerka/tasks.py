@@ -848,12 +848,30 @@ def nmap_scan(self, file, fk):
     return result
 
 
+def _validate_target(ip, port):
+    """Validate IP address and port to prevent SSRF and injection."""
+    import ipaddress
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        raise ValueError("Invalid IP address: {}".format(ip))
+    try:
+        port_int = int(port)
+        if not (1 <= port_int <= 65535):
+            raise ValueError("Port out of range: {}".format(port))
+    except (ValueError, TypeError):
+        raise ValueError("Invalid port: {}".format(port))
+    return ip, str(port_int)
+
+
 @shared_task(bind=False)
 def wappalyzer_scan(id):
     """Run Wappalyzer CLI against a device to fingerprint technologies."""
     device = Device.objects.get(id=id)
-    ip = device.ip
-    port = device.port
+    try:
+        ip, port = _validate_target(device.ip, device.port)
+    except ValueError as e:
+        return {"error": str(e)}
     target_url = "http://{}:{}".format(ip, port)
 
     try:
@@ -888,8 +906,10 @@ def wappalyzer_scan(id):
 def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150):
     """Run Nuclei vulnerability scanner against a device."""
     device = Device.objects.get(id=id)
-    ip = device.ip
-    port = device.port
+    try:
+        ip, port = _validate_target(device.ip, device.port)
+    except ValueError as e:
+        return {"error": str(e)}
     target_url = "http://{}:{}".format(ip, port)
 
     cmd = ["nuclei", "-u", target_url, "-jsonl", "-silent"]
@@ -1384,15 +1404,22 @@ def shodan_kml_export(search_id, output_path):
     return output_path
 
 
+NMAP_RTSP_PORTS = "80,443,554,502"
+NMAP_RTSP_TIMING = "-T4"
+
+
 @shared_task(bind=False)
-def nmap_rtsp_scan(id):
+def nmap_rtsp_scan(id, ports=None, timing=None):
     """Run RTSP enumeration and manufacturer-specific NSE scripts against a device."""
     return_dict = {}
     device1 = Device.objects.get(id=id)
     ip = device1.ip
     device_type = device1.type
 
-    options = "-sV -p 80,443,554,502 -T4 --script=rtsp-url-brute"
+    scan_ports = ports or NMAP_RTSP_PORTS
+    scan_timing = timing or NMAP_RTSP_TIMING
+
+    options = "-sV -p {} {} --script=rtsp-url-brute".format(scan_ports, scan_timing)
 
     if device_type == "hikvision":
         options += ",http-hikvision-backdoor"
