@@ -40,21 +40,23 @@ function drawcharts(ics_len,coordinates_search_len, healthcare_len, ports, count
     });
     /* END Donut dashboard chart */
     /* Bar dashboard chart */
-    Morris.Bar({
-        element: 'dashboard-bar-1',
-        data: ports,
-        xkey: 'port',
-        ykeys: [ 'c'],
-        labels: ['Total results'],
-        barColors: ['#ff00cd', "#00E1FF", "#0064d7"],
-        gridTextSize: '10px',
-        gridTextColor: '#00E1FF',
-        xLabelMargin: 10,
-        xLabelAngle: 60,
-        hideHover: true,
-        resize: true,
-        gridLineColor: '#0064d7'
-    });
+    if (ports && ports.length > 0) {
+        Morris.Bar({
+            element: 'dashboard-bar-1',
+            data: ports,
+            xkey: 'port',
+            ykeys: [ 'c'],
+            labels: ['Total results'],
+            barColors: ['#ff00cd', "#00E1FF", "#0064d7"],
+            gridTextSize: '10px',
+            gridTextColor: '#00E1FF',
+            xLabelMargin: 10,
+            xLabelAngle: 60,
+            hideHover: true,
+            resize: true,
+            gridLineColor: '#0064d7'
+        });
+    }
     /* END Bar dashboard chart */
     
 //    /* Line dashboard chart */
