@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nmaprun>
+<nmaprun scanner="nmap" args="nmap -sV 192.0.2.1" start="1609459200" version="7.91" xmloutputversion="1.04">
+  <host starttime="1609459200" endtime="1609459201">
+    <status state="up" reason="echo-reply"/>
+    <address addr="192.0.2.1" addrtype="ipv4"/>
+    <hostnames>
+      <hostname name="example.com" type="PTR"/>
+    </hostnames>
+    <ports>
+      <port protocol="tcp" portid="80">
+        <state state="open" reason="syn-ack"/>
+        <service name="http" product="Apache httpd"/>
+      </port>
+    </ports>
+  </host>
+  <runstats>
+    <finished time="1609459202" elapsed="2.00"/>
+    <hosts up="1" down="0" total="1"/>
+  </runstats>
+</nmaprun>

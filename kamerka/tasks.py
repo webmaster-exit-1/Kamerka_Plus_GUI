@@ -803,7 +803,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
 
 def nmap_host_worker(host_arg, max_reader, search):
     ports_list = []
-    hostname = host_arg.hostnames[0]
+    hostname = host_arg.hostnames[0] if host_arg.hostnames else ""
 
     a = max_reader.get(host_arg.address)
     print(a['location']['latitude'])

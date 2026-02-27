@@ -4,6 +4,8 @@ import tempfile
 from unittest.mock import patch, MagicMock
 
 from django.test import TestCase, RequestFactory
+from django.urls import reverse
+from libnmap.parser import NmapParserException
 
 from app_kamerka.models import (
     Search, Device, DeviceNearby, WappalyzerResult, NucleiResult,
@@ -369,7 +371,8 @@ class GUIVisualTests(TestCase):
         self.assertContains(response, 'ꓘamerka')
         self.assertContains(response, 'search')
 
-    def test_index_page_loads(self):
+    @patch('app_kamerka.views.check_credits', return_value=[])
+    def test_index_page_loads(self, _):
         """Verify the dashboard/index page renders."""
         response = self.client.get('/index')
         self.assertEqual(response.status_code, 200)
@@ -591,3 +594,73 @@ class ICSMapVisualTests(TestCase):
         content = response.content.decode()
         self.assertIn(device.ip, content)
         self.assertIn('modbus', content.lower())
+
+
+class NmapUploadTests(TestCase):
+    """Regression tests for the Nmap XML upload path in search_main."""
+
+    FIXTURES_DIR = os.path.join(os.path.dirname(__file__), 'fixtures')
+
+    def _upload(self, fixture_name):
+        fixture_path = os.path.join(self.FIXTURES_DIR, fixture_name)
+        with open(fixture_path, 'rb') as f:
+            return self.client.post(reverse('search_main'), {'myfile': f})
+
+    @patch('app_kamerka.views.nmap_scan')
+    @patch('app_kamerka.views.validate_maxmind')
+    @patch('app_kamerka.views.validate_nmap')
+    def test_valid_nmap_upload_returns_redirect(self, mock_validate, mock_maxmind, mock_nmap_scan):
+        """A valid minimal Nmap XML upload should redirect (302) to index."""
+        mock_validate.return_value = None
+        mock_nmap_scan.delay.return_value = MagicMock(task_id='test-task-id')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.settings(MEDIA_ROOT=tmpdir):
+                response = self._upload('nmap-minimal.xml')
+        self.assertEqual(response.status_code, 302)
+
+    @patch('app_kamerka.views.validate_nmap', side_effect=NmapParserException('not well-formed'))
+    def test_malformed_nmap_upload_returns_400(self, _):
+        """A malformed/invalid XML upload should return HTTP 400, not 500."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.settings(MEDIA_ROOT=tmpdir):
+                response = self._upload('nmap-malformed.xml')
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.content)
+        self.assertIn('message', data)
+
+    @patch('app_kamerka.views.nmap_scan')
+    @patch('app_kamerka.views.validate_maxmind')
+    @patch('app_kamerka.views.validate_nmap')
+    def test_no_hostnames_nmap_upload_returns_redirect(self, mock_validate, mock_maxmind, mock_nmap_scan):
+        """An Nmap XML with no hostnames should still upload successfully (302)."""
+        mock_validate.return_value = None
+        mock_nmap_scan.delay.return_value = MagicMock(task_id='test-task-id')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.settings(MEDIA_ROOT=tmpdir):
+                response = self._upload('nmap-no-hostnames.xml')
+        self.assertEqual(response.status_code, 302)
+
+    def test_nmap_host_worker_empty_hostnames(self):
+        """nmap_host_worker must not crash when host has no hostnames."""
+        from kamerka.tasks import nmap_host_worker
+
+        search = Search.objects.create(
+            coordinates="0,0", country="NMAP Scan", ics="test.xml", nmap=True
+        )
+        host_arg = MagicMock()
+        host_arg.hostnames = []
+        host_arg.address = '192.0.2.3'
+        host_arg.services = []
+
+        max_reader = MagicMock()
+        max_reader.get.return_value = {
+            'location': {'latitude': 40.0, 'longitude': -74.0},
+            'country': {'iso_code': 'US'},
+        }
+
+        # Should not raise IndexError
+        nmap_host_worker(host_arg=host_arg, max_reader=max_reader, search=search)
+
+        from app_kamerka.models import Device
+        device = Device.objects.get(ip='192.0.2.3')
+        self.assertEqual(device.hostnames, "")
