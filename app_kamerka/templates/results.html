@@ -95,10 +95,14 @@
                 </ul>
                 <!-- START BREADCRUMB -->
 <ul class="breadcrumb">
-
-
-                </ul>
-                <!-- END BREADCRUMB -->
+    {% if task_id %}
+    <div class='progress-wrapper'>
+        <div id='progress-bar' class='progress-bar' style="background-color: #0064d7; width: 0%;">&nbsp;</div>
+    </div>
+    <div id="progress-bar-message" style="color:#ff00cd">Scan in progress...</div>
+    {% endif %}
+</ul>
+<!-- END BREADCRUMB -->
 
                 <!-- PAGE CONTENT WRAPPER -->
 
@@ -372,6 +376,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 <script>drawCharts({{ports|safe}}, {{city|safe}},{{category|safe}});</script>
 
         <!-- END TEMPLATE -->
+
+        {% if task_id %}
+        <script src="{% static 'celery_progress/celery_progress.js' %}"></script>
+        <script>
+            var progressUrl = "{% url 'celery_progress:task_status' task_id %}";
+            CeleryProgressBar.initProgressBar(progressUrl, {
+                onSuccess: function() {
+                    window.location.reload();
+                }
+            });
+        </script>
+        {% endif %}
 
     <!-- END SCRIPTS -->
 

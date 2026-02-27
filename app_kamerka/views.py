@@ -216,7 +216,7 @@ def search_main(request):
                 print(e)
                 return JsonResponse({'message':str(e)}, status=500)
 
-            return HttpResponseRedirect('index')
+            return HttpResponseRedirect(f'results/{search.id}')
 
         else:
 
@@ -356,11 +356,14 @@ def results(request, id):
             pass
 
 
+    task_id = request.session.get('task_id')
+
     context = {'search': all_devices,
                'ports': ports_list,
                "vulns": sort,
                "category": categories_list,
-               "city": cities_list}
+               "city": cities_list,
+               "task_id": task_id}
 
     return render(request, 'results.html', context)
 
