@@ -12,6 +12,7 @@ from django.db.models import Count
 from django.http import HttpResponse, JsonResponse
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
+from libnmap.parser import NmapParserException
 
 from app_kamerka import forms
 from app_kamerka.models import Search, Device, DeviceNearby, ShodanScan, BinaryEdgeScore, Whois, \
@@ -200,7 +201,10 @@ def search_main(request):
                 filename = fs.save(myfile.name, myfile)
                 uploaded_file_url = fs.url(filename)
                 print(uploaded_file_url)
-                validate_nmap(uploaded_file_url)
+                try:
+                    validate_nmap(uploaded_file_url)
+                except (NmapParserException, OSError):
+                    return JsonResponse({'message': 'Invalid or unreadable Nmap XML file.'}, status=400)
                 validate_maxmind()
                 search = Search(country="NMAP Scan", ics=myfile.name,nmap=True)
                 search.save()
@@ -230,7 +234,7 @@ def index(request):
     coordinates_search_len = Device.objects.filter(category="coordinates")
     healthcare_len = Device.objects.filter(category="healthcare")
     search_all = Search.objects.all()
-    task = request.session.get('task_id')
+    task = request.session.pop('task_id', None)
     ports = Device.objects.values('port').annotate(c=Count('port')).order_by('-c')[:7]
     ports_list = list(ports)
     vulns = Device.objects.exclude(vulns__isnull=True).exclude(vulns__exact='')

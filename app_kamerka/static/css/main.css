@@ -59,7 +59,7 @@
     .lightSwitcher {
     position:absolute;
     z-index:101;
-    background-image:url(http://3.bp.blogspot.com/-Vs5EJnjVScM/Um0Sq84fJtI/AAAAAAAAEeQ/PEu-OStZciA/s1600/lights-on.png);
+    background-image:url('../images/lights-on.svg');
     background-repeat:no-repeat;
     background-position:left;
     padding: 0 0 0 20px;
@@ -69,7 +69,7 @@
     .lightSwitcher:hover {text-decoration:underline;}
     .turnedOff {
     color:#ffff00 !important;
-    background-image:url(http://3.bp.blogspot.com/-vKGxmBhYshA/Um0Sqwy_hNI/AAAAAAAAEeU/F0WKs6_WARM/s1600/lights-off.png);
+    background-image:url('../images/lights-off.svg');
     }
     #lightsoff {
     background:#000;

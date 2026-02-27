@@ -10,15 +10,12 @@
     <meta name="author" content="Colrolib">
     <meta name="keywords" content="Colrolib Templates">
 <link rel="stylesheet" href="{% static 'css/search_style.css'  %}">
-    <link rel="stylesheet" href="https://unpkg.com/bootstrap@3.3.7/dist/css/bootstrap.min.css" type="text/css" />
-  <link rel="stylesheet" href="https://unpkg.com/bootstrap-select@1.12.4/dist/css/bootstrap-select.min.css" type="text/css" />
-  <link rel="stylesheet" href="https://unpkg.com/bootstrap-select-country@4.0.0/dist/css/bootstrap-select-country.min.css" type="text/css" />
+    <link rel="stylesheet" href="{% static 'css/bootstrap/bootstrap.min.css' %}" type="text/css" />
+  <link rel="stylesheet" href="{% static 'css/bootstrap/bootstrap-select.min.css' %}" type="text/css" />
+  <link rel="stylesheet" href="{% static 'css/bootstrap/bootstrap-select-country.min.css' %}" type="text/css" />
 
-
-    <link href="https://unpkg.com/mobius1-selectr@latest/dist/selectr.min.css" rel="stylesheet" type="text/css">
-<script src="https://unpkg.com/mobius1-selectr@latest/dist/selectr.min.js" type="text/javascript"></script>
-    <link rel='stylesheet' href='https://fonts.googleapis.com/css?family=Raleway'>
-<link rel='stylesheet' href='https://fonts.googleapis.com/icon?family=Material+Icons'>
+    <link href="{% static 'css/selectr.min.css' %}" rel="stylesheet" type="text/css">
+<script src="{% static 'js/plugins/selectr.min.js' %}" type="text/javascript"></script>
 <style>.dropdown-toggle.btn-default {
   position: relative;
 padding: 0px 20px 5px 5px;
@@ -667,7 +664,7 @@ font-size: 22px;
 
 
 <!--  <button class="file-upload-btn" type="button" onclick="$('.file-upload-input').trigger( 'click' )">Add Image</button>-->
-<script class="jsbin" src="https://ajax.googleapis.com/ajax/libs/jquery/1/jquery.min.js"></script>
+<script src="{% static 'js/plugins/jquery/jquery.min.js' %}"></script>
   <div class="image-upload-wrap">
     <input class="file-upload-input" type='file' name="myfile" onchange="readURL(this);"/>
     <div class="drag-text">
@@ -742,9 +739,9 @@ font-size: 22px;' class="image-title">
     </div>
 
 
-     <script src="https://unpkg.com/jquery@3.4.1/dist/jquery.min.js"></script>
-  <script src="https://unpkg.com/bootstrap@3.3.7/dist/js/bootstrap.min.js"></script>
-  <script src="https://unpkg.com/bootstrap-select@1.12.4/dist/js/bootstrap-select.min.js"></script>
+     <script src="{% static 'js/plugins/jquery/jquery.min.js' %}"></script>
+  <script src="{% static 'js/plugins/bootstrap/bootstrap.min.js' %}"></script>
+  <script src="{% static 'js/plugins/bootstrap/bootstrap-select.min.js' %}"></script>
   <script src="{% static 'js/bootstrap-select-country.js'  %}"></script>
 <script>
     function readURL(input) {

@@ -35,7 +35,7 @@
                             <div class="profile-image">
                             </div>
                             <div class="profile-data">
-                                  <img width=200px height=200px src="https://www.offensiveosint.io/content/images/2020/07/OffensiveOsint-logo-RGB-2.png">
+                                  <img width=200px height=200px src="{% static 'images/OffensiveOsint-logo-RGB-2.svg' %}">
                             </div>
 
                         </div>
@@ -80,11 +80,12 @@
 
                 <!-- START BREADCRUMB -->
                 <ul class="breadcrumb">
-
+                {% if task_id %}
                            <div class='progress-wrapper'>
                 <div id='progress-bar' class='progress-bar' style="background-color: #0064d7; width: 0%;">&nbsp;</div>
                 </div>
-                <div id="progress-bar-message" style="color:#ff00cd">Starting...</div>
+                <div id="progress-bar-message" style="color:#ff00cd">Scan in progress...</div>
+                {% endif %}
                 </ul>
                 <!-- END BREADCRUMB -->                       
                 
@@ -300,14 +301,15 @@
         <script>drawcharts({{ ics.count }}, {{ coordinates.count }}, {{ healthcare.count }}, {{ports|safe}}, {{ countries|safe }});</script>
         <script>
         {% if task_id %}
-
-function customProgress(progressBarElement, progressBarMessageElement, progress) {
-    progressBarMessageElement.innerHTML = (
-      "about " + progress.percent + "% of the way through " + progress.total + ' custom thingies.'
-    );
-}
     var progressUrl = "{% url 'celery_progress:task_status' task_id %}";
-  CeleryProgressBar.initProgressBar(progressUrl);
+    CeleryProgressBar.initProgressBar(progressUrl, {
+        onProgress: function(progressBarElement, progressBarMessageElement, progress) {
+            progressBarMessageElement.innerHTML = 'Scan in progress: ' + progress.percent + '%';
+        },
+        onSuccess: function() {
+            window.location.reload();
+        }
+    });
         {% endif %}
 </script>
 <script type="text/javascript">
