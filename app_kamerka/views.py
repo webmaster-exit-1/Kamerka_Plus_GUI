@@ -198,13 +198,13 @@ def search_main(request):
             try:
                 fs = FileSystemStorage()
                 filename = fs.save(myfile.name, myfile)
-                uploaded_file_url = fs.url(filename)
-                print(uploaded_file_url)
-                validate_nmap(uploaded_file_url)
+                uploaded_file_path = fs.path(filename)
+                print(uploaded_file_path)
+                validate_nmap(uploaded_file_path)
                 validate_maxmind()
                 search = Search(country="NMAP Scan", ics=myfile.name,nmap=True)
                 search.save()
-                nmap_task = nmap_scan.delay(uploaded_file_url ,fk=search.id)
+                nmap_task = nmap_scan.delay(uploaded_file_path, fk=search.id)
 
                 request.session['task_id'] = nmap_task.task_id
                 print('session')
