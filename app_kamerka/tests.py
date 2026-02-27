@@ -430,3 +430,155 @@ class GUIVisualTests(TestCase):
         for mod_name in modules:
             mod = importlib.import_module(mod_name)
             self.assertIsNotNone(mod, "Module {} failed to import".format(mod_name))
+
+
+class ICSMapVisualTests(TestCase):
+    """Visual tests to verify Industrial Control System devices appear on
+    the map with correct icons and that markers are clickable."""
+
+    ICS_DEVICE_TYPES = {
+        'niagara': 'blue.png',
+        'modbus': 'factory_orange.png',
+        'bacnet': 'green.png',
+        'siemens': 'pink.png',
+        'dnp3': 'purple.png',
+        'pcworx': 'light_purple.png',
+        'mitsubishi': 'white.png',
+        'omron': 'blue2.png',
+        'redlion': 'green2.png',
+        'codesys': 'purple2.png',
+        'iec': 'yellow2.png',
+        'proconos': 'pink2.png',
+        'simatic': 'simatic.png',
+        'simatic_s7': 'simatic_s7.png',
+        'schneider_electric': 'schneider_electric.png',
+        'scalance': 'scalance.png',
+        'modicon': 'modicon.png',
+    }
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="40.7128,-74.0060", country="US",
+            ics="['modbus','siemens']", coordinates_search="test"
+        )
+        # Create one device for each ICS type to populate the map
+        self.devices = {}
+        lat_base = 40.0
+        for i, (dev_type, icon) in enumerate(self.ICS_DEVICE_TYPES.items()):
+            d = Device.objects.create(
+                search=self.search,
+                ip="10.0.0.{}".format(i + 1),
+                product="{} Controller".format(dev_type.capitalize()),
+                port="502",
+                type=dev_type,
+                lat=str(lat_base + i * 0.1),
+                lon="-74.0060",
+                country_code="US",
+                org="ICS-Test",
+                city="TestCity",
+            )
+            self.devices[dev_type] = d
+
+    def test_results_page_renders_ics_markers(self):
+        """Verify the results page generates Google Maps markers for every ICS device."""
+        response = self.client.get('/results/{}'.format(self.search.id))
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        for dev_type, device in self.devices.items():
+            self.assertIn(
+                'new google.maps.LatLng({},{})'.format(device.lat, device.lon),
+                content,
+                "Marker position missing for ICS type '{}'".format(dev_type),
+            )
+
+    def test_results_page_ics_marker_icons(self):
+        """Verify each ICS device type gets its correct icon on the results map."""
+        response = self.client.get('/results/{}'.format(self.search.id))
+        content = response.content.decode()
+        for dev_type, expected_icon in self.ICS_DEVICE_TYPES.items():
+            self.assertIn(
+                expected_icon,
+                content,
+                "Icon '{}' missing for ICS type '{}'".format(expected_icon, dev_type),
+            )
+
+    def test_results_page_markers_have_clickable_links(self):
+        """Verify every ICS marker title contains an anchor link to the device detail page."""
+        response = self.client.get('/results/{}'.format(self.search.id))
+        content = response.content.decode()
+        for dev_type, device in self.devices.items():
+            expected_href = '<a href={}/{}/{}>'.format(
+                device.search_id, device.id, device.ip
+            )
+            self.assertIn(
+                expected_href,
+                content,
+                "Clickable link missing in marker for ICS type '{}'".format(dev_type),
+            )
+
+    def test_results_page_device_table_has_clickable_ips(self):
+        """Verify the devices tab table renders each ICS device IP as a clickable link."""
+        response = self.client.get('/results/{}'.format(self.search.id))
+        content = response.content.decode()
+        for dev_type, device in self.devices.items():
+            self.assertIn(
+                device.ip,
+                content,
+                "IP address missing from device table for '{}'".format(dev_type),
+            )
+            # The IP should be inside an <a> tag linking to the device detail view
+            self.assertIn(
+                'href="/results/{}/{}/{}"'.format(
+                    device.search_id, device.id, device.ip
+                ),
+                content,
+                "Device table link missing for '{}'".format(dev_type),
+            )
+
+    def test_map_page_renders_ics_markers(self):
+        """Verify the global map page shows markers for all ICS devices."""
+        response = self.client.get('/map')
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        for dev_type, device in self.devices.items():
+            self.assertIn(
+                'new google.maps.LatLng({},{})'.format(device.lat, device.lon),
+                content,
+                "Map marker missing for ICS type '{}'".format(dev_type),
+            )
+
+    def test_map_page_markers_have_clickable_links(self):
+        """Verify the global map page markers have clickable device detail links."""
+        response = self.client.get('/map')
+        content = response.content.decode()
+        for dev_type, device in self.devices.items():
+            expected_href = '<a href=/results/{}/{}/{}>'.format(
+                device.search_id, device.id, device.ip
+            )
+            self.assertIn(
+                expected_href,
+                content,
+                "Clickable link missing on map for ICS type '{}'".format(dev_type),
+            )
+
+    def test_map_page_ics_marker_icons(self):
+        """Verify each ICS device type gets its correct icon on the global map."""
+        response = self.client.get('/map')
+        content = response.content.decode()
+        for dev_type, expected_icon in self.ICS_DEVICE_TYPES.items():
+            self.assertIn(
+                expected_icon,
+                content,
+                "Icon '{}' missing on map for ICS type '{}'".format(expected_icon, dev_type),
+            )
+
+    def test_device_detail_page_renders_for_ics(self):
+        """Verify the individual device detail page loads for an ICS device."""
+        device = self.devices['modbus']
+        response = self.client.get(
+            '/results/{}/{}/{}'.format(self.search.id, device.id, device.ip)
+        )
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        self.assertIn(device.ip, content)
+        self.assertIn('modbus', content.lower())
