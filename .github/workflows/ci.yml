@@ -1,0 +1,55 @@
+name: Kamerka Plus GUI CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: 'stable'
+
+    - name: Install System Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y nmap chromium-browser
+
+    - name: Install ProjectDiscovery Tools (Nuclei)
+      run: |
+        go install -v github.com/projectdiscovery/pdtm/cmd/pdtm@latest
+        export PATH=$PATH:$(go env GOPATH)/bin
+        pdtm -i nuclei
+
+    - name: Install Python Logic & Wappalyzer
+      run: |
+        pip install -r requirements.txt
+        pip install wappalyzer
+
+    - name: Verify Security Engine Health
+      run: |
+        nmap --version
+        nuclei -version
+        wappalyzer --version
+
+    - name: Run China-IoT Template Validation
+      env:
+        SHODAN_API_KEY: ${{ secrets.SHODAN_API_KEY }}
+      run: |
+        # Ensure custom templates are valid and loadable
+        nuclei -validate -t nuclei_templates/china-iot/
