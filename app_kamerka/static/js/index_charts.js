@@ -27,17 +27,19 @@ function drawcharts(ics_len,coordinates_search_len, healthcare_len, ports, count
     }
 
     /* Donut dashboard chart */
-    Morris.Donut({
-        labelColor: '#00E1FF',
-        element: 'dashboard-donut-1',
-        data: [
-            {label: "ICS", value: ics_len, labelColor: '#ff00cd'},
-            {label: "Coordinates", value: coordinates_search_len},
-            {label: "Healthcare", value: healthcare_len},
-        ],
-        colors: ["#00E1FF", "#0064d7",'#ff00cd'],
-        resize: true
-    });
+    if (ics_len > 0 || coordinates_search_len > 0 || healthcare_len > 0) {
+        Morris.Donut({
+            labelColor: '#00E1FF',
+            element: 'dashboard-donut-1',
+            data: [
+                {label: "ICS", value: ics_len, labelColor: '#ff00cd'},
+                {label: "Coordinates", value: coordinates_search_len},
+                {label: "Healthcare", value: healthcare_len},
+            ],
+            colors: ["#00E1FF", "#0064d7",'#ff00cd'],
+            resize: true
+        });
+    }
     /* END Donut dashboard chart */
     /* Bar dashboard chart */
     if (ports && ports.length > 0) {
