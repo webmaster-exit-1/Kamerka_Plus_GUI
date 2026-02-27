@@ -301,7 +301,7 @@
 function initialize() {
     var centerLat = 0, centerLon = 0;
     {% for device in search %}
-    {% if forloop.first %}
+    {% if forloop.first and device.lat and device.lon %}
     centerLat = {{ device.lat }};
     centerLon = {{ device.lon }};
     {% endif %}
@@ -318,11 +318,13 @@ function initialize() {
 
     var markers = [];
     {% for device in search %}
+    {% if device.lat and device.lon %}
     (function() {
         var m = L.marker([{{device.lat}}, {{device.lon}}]).addTo(map);
         m.bindPopup('<a href="{{device.search_id}}/{{device.id}}/{{device.ip}}">{{device.type}} - {{device.ip}}</a>');
         markers.push(m);
     })();
+    {% endif %}
     {% endfor %}
 
     if (markers.length > 1) {
@@ -376,18 +378,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 <script>drawCharts({{ports|safe}}, {{city|safe}},{{category|safe}});</script>
 
         <!-- END TEMPLATE -->
-
-        {% if task_id %}
-        <script src="{% static 'celery_progress/celery_progress.js' %}"></script>
-        <script>
-            var progressUrl = "{% url 'celery_progress:task_status' task_id %}";
-            CeleryProgressBar.initProgressBar(progressUrl, {
-                onSuccess: function() {
-                    window.location.reload();
-                }
-            });
-        </script>
-        {% endif %}
 
     <!-- END SCRIPTS -->
 

@@ -806,8 +806,14 @@ def nmap_host_worker(host_arg, max_reader, search):
     hostname = host_arg.hostnames[0] if host_arg.hostnames else ""
 
     a = max_reader.get(host_arg.address)
-    print(a['location']['latitude'])
-    print(a['location']['longitude'])
+    if not a:
+        return
+    lat = a.get('location', {}).get('latitude')
+    lon = a.get('location', {}).get('longitude')
+    if lat is None or lon is None:
+        return
+    country_code = a.get('country', {}).get('iso_code') or ""
+
     for ports in host_arg.services:
         if ports.state == 'open':
             ports_list.append(ports.port)
@@ -815,11 +821,10 @@ def nmap_host_worker(host_arg, max_reader, search):
             ports_list.append("None")
 
     ports_string = ', '.join(str(e) for e in ports_list)
-    print(ports_string)
     device = Device(search=search, ip=host_arg.address, product="", org="",
                     data="", port=ports_string, type="NMAP", city="NMAP",
-                    lat=a['location']['latitude'], lon=a['location']['longitude'],
-                    country_code=a['country']['iso_code'], query="NMAP SCAN", category="NMAP",
+                    lat=lat, lon=lon,
+                    country_code=country_code, query="NMAP SCAN", category="NMAP",
                     vulns="", indicator="", hostnames=hostname, screenshot="")
     device.save()
 

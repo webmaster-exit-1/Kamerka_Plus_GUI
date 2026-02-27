@@ -664,3 +664,36 @@ class NmapUploadTests(TestCase):
         from app_kamerka.models import Device
         device = Device.objects.get(ip='192.0.2.3')
         self.assertEqual(device.hostnames, "")
+
+    @patch('app_kamerka.views.nmap_scan')
+    @patch('app_kamerka.views.validate_maxmind')
+    @patch('app_kamerka.views.validate_nmap')
+    def test_valid_nmap_upload_redirects_to_index(self, mock_validate, mock_maxmind, mock_nmap_scan):
+        """After a valid Nmap XML upload the response must redirect to the dashboard (index)."""
+        mock_validate.return_value = None
+        mock_nmap_scan.delay.return_value = MagicMock(task_id='test-task-id')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.settings(MEDIA_ROOT=tmpdir):
+                response = self._upload('nmap-minimal.xml')
+        self.assertRedirects(response, '/index', fetch_redirect_response=False)
+
+    def test_nmap_host_worker_none_geoip(self):
+        """nmap_host_worker must skip silently when GeoIP returns None for an IP."""
+        from kamerka.tasks import nmap_host_worker
+
+        search = Search.objects.create(
+            coordinates="0,0", country="NMAP Scan", ics="test.xml", nmap=True
+        )
+        host_arg = MagicMock()
+        host_arg.hostnames = []
+        host_arg.address = '10.0.0.1'  # private — not in GeoIP
+        host_arg.services = []
+
+        max_reader = MagicMock()
+        max_reader.get.return_value = None  # GeoIP miss
+
+        # Should return early without creating a Device or raising
+        nmap_host_worker(host_arg=host_arg, max_reader=max_reader, search=search)
+
+        from app_kamerka.models import Device
+        self.assertFalse(Device.objects.filter(ip='10.0.0.1').exists())

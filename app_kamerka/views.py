@@ -216,7 +216,7 @@ def search_main(request):
                 print(e)
                 return JsonResponse({'message':str(e)}, status=500)
 
-            return HttpResponseRedirect(f'results/{search.id}')
+            return HttpResponseRedirect('index')
 
         else:
 
@@ -234,7 +234,7 @@ def index(request):
     coordinates_search_len = Device.objects.filter(category="coordinates")
     healthcare_len = Device.objects.filter(category="healthcare")
     search_all = Search.objects.all()
-    task = request.session.get('task_id')
+    task = request.session.pop('task_id', None)
     ports = Device.objects.values('port').annotate(c=Count('port')).order_by('-c')[:7]
     ports_list = list(ports)
     vulns = Device.objects.exclude(vulns__isnull=True).exclude(vulns__exact='')
@@ -356,14 +356,11 @@ def results(request, id):
             pass
 
 
-    task_id = request.session.get('task_id')
-
     context = {'search': all_devices,
                'ports': ports_list,
                "vulns": sort,
                "category": categories_list,
-               "city": cities_list,
-               "task_id": task_id}
+               "city": cities_list}
 
     return render(request, 'results.html', context)
 
