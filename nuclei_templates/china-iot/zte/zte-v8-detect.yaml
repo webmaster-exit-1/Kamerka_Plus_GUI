@@ -1,0 +1,26 @@
+id: zte-v8-detect
+
+info:
+  name: ZTE ZXHN V8 Series Detection
+  author: kamerka-fork
+  severity: info
+  description: Detects ZTE ZXHN V8 series carrier gateway devices.
+  tags: china-iot,zte,panel
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        words:
+          - "ZXHN"
+          - "ZTE"
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "ZTE"

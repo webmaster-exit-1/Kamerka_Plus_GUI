@@ -1,0 +1,27 @@
+id: zte-f460-rce
+
+info:
+  name: ZTE F460/F660 Remote Code Execution
+  author: kamerka-fork
+  severity: critical
+  description: |
+    ZTE F460 and F660 cable modems are vulnerable to remote code execution
+    through command injection in web management interface parameters.
+  tags: china-iot,zte,rce
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/manager_dev_ping_t.gch"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - "ZTE"
+          - "ping"
+        condition: and

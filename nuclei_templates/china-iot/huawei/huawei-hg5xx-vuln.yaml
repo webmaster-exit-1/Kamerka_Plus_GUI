@@ -1,0 +1,27 @@
+id: huawei-hg5xx-vuln
+
+info:
+  name: Huawei HG5xx Modem Vulnerability Detection
+  author: kamerka-fork
+  severity: medium
+  description: |
+    Detects Huawei HG5xx series modems that may be vulnerable to
+    known authentication bypass and information disclosure flaws.
+  tags: china-iot,huawei,modem
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/api/system/deviceinfo"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - "Huawei"
+          - "HG5"
+        condition: and

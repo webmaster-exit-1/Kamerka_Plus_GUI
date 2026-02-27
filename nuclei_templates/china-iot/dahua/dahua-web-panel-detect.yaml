@@ -1,0 +1,29 @@
+id: dahua-web-panel-detect
+
+info:
+  name: Dahua Web Panel Detection
+  author: kamerka-fork
+  severity: info
+  description: Detects the presence of a Dahua web management panel.
+  tags: china-iot,dahua,panel
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        words:
+          - "DahuaTech"
+          - "dahua"
+          - "DHVideoWEB"
+        condition: or
+
+      - type: word
+        part: header
+        words:
+          - "DhWebClientPlugin"
+          - "DHVideoWeb"
+        condition: or

@@ -1,18 +1,17 @@
 import json
 import math
 import re
+import subprocess
 
 import maxminddb
 from libnmap.parser import NmapParser
 import os
 from time import sleep
-import flickrapi
 import requests
 from celery import shared_task, current_task
 from celery_progress.backend import ProgressRecorder
 from pybinaryedge import BinaryEdge
 from shodan import Shodan
-from twitter import *
 import time
 from bs4 import BeautifulSoup
 import pynmea2
@@ -29,8 +28,8 @@ import xml.etree.ElementTree as et
 
 from app_kamerka import exploits
 
-from app_kamerka.models import Device, DeviceNearby, Search, TwitterNearby, FlickrNearby, ShodanScan, BinaryEdgeScore, \
-    Whois, Bosch
+from app_kamerka.models import Device, DeviceNearby, Search, ShodanScan, BinaryEdgeScore, \
+    Whois, Bosch, WappalyzerResult, NucleiResult
 
 healthcare_queries = {"zoll": "http.favicon.hash:-236942626",
                       'dicom': "dicom",
@@ -850,44 +849,94 @@ def nmap_scan(self, file, fk):
 
 
 @shared_task(bind=False)
-def twitter_nearby_task(id, lat, lon):
-    # Twitter
-    TWITTER_ACCESS_TOKEN = keys['keys']['twitter_access_token']
-    TWITTER_ACCESS_TOKEN_SECRET = keys['keys']['twitter_access_token_secret']
-    TWITTER_CONSUMER_KEY = keys['keys']['twitter_consumer_key']
-    TWITTER_CONSUMER_SECRET = keys['keys']['twitter_consumer_secret']
+def wappalyzer_scan(id):
+    """Run Wappalyzer CLI against a device to fingerprint technologies."""
+    device = Device.objects.get(id=id)
+    ip = device.ip
+    port = device.port
+    target_url = "http://{}:{}".format(ip, port)
 
-    twitter = Twitter(auth=OAuth(TWITTER_ACCESS_TOKEN,
-                                 TWITTER_ACCESS_TOKEN_SECRET,
-                                 TWITTER_CONSUMER_KEY,
-                                 TWITTER_CONSUMER_SECRET))
+    try:
+        result = subprocess.run(
+            ["wappalyzer", target_url, "-oJ"],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            technologies = json.loads(result.stdout)
+            wap_result = WappalyzerResult(
+                device=device,
+                technologies=technologies,
+                raw_output=result.stdout[:10000]
+            )
+            wap_result.save()
+            return technologies
+        else:
+            return {"error": result.stderr or "No output from Wappalyzer"}
+    except FileNotFoundError:
+        return {"error": "Wappalyzer CLI not installed"}
+    except subprocess.TimeoutExpired:
+        return {"error": "Wappalyzer scan timed out"}
+    except json.JSONDecodeError:
+        return {"error": "Failed to parse Wappalyzer output"}
+    except Exception as e:
+        return {"error": str(e)}
 
-    device1 = Device.objects.get(id=id)
-    num_pages = 20
-    pages = 0
-    last_id = None
-    while pages < num_pages:
-        try:
-            query = twitter.search.tweets(q="", geocode=lat + "," + lon, count=100,
-                                          include_entities=True, max_id=last_id, result_type='mixed')
-            pages += 1
-            current_task.update_state(state='PROGRESS',
-                                      meta={'current': pages, 'total': num_pages,
-                                            'percent': int((float(pages) / num_pages) * 100)})
-            print(str(pages) + " page")
-            for counter, result in enumerate(query["statuses"]):
-                if 'coordinates' in result:
-                    if result['coordinates'] != None:
-                        tw = TwitterNearby(device=device1, lat=str(result['coordinates']['coordinates'][0]),
-                                           lon=str(result['coordinates']['coordinates'][1]),
-                                           tweet=result['text'].encode('ascii', 'ignore')
-                                           )
-                        tw.save()
 
-        except TwitterHTTPError as e:
-            print(e.args)
+@shared_task(bind=False)
+def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150):
+    """Run Nuclei vulnerability scanner against a device."""
+    device = Device.objects.get(id=id)
+    ip = device.ip
+    port = device.port
+    target_url = "http://{}:{}".format(ip, port)
 
-    return {'current': num_pages, 'total': num_pages, 'percent': 100}
+    cmd = ["nuclei", "-u", target_url, "-jsonl", "-silent"]
+
+    if templates_dir:
+        cmd.extend(["-t", templates_dir])
+    else:
+        cmd.append("-as")
+
+    if severity:
+        cmd.extend(["-severity", severity])
+
+    cmd.extend(["-rate-limit", str(rate_limit)])
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
+        findings = []
+        if result.stdout.strip():
+            for line in result.stdout.strip().split("\n"):
+                try:
+                    finding = json.loads(line)
+                    nuclei_result = NucleiResult(
+                        device=device,
+                        template_id=finding.get("template-id", ""),
+                        name=finding.get("info", {}).get("name", ""),
+                        severity=finding.get("info", {}).get("severity", ""),
+                        matched_at=finding.get("matched-at", ""),
+                        description=finding.get("info", {}).get("description", ""),
+                        raw_output=line[:10000]
+                    )
+                    nuclei_result.save()
+                    findings.append(finding)
+                except json.JSONDecodeError:
+                    continue
+
+        return {"findings_count": len(findings), "findings": findings}
+    except FileNotFoundError:
+        return {"error": "Nuclei binary not installed"}
+    except subprocess.TimeoutExpired:
+        return {"error": "Nuclei scan timed out"}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 def paste_login(username, password, key):
@@ -1000,33 +1049,6 @@ def send_to_field_agent_task(id, notes):
     else:
         create_paste(keys['keys']['pastebin_dev_key'], user_key, "ꓘamerka_" + af.ip, merge_string)
 
-
-@shared_task(bind=False)
-def flickr(id, lat, lon):
-    FLICKR_API_KEY = keys['keys']['flickr_api_key']
-    FLICKR_SECRET_API_KEY = keys['keys']['flickr_api_key']
-    device1 = Device.objects.get(id=id)
-
-    flickr = flickrapi.FlickrAPI(FLICKR_API_KEY, FLICKR_SECRET_API_KEY)
-    try:
-        photo_list = flickr.photos.search(api_key=FLICKR_API_KEY, lat=lat, lon=lon, accuracy=16, format='parsed-json',
-                                          per_page=100, extras='url_l,geo', has_geo=1, sort='newest')
-    except Exception as e:
-        print(e.args)
-
-    total = 100
-
-    for counter, photo in enumerate(photo_list['photos']['photo']):
-        if 'url_l' in photo:
-            flickr_db = FlickrNearby(device=device1, lat=str(photo['latitude']),
-                                     lon=str(photo['longitude']), title=photo['title'], url=photo['url_l'])
-            flickr_db.save()
-            print(counter)
-            current_task.update_state(state='PROGRESS',
-                                      meta={'current': counter, 'total': total,
-                                            'percent': int((float(counter) / total) * 100)})
-
-    return {'current': total, 'total': total, 'percent': 100}
 
 
 @shared_task(bind=False)
@@ -1295,3 +1317,109 @@ def whoisxml(id):
                    admin_phone=admin_phone, netrange=netrange, name=name, email=email)
 
         wh.save()
+
+
+def shodan_csv_export(search_id, output_path):
+    """Export Shodan device data to CSV for SandDance 3D visualization."""
+    import pandas as pd
+
+    devices = Device.objects.filter(search_id=search_id)
+    records = []
+    for d in devices:
+        vuln_count = 0
+        if d.vulns:
+            try:
+                vuln_list = json.loads(d.vulns.replace("'", '"'))
+                vuln_count = len(vuln_list) if isinstance(vuln_list, list) else 0
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        records.append({
+            "IP_Address": d.ip,
+            "Latitude": d.lat,
+            "Longitude": d.lon,
+            "Severity_Count": vuln_count,
+            "Vendor_Name": d.product,
+            "Network_Port": d.port,
+            "Organization": d.org or "",
+            "City": d.city or "",
+            "Country_Code": d.country_code,
+            "Device_Type": d.type,
+        })
+
+    df = pd.DataFrame(records)
+    df.to_csv(output_path, index=False)
+    return output_path
+
+
+def shodan_kml_export(search_id, output_path):
+    """Export Shodan device data to KML for Mapbox geospatial intelligence."""
+    import simplekml
+
+    devices = Device.objects.filter(search_id=search_id)
+    kml = simplekml.Kml()
+
+    for d in devices:
+        try:
+            lon = float(d.lon)
+            lat = float(d.lat)
+        except (ValueError, TypeError):
+            continue
+
+        name = "{} - {}".format(d.product or "Unknown", d.ip)
+        pnt = kml.newpoint(name=name, coords=[(lon, lat)])
+        pnt.description = "IP: {}\nPort: {}\nOrg: {}\nCity: {}\nVulns: {}".format(
+            d.ip, d.port, d.org or "", d.city or "", d.vulns or "None"
+        )
+
+        ext = pnt.extendeddata
+        ext.newdata("ip", d.ip)
+        ext.newdata("port", d.port)
+        ext.newdata("product", d.product or "")
+        ext.newdata("org", d.org or "")
+        ext.newdata("country_code", d.country_code or "")
+        ext.newdata("vulns", d.vulns or "")
+
+    kml.save(output_path)
+    return output_path
+
+
+@shared_task(bind=False)
+def nmap_rtsp_scan(id):
+    """Run RTSP enumeration and manufacturer-specific NSE scripts against a device."""
+    return_dict = {}
+    device1 = Device.objects.get(id=id)
+    ip = device1.ip
+    device_type = device1.type
+
+    options = "-sV -p 80,443,554,502 -T4 --script=rtsp-url-brute"
+
+    if device_type == "hikvision":
+        options += ",http-hikvision-backdoor"
+    elif device_type in ("dahua", "amcrest"):
+        options += ",http-auth"
+
+    nm = NmapProcess(ip, options=options)
+    nm.run_background()
+
+    while nm.is_running():
+        sleep(2)
+
+    try:
+        parsed = NmapParser.parse(nm.stdout)
+        for host in parsed.hosts:
+            for svc in host.services:
+                return_dict["port_{}".format(svc.port)] = {
+                    "state": svc.state,
+                    "service": svc.service,
+                    "banner": svc.banner or "",
+                    "scripts": {s['id']: s['output'] for s in svc.scripts_results} if svc.scripts_results else {}
+                }
+
+        device1.scan = json.dumps(return_dict)
+        device1.exploited_scanned = True
+        device1.save()
+    except Exception as e:
+        return_dict["error"] = str(e)
+
+    return return_dict

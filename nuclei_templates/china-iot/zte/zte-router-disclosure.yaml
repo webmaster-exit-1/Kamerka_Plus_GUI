@@ -1,0 +1,27 @@
+id: zte-router-disclosure
+
+info:
+  name: ZTE Router Information Disclosure
+  author: kamerka-fork
+  severity: medium
+  description: |
+    ZTE routers may expose sensitive device information through
+    unauthenticated access to configuration endpoints.
+  tags: china-iot,zte,disclosure
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/getpage.gch?pid=1002&nextpage=status_dev_info_t.gch"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - "ZTE"
+          - "Model"
+        condition: and
