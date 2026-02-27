@@ -14,7 +14,7 @@ urlpatterns = [
     path("results/<id>", views.results, name='results'),
 
     path("results/<id>/<device_id>/<ip>", views.device, name='device'),
-    path(r'^celery-progress/', include('celery_progress.urls')),
+    path('celery-progress/', include('celery_progress.urls')),
     path("<id>/nearby/<query>", views.nearby, name='nearby'),
     path("<id>/update_coordinates/<coordinates>", views.update_coordinates, name='update_coordinates'),
 
