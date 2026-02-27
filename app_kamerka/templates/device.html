@@ -13,6 +13,7 @@
         <!-- CSS INCLUDE -->
 
         <link rel="stylesheet" type="text/css" id="theme" href="{% static 'css/theme-default.css' %}"/>
+        <link rel="stylesheet" type="text/css" href="{% static 'css/leaflet.css' %}"/>
         <link rel=stylesheet href=https://cdn.jsdelivr.net/npm/pretty-print-json@1.2/dist/pretty-print-json.dark-mode.css>
         <!-- EOF CSS INCLUDE -->
     </head>
@@ -133,7 +134,7 @@
 </h3>
                                 </div>
                                 <div class="panel-body panel-body-map">
-                                    <div id="google_world_map" style="width: 100%; height: 400px;"></div>
+                                    <div id="leaflet_world_map" style="width: 100%; height: 400px;"></div>
 
                                     <form id="form1" runat="server">
     <div>
@@ -424,152 +425,22 @@
                             <!-- START DATATABLE EXPORT -->
 
 
-<script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_key }}&callback=myMap&libraries=places"></script>
+<script src="{% static 'js/leaflet.js' %}"></script>
 
 <script>
-function AddMarker() {
+var map = L.map('leaflet_world_map').setView([{{ device.lat }}, {{ device.lon }}], 13);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+}).addTo(map);
+
+var marker = L.marker([{{ device.lat }}, {{ device.lon }}]).addTo(map);
+marker.bindPopup('{{ device.type }} - {{ device.ip }}').openPopup();
+
 {% for dev in nearby %}
-       var init_marker = new google.maps.LatLng({{ dev.lat }},{{ dev.lon }});
-    var marker = new google.maps.Marker({
-    map: map,
-    title: 'Coordinates',
-    position: init_marker,
-  });
-  {% endfor %}
-    };
-
-
-
-
-    var source, destination;
-    var directionsDisplay;
-    var directionsService = new google.maps.DirectionsService();
-    google.maps.event.addDomListener(window, 'load', function () {
-var options = { componentRestrictions: { country: '{{ device.country_code}}' } };
-
-        new google.maps.places.Autocomplete(document.getElementById('txtDestination'), options);
-        directionsDisplay = new google.maps.DirectionsRenderer({ 'draggable': true });
-        directionsDisplay.setMap(map);
-        directionsDisplay.setPanel(document.getElementById('dvPanel'));
-
-    });
-
-
-
-    var init_marker = new google.maps.LatLng({{ device.lat }},{{ device.lon }});
-    var mapOptions = {
-        zoom: 13,
-        center: init_marker,
-        durationInTraffic: true,
-        styles: [
-        { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
-        { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
-        { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
-        {
-          featureType: "administrative.locality",
-          elementType: "labels.text.fill",
-          stylers: [{ color: "#d59563" }],
-        },
-        {
-          featureType: "poi",
-          elementType: "labels.text.fill",
-          stylers: [{ color: "#d59563" }],
-        },
-        {
-          featureType: "poi.park",
-          elementType: "geometry",
-          stylers: [{ color: "#263c3f" }],
-        },
-        {
-          featureType: "poi.park",
-          elementType: "labels.text.fill",
-          stylers: [{ color: "#6b9a76" }],
-        },
-        {
-          featureType: "road",
-          elementType: "geometry",
-          stylers: [{ color: "#38414e" }],
-        },
-        {
-          featureType: "road",
-          elementType: "geometry.stroke",
-          stylers: [{ color: "#212a37" }],
-        },
-        {
-          featureType: "road",
-          elementType: "labels.text.fill",
-          stylers: [{ color: "#9ca5b3" }],
-        },
-        {
-          featureType: "road.highway",
-          elementType: "geometry",
-          stylers: [{ color: "#746855" }],
-        },
-        {
-          featureType: "road.highway",
-          elementType: "geometry.stroke",
-          stylers: [{ color: "#1f2835" }],
-        },
-        {
-          featureType: "road.highway",
-          elementType: "labels.text.fill",
-          stylers: [{ color: "#f3d19c" }],
-        },
-        {
-          featureType: "transit",
-          elementType: "geometry",
-          stylers: [{ color: "#2f3948" }],
-        },
-        {
-          featureType: "transit.station",
-          elementType: "labels.text.fill",
-          stylers: [{ color: "#d59563" }],
-        },
-        {
-          featureType: "water",
-          elementType: "geometry",
-          stylers: [{ color: "#17263c" }],
-        },
-        {
-          featureType: "water",
-          elementType: "labels.text.fill",
-          stylers: [{ color: "#515c6d" }],
-        },
-        {
-          featureType: "water",
-          elementType: "labels.text.stroke",
-          stylers: [{ color: "#17263c" }],
-        },
-      ],
-    };
-    map = new google.maps.Map(document.getElementById('google_world_map'), mapOptions);
-
-var marker = new google.maps.Marker({
-    map: map,
-    title: 'Coordinates',
-    position: init_marker,
-  });
-
-   var bounds = new google.maps.LatLngBounds();
-
-
-    function GetRoute() {
-    //*********DIRECTIONS AND ROUTE**********************//
-    destination = document.getElementById("txtDestination").value;
-
-    var request = {
-        origin: "{{ device.lat }},{{ device.lon }}",
-        destination: destination,
-        travelMode: google.maps.TravelMode.DRIVING
-    };
-    directionsService.route(request, function (response, status) {
-        if (status == google.maps.DirectionsStatus.OK) {
-            directionsDisplay.setDirections(response);
-        }
-        });
-
-
-    }
+var nearby_marker = L.marker([{{ dev.lat }}, {{ dev.lon }}]).addTo(map);
+nearby_marker.bindPopup('{{ dev.product }} - {{ dev.ip }}');
+{% endfor %}
 </script>
 
 
@@ -595,7 +466,6 @@ var marker = new google.maps.Marker({
         <script type="text/javascript" src="{% static 'js/plugins/datatables/jquery.dataTables.min.js' %}"></script>
         <!-- END THIS PAGE PLUGINS-->
 
-<script src="{% static 'js/markerclusterer.js' %}"></script>
 
 <script>
 if (!library)
@@ -663,10 +533,8 @@ library.json = {
         success: function (data) {
         noty({text: "Updated" , layout: 'topRight', type: 'success', timeout: 1000});
         splitted_coord = bla.split(",");
-        var marker = new google.maps.Marker({
-            map: map,
-            position: new google.maps.LatLng(splitted_coord[0] , splitted_coord[1] )
-            })},
+        L.marker([splitted_coord[0], splitted_coord[1]]).addTo(map);
+        },
         error: function(xhr, status, error) {
   alert(xhr.responseText);
 }
@@ -683,19 +551,8 @@ library.json = {
             success: function(response) {
 
             $.each(response, function(key, val) {
-            var infowindow = new google.maps.InfoWindow({
-            content: "<div style=width:600px; height:640px><img src="+val.fields.url+" width='600px' height='640'></div>",
-  });
-            var marker = new google.maps.Marker({
-            map: map,
-            icon: "{% static 'images/flickr.png' %}",
-            title: 'Coordinates',
-            position: new google.maps.LatLng(val.fields.lat , val.fields.lon )
-
-  })
-marker.addListener('click', function() {
-    infowindow.open(map, marker);
-  });
+            var m = L.marker([val.fields.lat, val.fields.lon]).addTo(map);
+            m.bindPopup("<div style=width:600px; height:640px><img src="+val.fields.url+" width='600px' height='640'></div>");
             })
             }
         })
@@ -710,20 +567,8 @@ var marker;
                     type: "get",
                     success: function(response) {
             $.each(response, function(key, val) {
-            var infowindow = new google.maps.InfoWindow({
-            content: val.fields.org + " <br> " + val.fields.product + "<br>"+val.fields.ip+"<br>"+val.fields.port
-  });
-
-            var marker = new google.maps.Marker({
-            map: map,
-            title: 'Coordinates',
-            icon:"{% static 'images/shodan.png' %}",
-            position: new google.maps.LatLng(val.fields.lat , val.fields.lon )
-  })
-marker.addListener('click', function() {
-    infowindow.open(map, marker);
-  });
-
+            var m = L.marker([val.fields.lat, val.fields.lon]).addTo(map);
+            m.bindPopup(val.fields.org + " <br> " + val.fields.product + "<br>"+val.fields.ip+"<br>"+val.fields.port);
             })
             }
         })

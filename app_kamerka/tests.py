@@ -391,12 +391,12 @@ class GUIVisualTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_map_page_loads(self):
-        """Verify the map page renders with the map div and device markers."""
+        """Verify the map page renders with the Leaflet map div and device markers."""
         response = self.client.get('/map')
         self.assertEqual(response.status_code, 200)
         content = response.content.decode()
-        self.assertIn('google_world_map', content)
-        self.assertIn('new google.maps.LatLng(', content)
+        self.assertIn('leaflet_world_map', content)
+        self.assertIn('L.marker(', content)
         self.assertIn('192.168.1.1', content)
 
     def test_gallery_page_loads(self):
@@ -405,13 +405,13 @@ class GUIVisualTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_results_page_loads(self):
-        """Verify the results page renders with the map and device markers."""
+        """Verify the results page renders with the Leaflet map and device markers."""
         response = self.client.get('/results/{}'.format(self.search.id))
         self.assertEqual(response.status_code, 200)
         content = response.content.decode()
-        self.assertIn('google_world_map', content)
-        self.assertIn('Google World Map', content)
-        self.assertIn('new google.maps.LatLng(', content)
+        self.assertIn('leaflet_world_map', content)
+        self.assertIn('World Map', content)
+        self.assertIn('L.marker(', content)
         self.assertIn('192.168.1.1', content)
 
     def test_search_main_contains_form_tabs(self):
@@ -489,34 +489,34 @@ class ICSMapVisualTests(TestCase):
             self.devices[dev_type] = d
 
     def test_results_page_renders_ics_markers(self):
-        """Verify the results page generates Google Maps markers for every ICS device."""
+        """Verify the results page generates Leaflet markers for every ICS device."""
         response = self.client.get('/results/{}'.format(self.search.id))
         self.assertEqual(response.status_code, 200)
         content = response.content.decode()
         for dev_type, device in self.devices.items():
             self.assertIn(
-                'new google.maps.LatLng({},{})'.format(device.lat, device.lon),
+                'L.marker([{}, {}])'.format(device.lat, device.lon),
                 content,
                 "Marker position missing for ICS type '{}'".format(dev_type),
             )
 
-    def test_results_page_ics_marker_icons(self):
-        """Verify each ICS device type gets its correct icon on the results map."""
-        response = self.client.get('/results/{}'.format(self.search.id))
-        content = response.content.decode()
-        for dev_type, expected_icon in self.ICS_DEVICE_TYPES.items():
-            self.assertIn(
-                expected_icon,
-                content,
-                "Icon '{}' missing for ICS type '{}'".format(expected_icon, dev_type),
-            )
-
-    def test_results_page_markers_have_clickable_links(self):
-        """Verify every ICS marker title contains an anchor link to the device detail page."""
+    def test_results_page_ics_marker_popups(self):
+        """Verify each ICS device type has a popup with its IP and type."""
         response = self.client.get('/results/{}'.format(self.search.id))
         content = response.content.decode()
         for dev_type, device in self.devices.items():
-            expected_href = '<a href={}/{}/{}>'.format(
+            self.assertIn(
+                device.ip,
+                content,
+                "IP '{}' missing for ICS type '{}'".format(device.ip, dev_type),
+            )
+
+    def test_results_page_markers_have_clickable_links(self):
+        """Verify every ICS marker popup contains an anchor link to the device detail page."""
+        response = self.client.get('/results/{}'.format(self.search.id))
+        content = response.content.decode()
+        for dev_type, device in self.devices.items():
+            expected_href = 'href="{}/{}/{}"'.format(
                 device.search_id, device.id, device.ip
             )
             self.assertIn(
@@ -545,13 +545,13 @@ class ICSMapVisualTests(TestCase):
             )
 
     def test_map_page_renders_ics_markers(self):
-        """Verify the global map page shows markers for all ICS devices."""
+        """Verify the global map page shows Leaflet markers for all ICS devices."""
         response = self.client.get('/map')
         self.assertEqual(response.status_code, 200)
         content = response.content.decode()
         for dev_type, device in self.devices.items():
             self.assertIn(
-                'new google.maps.LatLng({},{})'.format(device.lat, device.lon),
+                'L.marker([{}, {}])'.format(device.lat, device.lon),
                 content,
                 "Map marker missing for ICS type '{}'".format(dev_type),
             )
@@ -561,7 +561,7 @@ class ICSMapVisualTests(TestCase):
         response = self.client.get('/map')
         content = response.content.decode()
         for dev_type, device in self.devices.items():
-            expected_href = '<a href=/results/{}/{}/{}>'.format(
+            expected_href = 'href="/results/{}/{}/{}"'.format(
                 device.search_id, device.id, device.ip
             )
             self.assertIn(
@@ -570,15 +570,15 @@ class ICSMapVisualTests(TestCase):
                 "Clickable link missing on map for ICS type '{}'".format(dev_type),
             )
 
-    def test_map_page_ics_marker_icons(self):
-        """Verify each ICS device type gets its correct icon on the global map."""
+    def test_map_page_ics_marker_popups(self):
+        """Verify each ICS device type has a popup with its IP on the global map."""
         response = self.client.get('/map')
         content = response.content.decode()
-        for dev_type, expected_icon in self.ICS_DEVICE_TYPES.items():
+        for dev_type, device in self.devices.items():
             self.assertIn(
-                expected_icon,
+                device.ip,
                 content,
-                "Icon '{}' missing on map for ICS type '{}'".format(expected_icon, dev_type),
+                "IP '{}' missing on map for ICS type '{}'".format(device.ip, dev_type),
             )
 
     def test_device_detail_page_renders_for_ics(self):

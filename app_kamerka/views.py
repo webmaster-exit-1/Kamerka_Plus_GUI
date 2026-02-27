@@ -300,9 +300,7 @@ def devices(request):
 def map(request):
     all_devices = Device.objects.all()
 
-    google_maps_key = keys['keys']['google_maps']
-
-    context = {"devices": all_devices, 'google_maps_key': google_maps_key}
+    context = {"devices": all_devices}
 
     return render(request, "map.html", context=context)
 
@@ -318,7 +316,6 @@ def results(request, id):
     ports = Device.objects.filter(search_id=id).values('port').annotate(c=Count('port')).order_by('-c')[:7]
     city = Device.objects.filter(search_id=id).values('city').annotate(c=Count('city')).order_by('-c')[:7]
     category = Device.objects.filter(search_id=id).values('type').annotate(c=Count('type')).order_by('-c')
-    google_maps_key = keys['keys']['google_maps']
 
 
     categories_list = list(category)
@@ -359,8 +356,7 @@ def results(request, id):
                'ports': ports_list,
                "vulns": sort,
                "category": categories_list,
-               "city": cities_list,
-               'google_maps_key': google_maps_key}
+               "city": cities_list}
 
     return render(request, 'results.html', context)
 
@@ -402,7 +398,6 @@ def device(request, id, device_id, ip):
     shodan = ShodanScan.objects.filter(device_id=all_devices.id)
     wappalyzer = WappalyzerResult.objects.filter(device_id=all_devices.id)
     nuclei = NucleiResult.objects.filter(device_id=all_devices.id)
-    google_maps_key = keys['keys']['google_maps']
 
     try:
         all_devices.indicator = ast.literal_eval(all_devices.indicator)
@@ -419,7 +414,6 @@ def device(request, id, device_id, ip):
                "shodan": shodan,
                "wappalyzer": wappalyzer,
                "nuclei": nuclei,
-               'google_maps_key': google_maps_key,
                "passwd": info}
 
     return render(request, 'device.html', context)
