@@ -346,3 +346,87 @@ class ViewTests(TestCase):
         response = export_kml(request, self.search.id)
         self.assertEqual(response.status_code, 200)
         self.assertIn('kml', response['Content-Type'])
+
+
+class GUIVisualTests(TestCase):
+    """Visual tests to verify all main GUI pages render without errors."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="40.7128,-74.0060", country="US",
+            ics="test", coordinates_search="test"
+        )
+        self.device = Device.objects.create(
+            search=self.search, ip="192.168.1.1", product="Hikvision Camera",
+            port="80", type="hikvision", lat="40.7128", lon="-74.0060",
+            country_code="US", org="TestOrg", city="New York"
+        )
+
+    def test_search_main_page_loads(self):
+        """Verify the main search page renders with the search form."""
+        response = self.client.get('/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'ꓘamerka')
+        self.assertContains(response, 'search')
+
+    def test_index_page_loads(self):
+        """Verify the dashboard/index page renders."""
+        response = self.client.get('/index')
+        self.assertEqual(response.status_code, 200)
+
+    def test_history_page_loads(self):
+        """Verify the history page renders with the data table."""
+        response = self.client.get('/history')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'history')
+
+    def test_devices_page_loads(self):
+        """Verify the devices/search page renders."""
+        response = self.client.get('/devices')
+        self.assertEqual(response.status_code, 200)
+
+    def test_sources_page_loads(self):
+        """Verify the useful links/sources page renders."""
+        response = self.client.get('/sources')
+        self.assertEqual(response.status_code, 200)
+
+    def test_map_page_loads(self):
+        """Verify the map page renders."""
+        response = self.client.get('/map')
+        self.assertEqual(response.status_code, 200)
+
+    def test_gallery_page_loads(self):
+        """Verify the gallery page renders."""
+        response = self.client.get('/gallery')
+        self.assertEqual(response.status_code, 200)
+
+    def test_results_page_loads(self):
+        """Verify the results page renders for an existing search."""
+        response = self.client.get('/results/{}'.format(self.search.id))
+        self.assertEqual(response.status_code, 200)
+
+    def test_search_main_contains_form_tabs(self):
+        """Verify the main search page has all expected search category tabs."""
+        response = self.client.get('/')
+        content = response.content.decode()
+        self.assertIn('Industrial Control Systems', content)
+        self.assertIn('Internet of Things', content)
+        self.assertIn('Healthcare', content)
+        self.assertIn('Infrastructure', content)
+
+    def test_no_import_errors_on_startup(self):
+        """Verify all app modules import without errors."""
+        import importlib
+        modules = [
+            'app_kamerka.views',
+            'app_kamerka.models',
+            'app_kamerka.forms',
+            'app_kamerka.urls',
+            'app_kamerka.exploits',
+            'kamerka.tasks',
+            'kamerka.celery',
+            'kamerka.urls',
+        ]
+        for mod_name in modules:
+            mod = importlib.import_module(mod_name)
+            self.assertIsNotNone(mod, "Module {} failed to import".format(mod_name))
