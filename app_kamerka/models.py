@@ -71,13 +71,6 @@ class ShodanScan(models.Model):
     vulns = models.CharField(max_length=100)
 
 
-class BinaryEdgeScore(models.Model):
-    device = models.ForeignKey(Device, on_delete=models.CASCADE)
-    grades = models.JSONField(default=dict)
-    cve = models.JSONField(default=dict)
-    score = models.CharField(max_length=3)
-
-
 class Whois(models.Model):
     device = models.ForeignKey(Device, on_delete=models.CASCADE)
     name = models.CharField(max_length=100)

@@ -1,7 +1,6 @@
 {
   "keys": {
     "shodan": "SHODAN_KEY",
-    "binaryedge": "BINARYEDGE_KEY",
     "whoisxmlapi": "WHOISXMLAPI_KEY",
     "pastebin_user": "PASTEBIN_USER",
     "pastebin_password": "PASTEBIN_PASSWORD",

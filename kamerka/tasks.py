@@ -11,7 +11,6 @@ from time import sleep
 import requests
 from celery import shared_task, current_task
 from celery_progress.backend import ProgressRecorder
-from pybinaryedge import BinaryEdge
 from shodan import Shodan
 import time
 from bs4 import BeautifulSoup
@@ -29,7 +28,7 @@ import xml.etree.ElementTree as et
 
 from app_kamerka import exploits
 
-from app_kamerka.models import Device, DeviceNearby, Search, ShodanScan, BinaryEdgeScore, \
+from app_kamerka.models import Device, DeviceNearby, Search, ShodanScan, \
     Whois, Bosch, WappalyzerResult, NucleiResult
 
 logger = logging.getLogger(__name__)
@@ -580,15 +579,6 @@ def check_credits():
     except Exception as e:
         print(e)
 
-    try:
-        be_key = keys['keys']['binaryedge']
-        headers = {"X-Key": be_key}
-        req = requests.get("https://api.binaryedge.io/v2/user/subscription", headers=headers)
-        req_json = json.loads(req.content)
-        keys_list.append(req_json['requests_left'])
-    except Exception as e:
-        print(e)
-
     return keys_list
 
 
@@ -1125,29 +1115,6 @@ def shodan_scan_task(id):
 
     except Exception as e:
         print(e.args)
-
-
-@shared_task(bind=False)
-def binary_edge_scan(id):
-    key = keys['keys']['binaryedge']
-    device1 = Device.objects.get(id=id)
-    be = BinaryEdge(key)
-    results = be.host_score(device1.ip)
-    normalized_ip_score = results['normalized_ip_score']
-
-    cve = {}
-
-    if 'cve' in results['results_detailed']:
-        for cc in results['results_detailed']['cve']['result']:
-            if isinstance(cc['cve'], list):
-                for i in cc['cve']:
-                    cve[i['cpe']] = i['cve_list']
-            if isinstance(cc['cve'], dict):
-                if 'cpe' in cc['cve']:
-                    cve[cc['cve']['cpe'][0]] = cc['cve']['cve_list']
-
-    device2 = BinaryEdgeScore(device=device1, grades=results['ip_score_detailed'], cve=cve, score=normalized_ip_score)
-    device2.save()
 
 
 ics_scan = {"dnp3": "--script=nmap_scripts/dnp3-info.nse", "niagara": "--script=nmap_scripts/fox-info.nse",

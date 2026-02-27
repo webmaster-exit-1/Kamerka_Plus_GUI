@@ -9,7 +9,7 @@ from django.test import TestCase, RequestFactory
 
 from app_kamerka.models import (
     Search, Device, DeviceNearby, WappalyzerResult, NucleiResult,
-    ShodanScan, BinaryEdgeScore, Whois, Bosch, Dnp3
+    ShodanScan, Whois, Bosch, Dnp3
 )
 
 # Absolute path to the nmap XML fixture for github.com (140.82.113.3)
@@ -59,16 +59,6 @@ class ModelTests(TestCase):
         """Verify FlickrNearby model no longer exists."""
         from app_kamerka import models
         self.assertFalse(hasattr(models, 'FlickrNearby'))
-
-    def test_binary_edge_score_jsonfield(self):
-        """Test BinaryEdgeScore uses Django's built-in JSONField."""
-        be = BinaryEdgeScore.objects.create(
-            device=self.device,
-            grades={"http": "A"},
-            cve={"cpe1": ["CVE-2021-1234"]},
-            score="85"
-        )
-        self.assertEqual(be.grades, {"http": "A"})
 
     def test_device_nearby_still_works(self):
         nearby = DeviceNearby.objects.create(
