@@ -653,6 +653,9 @@ class NmapUploadTests(TestCase):
         self.assertIn('22', device.port)
         self.assertIn('80', device.port)
         self.assertIn('443', device.port)
+        # Regression: port field previously had max_length=10; "22, 80, 443" is 11 chars
+        # and would crash on save. Verify the full string is stored intact.
+        self.assertEqual(device.port, '22, 80, 443')
 
     def test_nmap_host_worker_stores_hostname(self):
         """nmap_host_worker should persist the first PTR hostname."""
@@ -672,6 +675,36 @@ class NmapUploadTests(TestCase):
     # ------------------------------------------------------------------ #
     # 3. nmap_host_worker – edge cases that previously crashed
     # ------------------------------------------------------------------ #
+    def test_nmap_host_worker_multi_port_no_truncation(self):
+        """
+        Regression: Device.port previously had max_length=10.
+        A real-world scan can easily produce port strings longer than 10 chars
+        (e.g. '22, 80, 443' = 11 chars). Saving such a device must not crash
+        and the full port string must be stored intact.
+        """
+        from kamerka.tasks import nmap_host_worker
+
+        search = self._make_search()
+        # Simulate a host with many open ports (as nmap would report)
+        svc_mock = lambda p: MagicMock(port=p, state='open')
+        host = MagicMock()
+        host.hostnames = ['lb-140-82-113-3-iad.github.com']
+        host.address = '140.82.113.3'
+        host.services = [svc_mock(p) for p in [22, 80, 443, 8080, 8443, 3000, 9418]]
+
+        nmap_host_worker(
+            host_arg=host,
+            max_reader=self._make_mock_reader(self.GITHUB_MAXMIND),
+            search=search,
+        )
+
+        device = Device.objects.get(search=search, ip='140.82.113.3')
+        expected = '22, 80, 443, 8080, 8443, 3000, 9418'
+        self.assertEqual(device.port, expected,
+                         "Port string was truncated or corrupted – max_length too small")
+        self.assertGreater(len(expected), 10,
+                           "Test string must exceed the old max_length=10 to be meaningful")
+
     def test_nmap_host_worker_no_crash_on_empty_hostnames(self):
         """nmap_host_worker must not raise IndexError when hostnames list is empty."""
         from kamerka.tasks import nmap_host_worker
