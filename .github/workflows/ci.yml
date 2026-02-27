@@ -9,6 +9,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
     - name: Checkout repository
@@ -33,6 +35,7 @@ jobs:
     - name: Install ProjectDiscovery Tools (Nuclei)
       run: |
         go install -v github.com/projectdiscovery/pdtm/cmd/pdtm@latest
+        echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
         export PATH=$PATH:$(go env GOPATH)/bin
         pdtm -i nuclei
 
@@ -45,11 +48,9 @@ jobs:
       run: |
         nmap --version
         nuclei -version
-        wappalyzer --version
+        pip show wappalyzer
 
     - name: Run China-IoT Template Validation
-      env:
-        SHODAN_API_KEY: ${{ secrets.SHODAN_API_KEY }}
       run: |
         # Ensure custom templates are valid and loadable
         nuclei -validate -t nuclei_templates/china-iot/
