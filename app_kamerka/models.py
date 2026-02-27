@@ -1,5 +1,4 @@
 from django.db import models
-from jsonfield import JSONField
 
 
 # Create your models here.
@@ -47,7 +46,7 @@ class DeviceNearby(models.Model):
 
 class WappalyzerResult(models.Model):
     device = models.ForeignKey(Device, on_delete=models.CASCADE)
-    technologies = JSONField(default=dict)
+    technologies = models.JSONField(default=dict)
     raw_output = models.TextField(default="")
     scan_date = models.DateTimeField(auto_now_add=True)
 
@@ -74,8 +73,8 @@ class ShodanScan(models.Model):
 
 class BinaryEdgeScore(models.Model):
     device = models.ForeignKey(Device, on_delete=models.CASCADE)
-    grades = JSONField()
-    cve = JSONField()
+    grades = models.JSONField(default=dict)
+    cve = models.JSONField(default=dict)
     score = models.CharField(max_length=3)
 
 

@@ -1,3 +1,348 @@
-from django.test import TestCase
+import json
+import os
+import tempfile
+from unittest.mock import patch, MagicMock
 
-# Create your tests here.
+from django.test import TestCase, RequestFactory
+
+from app_kamerka.models import (
+    Search, Device, DeviceNearby, WappalyzerResult, NucleiResult,
+    ShodanScan, BinaryEdgeScore, Whois, Bosch, Dnp3
+)
+
+
+class ModelTests(TestCase):
+    """Test that new and updated models work correctly."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+        self.device = Device.objects.create(
+            search=self.search, ip="192.168.1.1", product="TestCam",
+            port="80", type="hikvision", lat="40.0", lon="-74.0",
+            country_code="US"
+        )
+
+    def test_wappalyzer_result_creation(self):
+        wap = WappalyzerResult.objects.create(
+            device=self.device,
+            technologies={"nginx": "1.18"},
+            raw_output='{"nginx": "1.18"}'
+        )
+        self.assertEqual(wap.device, self.device)
+        self.assertEqual(wap.technologies, {"nginx": "1.18"})
+
+    def test_nuclei_result_creation(self):
+        nuclei = NucleiResult.objects.create(
+            device=self.device,
+            template_id="hikvision-cve-2021-36260",
+            name="Hikvision RCE",
+            severity="critical",
+            matched_at="http://192.168.1.1:80",
+            description="Test vulnerability"
+        )
+        self.assertEqual(nuclei.severity, "critical")
+        self.assertEqual(nuclei.template_id, "hikvision-cve-2021-36260")
+
+    def test_twitter_nearby_model_removed(self):
+        """Verify TwitterNearby model no longer exists."""
+        from app_kamerka import models
+        self.assertFalse(hasattr(models, 'TwitterNearby'))
+
+    def test_flickr_nearby_model_removed(self):
+        """Verify FlickrNearby model no longer exists."""
+        from app_kamerka import models
+        self.assertFalse(hasattr(models, 'FlickrNearby'))
+
+    def test_binary_edge_score_jsonfield(self):
+        """Test BinaryEdgeScore uses Django's built-in JSONField."""
+        be = BinaryEdgeScore.objects.create(
+            device=self.device,
+            grades={"http": "A"},
+            cve={"cpe1": ["CVE-2021-1234"]},
+            score="85"
+        )
+        self.assertEqual(be.grades, {"http": "A"})
+
+    def test_device_nearby_still_works(self):
+        nearby = DeviceNearby.objects.create(
+            device=self.device, lat="40.1", lon="-74.1",
+            ip="192.168.1.2", product="Router", port="443", org="TestOrg"
+        )
+        self.assertEqual(nearby.ip, "192.168.1.2")
+
+
+class TaskImportTests(TestCase):
+    """Test that deprecated imports are removed and new ones exist."""
+
+    def test_no_flickrapi_import(self):
+        """Verify flickrapi is not imported in tasks."""
+        import kamerka.tasks as tasks_module
+        import sys
+        self.assertNotIn('flickrapi', sys.modules.get('kamerka.tasks', '').__dict__ if hasattr(sys.modules.get('kamerka.tasks'), '__dict__') else {})
+
+    def test_no_twitter_import(self):
+        """Verify twitter is not imported in tasks."""
+        with open(os.path.join(os.path.dirname(__file__), '..', 'kamerka', 'tasks.py')) as f:
+            content = f.read()
+        self.assertNotIn('from twitter import', content)
+        self.assertNotIn('import flickrapi', content)
+
+    def test_subprocess_import(self):
+        """Verify subprocess is imported for secure CLI execution."""
+        with open(os.path.join(os.path.dirname(__file__), '..', 'kamerka', 'tasks.py')) as f:
+            content = f.read()
+        self.assertIn('import subprocess', content)
+
+    def test_wappalyzer_scan_function_exists(self):
+        from kamerka.tasks import wappalyzer_scan
+        self.assertTrue(callable(wappalyzer_scan))
+
+    def test_nuclei_scan_function_exists(self):
+        from kamerka.tasks import nuclei_scan
+        self.assertTrue(callable(nuclei_scan))
+
+    def test_shodan_csv_export_function_exists(self):
+        from kamerka.tasks import shodan_csv_export
+        self.assertTrue(callable(shodan_csv_export))
+
+    def test_shodan_kml_export_function_exists(self):
+        from kamerka.tasks import shodan_kml_export
+        self.assertTrue(callable(shodan_kml_export))
+
+    def test_nmap_rtsp_scan_function_exists(self):
+        from kamerka.tasks import nmap_rtsp_scan
+        self.assertTrue(callable(nmap_rtsp_scan))
+
+
+class WappalyzerTaskTests(TestCase):
+    """Test Wappalyzer CLI integration uses subprocess.run safely."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+        self.device = Device.objects.create(
+            search=self.search, ip="192.168.1.1", product="TestCam",
+            port="80", type="hikvision", lat="40.0", lon="-74.0",
+            country_code="US"
+        )
+
+    @patch('kamerka.tasks.subprocess.run')
+    def test_wappalyzer_scan_success(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout='{"technologies": [{"name": "nginx"}]}',
+            stderr=""
+        )
+        from kamerka.tasks import wappalyzer_scan
+        result = wappalyzer_scan(self.device.id)
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args
+        # Verify subprocess.run is called with a list (no shell=True)
+        self.assertIsInstance(call_args[0][0], list)
+
+    @patch('kamerka.tasks.subprocess.run')
+    def test_wappalyzer_scan_not_installed(self, mock_run):
+        mock_run.side_effect = FileNotFoundError()
+        from kamerka.tasks import wappalyzer_scan
+        result = wappalyzer_scan(self.device.id)
+        self.assertIn("error", result)
+        self.assertIn("not installed", result["error"])
+
+    @patch('kamerka.tasks.subprocess.run')
+    def test_wappalyzer_scan_timeout(self, mock_run):
+        import subprocess
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="wappalyzer", timeout=60)
+        from kamerka.tasks import wappalyzer_scan
+        result = wappalyzer_scan(self.device.id)
+        self.assertIn("error", result)
+        self.assertIn("timed out", result["error"])
+
+
+class NucleiTaskTests(TestCase):
+    """Test Nuclei vulnerability engine integration."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+        self.device = Device.objects.create(
+            search=self.search, ip="192.168.1.1", product="TestCam",
+            port="80", type="hikvision", lat="40.0", lon="-74.0",
+            country_code="US"
+        )
+
+    @patch('kamerka.tasks.subprocess.run')
+    def test_nuclei_scan_success(self, mock_run):
+        finding_json = json.dumps({
+            "template-id": "hikvision-cve-2021-36260",
+            "info": {"name": "Hikvision RCE", "severity": "critical", "description": "RCE vuln"},
+            "matched-at": "http://192.168.1.1:80"
+        })
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=finding_json,
+            stderr=""
+        )
+        from kamerka.tasks import nuclei_scan
+        result = nuclei_scan(self.device.id)
+        self.assertEqual(result["findings_count"], 1)
+        # Verify NucleiResult was saved
+        self.assertEqual(NucleiResult.objects.filter(device=self.device).count(), 1)
+
+    @patch('kamerka.tasks.subprocess.run')
+    def test_nuclei_scan_with_severity_filter(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        from kamerka.tasks import nuclei_scan
+        nuclei_scan(self.device.id, severity="critical")
+        call_args = mock_run.call_args[0][0]
+        self.assertIn("-severity", call_args)
+        self.assertIn("critical", call_args)
+
+    @patch('kamerka.tasks.subprocess.run')
+    def test_nuclei_scan_with_custom_templates(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        from kamerka.tasks import nuclei_scan
+        nuclei_scan(self.device.id, templates_dir="nuclei_templates/china-iot/hikvision")
+        call_args = mock_run.call_args[0][0]
+        self.assertIn("-t", call_args)
+        self.assertIn("nuclei_templates/china-iot/hikvision", call_args)
+
+    @patch('kamerka.tasks.subprocess.run')
+    def test_nuclei_scan_not_installed(self, mock_run):
+        mock_run.side_effect = FileNotFoundError()
+        from kamerka.tasks import nuclei_scan
+        result = nuclei_scan(self.device.id)
+        self.assertIn("error", result)
+        self.assertIn("not installed", result["error"])
+
+
+class ExportTests(TestCase):
+    """Test CSV and KML export functionality."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+        self.device = Device.objects.create(
+            search=self.search, ip="192.168.1.1", product="Hikvision Camera",
+            port="80", type="hikvision", lat="40.7128", lon="-74.0060",
+            country_code="US", org="TestOrg", city="New York",
+            vulns="['CVE-2021-36260']"
+        )
+
+    def test_csv_export(self):
+        from kamerka.tasks import shodan_csv_export
+        with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as f:
+            output_path = f.name
+        try:
+            shodan_csv_export(self.search.id, output_path)
+            self.assertTrue(os.path.exists(output_path))
+            with open(output_path) as f:
+                content = f.read()
+            self.assertIn("IP_Address", content)
+            self.assertIn("192.168.1.1", content)
+            self.assertIn("Hikvision Camera", content)
+        finally:
+            os.remove(output_path)
+
+    def test_kml_export(self):
+        from kamerka.tasks import shodan_kml_export
+        with tempfile.NamedTemporaryFile(suffix='.kml', delete=False) as f:
+            output_path = f.name
+        try:
+            shodan_kml_export(self.search.id, output_path)
+            self.assertTrue(os.path.exists(output_path))
+            with open(output_path) as f:
+                content = f.read()
+            self.assertIn("192.168.1.1", content)
+            self.assertIn("-74.006", content)
+        finally:
+            os.remove(output_path)
+
+
+class NucleiTemplateTests(TestCase):
+    """Test that China-IoT Nuclei templates exist and are valid YAML."""
+
+    def test_hikvision_templates_exist(self):
+        base = os.path.join(os.path.dirname(__file__), '..', 'nuclei_templates', 'china-iot', 'hikvision')
+        self.assertTrue(os.path.exists(os.path.join(base, 'hikvision-web-panel-detect.yaml')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'hikvision-cve-2021-36260.yaml')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'hikvision-cve-2023-6895.yaml')))
+
+    def test_dahua_templates_exist(self):
+        base = os.path.join(os.path.dirname(__file__), '..', 'nuclei_templates', 'china-iot', 'dahua')
+        self.assertTrue(os.path.exists(os.path.join(base, 'dahua-web-panel-detect.yaml')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'dahua-dss-sqli.yaml')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'dahua-cnvd-2017-06001.yaml')))
+
+    def test_huawei_templates_exist(self):
+        base = os.path.join(os.path.dirname(__file__), '..', 'nuclei_templates', 'china-iot', 'huawei')
+        self.assertTrue(os.path.exists(os.path.join(base, 'huawei-hg5xx-vuln.yaml')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'huawei-hg255s-lfi.yaml')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'huawei-waf-detect.yaml')))
+
+    def test_zte_templates_exist(self):
+        base = os.path.join(os.path.dirname(__file__), '..', 'nuclei_templates', 'china-iot', 'zte')
+        self.assertTrue(os.path.exists(os.path.join(base, 'zte-router-disclosure.yaml')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'zte-f460-rce.yaml')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'zte-v8-detect.yaml')))
+
+
+class URLPatternTests(TestCase):
+    """Test that new URL patterns are registered and old ones removed."""
+
+    def test_new_urls_registered(self):
+        from django.urls import reverse
+        # New endpoints should be resolvable
+        self.assertTrue(reverse('wappalyzer_scan', args=['1']))
+        self.assertTrue(reverse('nuclei_scan', args=['1']))
+        self.assertTrue(reverse('get_wappalyzer_results', args=['1']))
+        self.assertTrue(reverse('get_nuclei_results', args=['1']))
+        self.assertTrue(reverse('rtsp_scan', args=['1']))
+        self.assertTrue(reverse('export_csv', args=['1']))
+        self.assertTrue(reverse('export_kml', args=['1']))
+
+    def test_deprecated_urls_removed(self):
+        from django.urls import resolve, Resolver404
+        deprecated_urls = [
+            '/1/twitter/nearby',
+            '/1/twitter/show',
+            '/1/flickr/nearby',
+            '/get_flickr_results/1',
+            '/get_flickr_coordinates/1',
+        ]
+        for url in deprecated_urls:
+            with self.assertRaises(Resolver404, msg="URL {} should not resolve".format(url)):
+                resolve(url)
+
+
+class ViewTests(TestCase):
+    """Test that new views respond correctly."""
+
+    def setUp(self):
+        self.factory = RequestFactory()
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+        self.device = Device.objects.create(
+            search=self.search, ip="192.168.1.1", product="TestCam",
+            port="80", type="hikvision", lat="40.0", lon="-74.0",
+            country_code="US"
+        )
+
+    def test_export_csv_view(self):
+        from app_kamerka.views import export_csv
+        request = self.factory.get('/export/csv/{}'.format(self.search.id))
+        response = export_csv(request, self.search.id)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('text/csv', response['Content-Type'])
+
+    def test_export_kml_view(self):
+        from app_kamerka.views import export_kml
+        request = self.factory.get('/export/kml/{}'.format(self.search.id))
+        response = export_kml(request, self.search.id)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('kml', response['Content-Type'])
