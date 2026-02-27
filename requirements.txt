@@ -3,7 +3,6 @@ Django>=3.2,<5.0
 celery>=5.2.0
 celery_progress
 redis>=4.0.0
-pybinaryedge==0.5
 pycountry>=22.3.5
 shodan>=1.28.0
 bs4

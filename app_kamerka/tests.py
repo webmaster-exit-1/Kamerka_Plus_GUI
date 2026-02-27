@@ -1,14 +1,19 @@
+import io
 import json
 import os
 import tempfile
 from unittest.mock import patch, MagicMock
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, RequestFactory
 
 from app_kamerka.models import (
     Search, Device, DeviceNearby, WappalyzerResult, NucleiResult,
-    ShodanScan, BinaryEdgeScore, Whois, Bosch, Dnp3
+    ShodanScan, Whois, Bosch, Dnp3
 )
+
+# Absolute path to the nmap XML fixture for github.com (140.82.113.3)
+GITHUB_NMAP_XML = os.path.join(os.path.dirname(__file__), 'fixtures', 'github_scan.xml')
 
 
 class ModelTests(TestCase):
@@ -54,16 +59,6 @@ class ModelTests(TestCase):
         """Verify FlickrNearby model no longer exists."""
         from app_kamerka import models
         self.assertFalse(hasattr(models, 'FlickrNearby'))
-
-    def test_binary_edge_score_jsonfield(self):
-        """Test BinaryEdgeScore uses Django's built-in JSONField."""
-        be = BinaryEdgeScore.objects.create(
-            device=self.device,
-            grades={"http": "A"},
-            cve={"cpe1": ["CVE-2021-1234"]},
-            score="85"
-        )
-        self.assertEqual(be.grades, {"http": "A"})
 
     def test_device_nearby_still_works(self):
         nearby = DeviceNearby.objects.create(
@@ -591,3 +586,249 @@ class ICSMapVisualTests(TestCase):
         content = response.content.decode()
         self.assertIn(device.ip, content)
         self.assertIn('modbus', content.lower())
+
+
+class NmapUploadTests(TestCase):
+    """
+    End-to-end tests for the nmap XML upload path.
+
+    These tests simulate uploading the github.com nmap scan (140.82.113.3)
+    and verify that the crash fixes work correctly:
+      - validate_nmap accepts a valid XML file without crashing
+      - nmap_host_worker saves a Device with correct fields
+      - nmap_host_worker handles an empty hostnames list (no IndexError)
+      - nmap_host_worker skips hosts where MaxMind returns None (no TypeError)
+      - nmap_host_worker skips hosts with missing latitude/longitude
+      - The view's POST handler processes the file and dispatches the task
+    """
+
+    # Realistic MaxMind response for a GitHub IP (Ashburn, Virginia)
+    GITHUB_MAXMIND = {
+        'location': {'latitude': 38.6583, 'longitude': -77.3156},
+        'country': {'iso_code': 'US'},
+    }
+
+    def _make_search(self):
+        return Search.objects.create(country='NMAP Scan', ics='github_scan.xml', nmap=True)
+
+    def _make_mock_reader(self, return_value):
+        reader = MagicMock()
+        reader.get.return_value = return_value
+        return reader
+
+    # ------------------------------------------------------------------ #
+    # 1. validate_nmap
+    # ------------------------------------------------------------------ #
+    def test_validate_nmap_accepts_valid_xml(self):
+        """validate_nmap should parse the github.com XML without raising."""
+        from kamerka.tasks import validate_nmap
+        # Should not raise
+        validate_nmap(GITHUB_NMAP_XML)
+
+    # ------------------------------------------------------------------ #
+    # 2. nmap_host_worker – happy path
+    # ------------------------------------------------------------------ #
+    def test_nmap_host_worker_saves_device(self):
+        """nmap_host_worker should create a Device record for a valid host."""
+        from libnmap.parser import NmapParser
+        from kamerka.tasks import nmap_host_worker
+
+        search = self._make_search()
+        report = NmapParser.parse_fromfile(GITHUB_NMAP_XML)
+        host = report.hosts[0]  # 140.82.113.3
+
+        nmap_host_worker(
+            host_arg=host,
+            max_reader=self._make_mock_reader(self.GITHUB_MAXMIND),
+            search=search,
+        )
+
+        device = Device.objects.get(search=search, ip='140.82.113.3')
+        self.assertEqual(device.type, 'NMAP')
+        self.assertEqual(device.category, 'NMAP')
+        self.assertEqual(device.country_code, 'US')
+        self.assertAlmostEqual(float(device.lat), 38.6583, places=3)
+        self.assertAlmostEqual(float(device.lon), -77.3156, places=3)
+        # All three open ports should be recorded
+        self.assertIn('22', device.port)
+        self.assertIn('80', device.port)
+        self.assertIn('443', device.port)
+        # Regression: port field previously had max_length=10; "22, 80, 443" is 11 chars
+        # and would crash on save. Verify the full string is stored intact.
+        self.assertEqual(device.port, '22, 80, 443')
+
+    def test_nmap_host_worker_stores_hostname(self):
+        """nmap_host_worker should persist the first PTR hostname."""
+        from libnmap.parser import NmapParser
+        from kamerka.tasks import nmap_host_worker
+
+        search = self._make_search()
+        report = NmapParser.parse_fromfile(GITHUB_NMAP_XML)
+        nmap_host_worker(
+            host_arg=report.hosts[0],
+            max_reader=self._make_mock_reader(self.GITHUB_MAXMIND),
+            search=search,
+        )
+        device = Device.objects.get(search=search, ip='140.82.113.3')
+        self.assertEqual(device.hostnames, 'lb-140-82-113-3-iad.github.com')
+
+    # ------------------------------------------------------------------ #
+    # 3. nmap_host_worker – edge cases that previously crashed
+    # ------------------------------------------------------------------ #
+    def test_nmap_host_worker_multi_port_no_truncation(self):
+        """
+        Regression: Device.port previously had max_length=10.
+        A real-world scan can easily produce port strings longer than 10 chars
+        (e.g. '22, 80, 443' = 11 chars). Saving such a device must not crash
+        and the full port string must be stored intact.
+        """
+        from kamerka.tasks import nmap_host_worker
+
+        search = self._make_search()
+        # Simulate a host with many open ports (as nmap would report)
+        svc_mock = lambda p: MagicMock(port=p, state='open')
+        host = MagicMock()
+        host.hostnames = ['lb-140-82-113-3-iad.github.com']
+        host.address = '140.82.113.3'
+        host.services = [svc_mock(p) for p in [22, 80, 443, 8080, 8443, 3000, 9418]]
+
+        nmap_host_worker(
+            host_arg=host,
+            max_reader=self._make_mock_reader(self.GITHUB_MAXMIND),
+            search=search,
+        )
+
+        device = Device.objects.get(search=search, ip='140.82.113.3')
+        expected = '22, 80, 443, 8080, 8443, 3000, 9418'
+        self.assertEqual(device.port, expected,
+                         "Port string was truncated or corrupted – max_length too small")
+        self.assertGreater(len(expected), 10,
+                           "Test string must exceed the old max_length=10 to be meaningful")
+
+    def test_nmap_host_worker_all_65535_ports(self):
+        """
+        Regression: Device.port must handle all 65 535 open ports without
+        crashing or truncating.  Storing every port as '1, 2, 3, …, 65535'
+        requires ~448 000 characters – far beyond the old max_length=1000
+        varchar limit.  Device.port is now a TextField (PostgreSQL text type)
+        with no length restriction.
+        """
+        from kamerka.tasks import nmap_host_worker
+
+        search = self._make_search()
+        svc_mock = lambda p: MagicMock(port=p, state='open')
+        host = MagicMock()
+        host.hostnames = ['lb-140-82-113-3-iad.github.com']
+        host.address = '140.82.113.3'
+        host.services = [svc_mock(p) for p in range(1, 65536)]
+
+        nmap_host_worker(
+            host_arg=host,
+            max_reader=self._make_mock_reader(self.GITHUB_MAXMIND),
+            search=search,
+        )
+
+        device = Device.objects.get(search=search, ip='140.82.113.3')
+        expected = ', '.join(str(p) for p in range(1, 65536))
+        self.assertEqual(len(device.port), len(expected),
+                         "Port string length mismatch – was it truncated?")
+        self.assertEqual(device.port, expected,
+                         "Full 65 535-port string must be stored intact")
+
+    def test_nmap_host_worker_no_crash_on_empty_hostnames(self):
+        """nmap_host_worker must not raise IndexError when hostnames list is empty."""
+        from kamerka.tasks import nmap_host_worker
+
+        search = self._make_search()
+        host = MagicMock()
+        host.hostnames = []          # empty – previously caused IndexError
+        host.address = '140.82.113.3'
+        host.services = []
+
+        # Should not raise
+        nmap_host_worker(
+            host_arg=host,
+            max_reader=self._make_mock_reader(self.GITHUB_MAXMIND),
+            search=search,
+        )
+        device = Device.objects.get(search=search, ip='140.82.113.3')
+        self.assertEqual(device.hostnames, '')
+
+    def test_nmap_host_worker_no_crash_on_none_maxmind(self):
+        """nmap_host_worker must not raise TypeError when MaxMind returns None."""
+        from kamerka.tasks import nmap_host_worker
+
+        search = self._make_search()
+        host = MagicMock()
+        host.hostnames = ['lb-140-82-113-3-iad.github.com']
+        host.address = '140.82.113.3'
+        host.services = []
+
+        # Should not raise, and should NOT create a Device
+        nmap_host_worker(
+            host_arg=host,
+            max_reader=self._make_mock_reader(None),  # None – previously caused TypeError
+            search=search,
+        )
+        self.assertFalse(Device.objects.filter(search=search, ip='140.82.113.3').exists())
+
+    def test_nmap_host_worker_no_crash_on_missing_lat_lon(self):
+        """nmap_host_worker must not raise when MaxMind entry lacks lat/lon."""
+        from kamerka.tasks import nmap_host_worker
+
+        search = self._make_search()
+        host = MagicMock()
+        host.hostnames = ['lb-140-82-113-3-iad.github.com']
+        host.address = '140.82.113.3'
+        host.services = []
+
+        incomplete_maxmind = {'location': {}, 'country': {'iso_code': 'US'}}
+        nmap_host_worker(
+            host_arg=host,
+            max_reader=self._make_mock_reader(incomplete_maxmind),
+            search=search,
+        )
+        self.assertFalse(Device.objects.filter(search=search, ip='140.82.113.3').exists())
+
+    # ------------------------------------------------------------------ #
+    # 4. Full view upload path
+    # ------------------------------------------------------------------ #
+    @patch('app_kamerka.views.validate_maxmind')
+    @patch('app_kamerka.views.validate_nmap')
+    @patch('app_kamerka.views.nmap_scan')
+    def test_view_upload_dispatches_task(self, mock_task, mock_val_nmap, mock_val_maxmind):
+        """
+        Uploading a file via POST should call validate_nmap, validate_maxmind,
+        save a Search record, and call nmap_scan.delay with the absolute file path.
+        """
+        mock_result = MagicMock()
+        mock_result.task_id = 'test-task-id-123'
+        mock_task.delay.return_value = mock_result
+
+        with open(GITHUB_NMAP_XML, 'rb') as f:
+            xml_bytes = f.read()
+
+        response = self.client.post(
+            '/',
+            {'myfile': SimpleUploadedFile('github_scan.xml', xml_bytes, content_type='text/xml')},
+        )
+
+        # Should redirect back to index on success
+        self.assertIn(response.status_code, (302, 200))
+
+        # validate_nmap must be called with an absolute path (not a URL)
+        mock_val_nmap.assert_called_once()
+        called_path = mock_val_nmap.call_args[0][0]
+        self.assertTrue(os.path.isabs(called_path),
+                        f"Expected absolute path, got: {called_path}")
+        self.assertNotIn('/scans/', called_path.replace(os.sep, '/').split('/')[-2] if '/' in called_path else called_path,
+                         "Path should not be a URL fragment")
+
+        # nmap_scan.delay must be called with the same absolute path
+        mock_task.delay.assert_called_once()
+        task_path = mock_task.delay.call_args[0][0]
+        self.assertTrue(os.path.isabs(task_path),
+                        f"nmap_scan.delay received a non-absolute path: {task_path}")
+
+        # A Search record should exist
+        self.assertTrue(Search.objects.filter(country='NMAP Scan', nmap=True).exists())

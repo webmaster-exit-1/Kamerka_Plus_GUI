@@ -153,7 +153,7 @@
 </center>
 
 
-    </div>                            <!-- END GOOGLE WORLD MAP-->
+    </div>                            <!-- END WORLD MAP-->
                                     </form>
 
 
@@ -252,28 +252,6 @@
 
                                     <progress id="progress-bar2" value="0" max="100" style="display:none; margin-bottom: 1em;"></progress>
                                     <div id="shodan_results" style="display: none;"></div>
-
-                                </div>
-                            </div>
-                            <!-- END USERS ACTIVITY BLOCK -->
-
-                        </div>
-
-    <div class="col-md-4">
-
-                            <!-- START USERS ACTIVITY BLOCK -->
-                            <div class="panel panel-default">
-                                <div class="panel-heading ui-draggable-handle">
-                                    <div class="panel-title-box">
-                                        <h3><a href="https://app.binaryedge.io/services/risk/score?type=ip&query={{device.ip}}">Binary Edge</a></h3>
-                                    </div>
-
-                                </div>
-                                <div class="panel-body padding-0">
-                                    <button type="button" id="binaryedge_scan" class="btn btn-primary active">Scan</button>
-                                                                        <button type="button" id="binaryedge_show" class="btn btn-primary active">Display</button>
-                                    <div id="binaryedge_results" class="contact-info" style="display: none;"></div>
-                                    <progress id="progress-bar5" value="0" max="100" style="display:none; margin-bottom: 1em;"></progress>
 
                                 </div>
                             </div>
@@ -414,7 +392,7 @@
                                 </div>
                             </div>
                             <!-- END JUSTIFIED TABS -->
-                            <!-- START GOOGLE WORLD MAP -->
+                            <!-- START WORLD MAP -->
 
                             </div>
             </div>
@@ -619,25 +597,6 @@ var marker;
         });
         return false;
     });
-
-$('#binaryedge_scan').on('click', function(){
-       $.ajax({
-        type: "GET",
-        url: "/get_binaryedge_score/{{device.id}}",
-        success: function (data) {
-                if (data.task_id != null) {
-                    get_task_info(data.task_id,pgrbar5);
-                }
-                else if (data.Error){
-                noty({text: data.Error , layout: 'topRight', type: 'error', timeout: 1000});
-                }
-            },
-            error: function (data) {
-                console.log("Something went wrong!");
-            }
-        });
-        return false;
-    });
         var pgrbar6 = $('#progress-bar6');
 
 $('#whois_scan').on('click', function(){
@@ -767,59 +726,6 @@ if (x.style.display === "none") {
         }
   });
 
-
-$('#binaryedge_show').on('click', function() {
-            var x = document.getElementById("binaryedge_results");
-            if (x.style.display === "none") {
-                x.style.display = "block";
-            } else {
-                x.style.display = "none";
-            }
-            if (x.innerHTML == "") {
-                $.ajax({
-                    url: "/get_binaryedge_score_results/{{device.id}}",
-                    type: "get",
-                    success: function(response) {
-                        $.each(response, function(key, val) {
-                        console.log(response);
-                            $("#binaryedge_results").append("<p><b>" + "Score" + ' </b><br> ' + val.fields.score + " </p>");
-
-                            $.each(val.fields, function(fieldname, field) {
-                                if (fieldname == "device") {
-                                    {}
-                                } else if (fieldname == 'grades') {
-                                    var grades = field;
-                                    for (var key in grades) {
-                                        // check if the property/key is defined in the object itself, not in parent
-
-                            $("#binaryedge_results").append("<p><b>" + key + ' </b><br> ' + grades[key] + " </p>");
-}
-
-                                } else if (fieldname == "cve") {
-                                var cve = field;
-
-                                    for (var key in cve) {
-
-                                        // check if the property/key is defined in the object itself, not in parent
-
-                                            $("#binaryedge_results").append("<p><b><h3>" + key + '</h3> </b> </p>')
-                                            for (var cc in cve[key]){
-                                             if (cve[key].hasOwnProperty(cc)) {
-                            $("#binaryedge_results").append("<p><b>" + cve[key][cc].cve + ' </b><br> ' + cve[key][cc].cvss + " </p>");
-                                             }
-}
-                                        }
-                                        }
-
-
-
-                                })
-
-                            })
-
-                        }})
-                    }
-                })
 
 var frm = $('#generate-user-form');
     var pgrbar = $('#progress-bar');

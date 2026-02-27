@@ -14,10 +14,10 @@ from django.http import HttpResponseRedirect
 from django.shortcuts import render
 
 from app_kamerka import forms
-from app_kamerka.models import Search, Device, DeviceNearby, ShodanScan, BinaryEdgeScore, Whois, \
+from app_kamerka.models import Search, Device, DeviceNearby, ShodanScan, Whois, \
     Bosch, WappalyzerResult, NucleiResult
 from kamerka.tasks import shodan_search, devices_nearby, shodan_scan_task, \
-    binary_edge_scan, whoisxml, check_credits, send_to_field_agent_task, nmap_scan, validate_nmap, validate_maxmind, scan, \
+    whoisxml, check_credits, send_to_field_agent_task, nmap_scan, validate_nmap, validate_maxmind, scan, \
     exploit, wappalyzer_scan, nuclei_scan, shodan_csv_export, shodan_kml_export, nmap_rtsp_scan
 
 
@@ -198,13 +198,13 @@ def search_main(request):
             try:
                 fs = FileSystemStorage()
                 filename = fs.save(myfile.name, myfile)
-                uploaded_file_url = fs.url(filename)
-                print(uploaded_file_url)
-                validate_nmap(uploaded_file_url)
+                uploaded_file_path = fs.path(filename)
+                print(uploaded_file_path)
+                validate_nmap(uploaded_file_path)
                 validate_maxmind()
                 search = Search(country="NMAP Scan", ics=myfile.name,nmap=True)
                 search.save()
-                nmap_task = nmap_scan.delay(uploaded_file_url ,fk=search.id)
+                nmap_task = nmap_scan.delay(uploaded_file_path, fk=search.id)
 
                 request.session['task_id'] = nmap_task.task_id
                 print('session')
@@ -602,31 +602,6 @@ def send_to_field_agent(request, id, notes):
         return HttpResponse(json.dumps({'Status': "OK"}), content_type='application/json')
     else:
         return HttpResponse(json.dumps({'task_id': None}), content_type='application/json')
-
-
-def get_binaryedge_score(request, id):
-    if request.is_ajax() and request.method == 'GET':
-
-        be = BinaryEdgeScore.objects.filter(device_id=id)
-
-        if be:
-            print('already')
-            return HttpResponse(json.dumps({'Error': "Already in database"}), content_type='application/json')
-
-        be_task = binary_edge_scan.delay(id=id)
-
-        return HttpResponse(json.dumps({'task_id': be_task.id}), content_type='application/json')
-    else:
-        return HttpResponse(json.dumps({'task_id': None}), content_type='application/json')
-
-
-def get_binaryedge_score_results(request, id):
-    if request.is_ajax() and request.method == 'GET':
-        be = BinaryEdgeScore.objects.filter(device_id=id)
-
-        response_data = serializers.serialize('json', be)
-
-        return HttpResponse(response_data, content_type="application/json")
 
 
 def whois(request, id):
