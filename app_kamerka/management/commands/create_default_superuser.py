@@ -27,11 +27,21 @@ class Command(BaseCommand):
                 )
             )
             if generated:
-                self.stdout.write(
-                    self.style.WARNING(
-                        f'Generated password: {password}\n'
-                        'Set DJANGO_SUPERUSER_PASSWORD to specify your own password.'
+                if os.environ.get('DJANGO_SUPERUSER_PRINT_PASSWORD', '').lower() in ('1', 'true', 'yes'):
+                    self.stdout.write(
+                        self.style.WARNING(
+                            f'Generated password: {password}\n'
+                            'Set DJANGO_SUPERUSER_PASSWORD to specify your own password.'
+                        )
                     )
-                )
+                else:
+                    self.stdout.write(
+                        self.style.WARNING(
+                            'A superuser was created with a generated password. '
+                            'For security reasons, the password is not printed.\n'
+                            'Set DJANGO_SUPERUSER_PASSWORD to specify your own password, '
+                            'or set DJANGO_SUPERUSER_PRINT_PASSWORD=true to display it.'
+                        )
+                    )
         else:
             self.stdout.write('A superuser already exists. No action taken.')

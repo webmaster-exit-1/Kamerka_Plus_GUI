@@ -801,17 +801,15 @@ def nmap_host_worker(host_arg, max_reader, search):
     a = max_reader.get(host_arg.address)
     if a is None:
         logger.warning("MaxMind lookup returned no result for IP: %s", host_arg.address)
-        return
+        a = {}
     location = a.get('location') or {}
     lat = location.get('latitude')
     lon = location.get('longitude')
     if lat is None or lon is None:
         logger.warning("Missing latitude/longitude in MaxMind data for IP: %s", host_arg.address)
-        return
     country = a.get('country') or {}
     country_code = country.get('iso_code', '')
-    print(lat)
-    print(lon)
+    logger.debug("lat=%s lon=%s", lat, lon)
     for ports in host_arg.services:
         if ports.state == 'open':
             ports_list.append(ports.port)
@@ -819,10 +817,11 @@ def nmap_host_worker(host_arg, max_reader, search):
             ports_list.append("None")
 
     ports_string = ', '.join(str(e) for e in ports_list)
-    print(ports_string)
+    logger.debug("ports_string length=%d", len(ports_string))
     device = Device(search=search, ip=host_arg.address, product="", org="",
                     data="", port=ports_string, type="NMAP", city="NMAP",
-                    lat=lat, lon=lon,
+                    lat=lat if lat is not None else "",
+                    lon=lon if lon is not None else "",
                     country_code=country_code, query="NMAP SCAN", category="NMAP",
                     vulns="", indicator="", hostnames=hostname, screenshot="")
     device.save()
