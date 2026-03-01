@@ -181,31 +181,19 @@
 
                                                                                 <div class="panel panel-default">
                                 <div class="panel-heading ui-draggable-handle">
-                                    <h3 class="panel-title">Tweets</h3>
+                                    <h3 class="panel-title">Nuclei Scan</h3>
                                 </div>
                                 <div class="panel-body">
-                                    <button type="button" id="nearby_twitter" class="btn btn-primary active" >Scan</button></a>
-
-                                    <button type="button" id="twitter_show" class="btn btn-primary active">Show</button></a>
-
-                                                                        <button type="button" id="markers_twitter" class="btn btn-primary active">Add</button>
-
-                        <div id="twitter_results"></div>
-                                </div>
-                            </div>
-                                        <div class="panel panel-default">
-                                <div class="panel-heading ui-draggable-handle">
-                                    <h3 class="panel-title">Flickr photos</h3>
-                                </div>
-                                <div class="panel-body">
-                                    <button type="button" id="nearby_flickr" class="btn btn-primary active">Scan</button></a>
-                                                                        <button type="button" id="flickr_show" class="btn btn-primary active">Show</button></a>
-
-                                                                        <button type="button" id="markers_flickr" class="btn btn-primary active">Add</button>
-
-                                    <div id="results"></div>
-
-
+                                    <select id="nuclei_template_select" style="width: 300px; margin-bottom: 8px;">
+                                        <option value="">-- Select Template --</option>
+                                        {% for tpl in nuclei_templates %}
+                                        <option value="{{ tpl.path }}">{{ tpl.label }}</option>
+                                        {% endfor %}
+                                    </select><br>
+                                    <button type="button" id="nuclei_scan_btn" class="btn btn-primary active">Scan</button>
+                                    <button type="button" id="nuclei_show_btn" class="btn btn-primary active">Show Results</button>
+                                    <progress id="progress-bar-nuclei" value="0" max="100" style="display:none; margin-bottom: 1em;"></progress>
+                                    <div id="nuclei_results" style="display:none;"></div>
                                 </div>
                             </div>
                                 </div>
@@ -542,23 +530,6 @@ library.json = {
     });;
 
 </script>
-                <script>
-                    var marker;
-            $('#markers_flickr').on('click', function(){
-        $.ajax({
-            url: "/get_flickr_coordinates/{{device.id}}",
-            type: "get",
-            success: function(response) {
-
-            $.each(response, function(key, val) {
-            var m = L.marker([val.fields.lat, val.fields.lon]).addTo(map);
-            m.bindPopup("<div style=width:600px; height:640px><img src="+val.fields.url+" width='600px' height='640'></div>");
-            })
-            }
-        })
-  });
-</script>
-
         <script>
 var marker;
             $('#add_nearby_devices').on('click', function(){
@@ -574,29 +545,7 @@ var marker;
         })
   });
         </script>
-<script>
 
-
-    var pgrbar4 = $('#progress-bar4');
-
-    $('#nearby_twitter').on('click', function(){
-        $.ajax({
-        type: "GET",
-        url: "/{{device.id}}/twitter/nearby",
-        success: function (data) {
-                if (data.task_id != null) {
-                    get_task_info(data.task_id,pgrbar4);
-                }
-                else if (data.Error){
-                noty({text: data.Error , layout: 'topRight', type: 'error', timeout: 1000});
-                }
-            },
-            error: function (data) {
-                console.log("Something went wrong!");
-            }
-        });
-        return false;
-    });</script>
 
             <script type="text/javascript">
     var pgrbar2 = $('#progress-bar2');
@@ -821,27 +770,8 @@ $('#binaryedge_show').on('click', function() {
                     }
                 })
 
-var frm = $('#generate-user-form');
-    var pgrbar = $('#progress-bar');
-    $('#nearby_flickr').on('click', function(){
-        $.ajax({
-        type: "GET",
-        url: "/{{device.id}}/flickr/nearby",
-        success: function (data) {
-                if (data.task_id != null) {
-                    get_task_info(data.task_id,pgrbar);
-                }
-                else if (data.Error){
-                noty({text: data.Error , layout: 'topRight', type: 'error', timeout: 1000});
-                }
-            },
-            error: function (data) {
-                console.log("Something went wrong!");
-            }
-        });
-        return false;
-    });
 
+var frm = $('#generate-user-form');
 function get_task_info(task_id,pgrbar) {
         $.ajax({
             type: 'get',
@@ -872,36 +802,54 @@ function get_task_info(task_id,pgrbar) {
         });
     }
 
-$('#twitter_show').on('click', function(){
-var x = document.getElementById("twitter_results");
-if (x.style.display === "none") {
-    x.style.display = "block";
-  } else {
-    x.style.display = "none";
-  } if(x.innerHTML == ""){
+$('#nuclei_scan_btn').on('click', function(){
+    var tpl = $('#nuclei_template_select').val();
+    var pgrbar_nuclei = $('#progress-bar-nuclei');
+    var url = "/{{device.id}}/nuclei/scan";
+    if (tpl) { url += "?templates_dir=" + encodeURIComponent(tpl); }
+    $.ajax({
+        type: "GET",
+        url: url,
+        success: function (data) {
+            if (data.task_id != null) {
+                pgrbar_nuclei.css('display', 'block');
+                get_task_info(data.task_id, pgrbar_nuclei);
+                noty({text: "Nuclei scan started" , layout: 'topRight', type: 'success', timeout: 3000});
+            } else if (data.Error) {
+                noty({text: data.Error , layout: 'topRight', type: 'error', timeout: 3000});
+            }
+        },
+        error: function (data) {
+            console.log("Something went wrong!");
+        }
+    });
+    return false;
+});
+
+$('#nuclei_show_btn').on('click', function(){
+    var x = document.getElementById("nuclei_results");
+    if (x.style.display === "none") {
+        x.style.display = "block";
+    } else {
+        x.style.display = "none";
+    }
+    if (x.innerHTML == "") {
         $.ajax({
-            url: "/{{device.id}}/twitter/show",
+            url: "/get_nuclei_results/{{device.id}}",
             type: "get",
             success: function(response) {
-            if (response.length==0) {
-                            noty({text: "No records" , layout: 'topRight', type: 'error', timeout: 1000});
-}
-            else {
-            $.each(response, function(key, val) {
-              $.each(val.fields, function(fieldname, field) {
-                 // response is form in html format
-                 if (fieldname=="device"){ {} }
-                 else {
-                 $("#twitter_results").append("<p><b>" + fieldname + ' </b><br> ' + field + " </p>");
-}
-            }  );$("#twitter_results").append('------------------');
-
-              }
-              )
-            }}
-        })
-        }
-  });
+                if (response.length == 0) {
+                    noty({text: "No nuclei results" , layout: 'topRight', type: 'error', timeout: 2000});
+                } else {
+                    $.each(response, function(key, val) {
+                        var f = val.fields;
+                        $("#nuclei_results").append("<p><b>" + f.name + "</b> [" + f.severity + "]<br>" + f.matched_at + "<br>" + f.description + "</p>");
+                    });
+                }
+            }
+        });
+    }
+});
 
 
 $('#bosch_show').on('click', function(){
@@ -923,33 +871,6 @@ if (x.style.display === "none") {
                  $("#bosch_results").append("<p><b>" + fieldname + ' </b><br> ' + field + " </p>");
 }
             }  );$("#bosch_results").append('------------------');
-
-              }
-              )
-            }
-        })
-        }
-  });
-
-$('#flickr_show').on('click', function(){
-var x = document.getElementById("results");
-if (x.style.display === "none") {
-    x.style.display = "block";
-  } else {
-    x.style.display = "none";
-  } if(x.innerHTML == ""){
-        $.ajax({
-            url: "/get_flickr_results/{{device.id}}",
-            type: "get",
-            success: function(response) {
-            $.each(response, function(key, val) {
-              $.each(val.fields, function(fieldname, field) {
-                 // response is form in html format
-                 if (fieldname=="device"){ {} }
-                 else {
-                 $("#results").append("<p><b>" + fieldname + ' </b><br> ' + field + " </p>");
-}
-            }  );$("#results").append('------------------');
 
               }
               )
