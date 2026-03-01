@@ -3,6 +3,7 @@ import json
 import os
 from collections import Counter
 import requests
+from django.conf import settings
 from django.core.files.storage import FileSystemStorage
 from .forms import UploadFileForm
 import pycountry
@@ -413,12 +414,24 @@ def device(request, id, device_id, ip):
     else:
         info = ""
 
+    nuclei_templates_dir = os.path.join(settings.BASE_DIR, 'nuclei_templates')
+    nuclei_template_list = []
+    if os.path.isdir(nuclei_templates_dir):
+        for root, dirs, files in os.walk(nuclei_templates_dir):
+            for fname in sorted(files):
+                if fname.endswith('.yaml') or fname.endswith('.yml'):
+                    full_path = os.path.join(root, fname)
+                    rel_path = os.path.relpath(full_path, settings.BASE_DIR)
+                    label = os.path.relpath(full_path, nuclei_templates_dir)
+                    nuclei_template_list.append({'label': label, 'path': rel_path})
+
     context = {'device': all_devices,
                'nearby': nearby,
                "shodan": shodan,
                "wappalyzer": wappalyzer,
                "nuclei": nuclei,
-               "passwd": info}
+               "passwd": info,
+               "nuclei_templates": nuclei_template_list}
 
     return render(request, 'device.html', context)
 
