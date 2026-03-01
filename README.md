@@ -85,6 +85,15 @@ https://www.icscybersecurityconference.com/intelligence-gathering-on-u-s-critica
 
 **Make sure your API keys are correct and put them in `keys.json` in the main directory.**
 
+### GeoLite2 Database (Required for NMAP scan)
+
+NMAP XML uploads require MaxMind's GeoLite2 City database for IP geolocation.
+The `.mmdb` file is not bundled in this repository — download it for free:
+
+1. Register for a free MaxMind account at https://www.maxmind.com/en/geolite2/signup
+2. After logging in, go to **Download Databases** → **GeoLite2 City** → **Download (mmdb)**
+3. Extract the archive and place **`GeoLite2-City.mmdb`** in the project root (`Kamerka_Plus_GUI/`)
+
 ### Run
 ```bash
 git clone https://github.com/webmaster-exit-1/Kamerka_Plus_GUI.git

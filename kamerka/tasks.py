@@ -833,7 +833,15 @@ def validate_nmap(file):
 
 
 def validate_maxmind():
-    maxminddb.open_database('GeoLite2-City.mmdb')
+    try:
+        maxminddb.open_database('GeoLite2-City.mmdb')
+    except FileNotFoundError:
+        raise FileNotFoundError(
+            "GeoLite2-City.mmdb not found in the project root. "
+            "Download it for free from MaxMind: "
+            "https://dev.maxmind.com/geoip/geolite2-free-geolocation-data "
+            "and place GeoLite2-City.mmdb in the Kamerka_Plus_GUI root directory."
+        )
 
 
 @shared_task(bind=True)
