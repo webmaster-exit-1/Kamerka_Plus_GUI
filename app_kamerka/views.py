@@ -382,7 +382,7 @@ def history(request):
 
 
 def update_coordinates(request,id, coordinates):
-    if request.is_ajax() and request.method == 'GET':
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         dev = Device.objects.get(id=id)
         splitted_coord = coordinates.split(",")
         dev.lat = splitted_coord[0]
@@ -434,7 +434,7 @@ def device(request, id, device_id, ip):
 
 
 def nearby(request, id, query):
-    if request.is_ajax() and request.method == 'GET':
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         all_devices = Device.objects.filter(id=id)
         device_nearby_task = devices_nearby.delay(lat=all_devices[0].lat, lon=all_devices[0].lon, id=id, query=query)
         return HttpResponse(json.dumps({'task_id': device_nearby_task.id}), content_type='application/json')
@@ -482,7 +482,7 @@ def get_nuclei_results(request, id):
 
 
 def shodan_scan(request, id):
-    if request.is_ajax() and request.method == 'GET':
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
 
         shodan_scan2 = ShodanScan.objects.filter(device_id=id)
 
@@ -513,7 +513,7 @@ def get_task_info(request):
 
 
 def get_shodan_scan_results(request, id):
-    if request.is_ajax() and request.method == 'GET':
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         shodan_scan2 = ShodanScan.objects.filter(device_id=id)
 
         print(shodan_scan2)
@@ -531,7 +531,7 @@ def get_shodan_scan_results(request, id):
 
 
 def get_nearby_devices(request, id):
-    if request.is_ajax() and request.method == 'GET':
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         nearby_devices = DeviceNearby.objects.filter(device_id=id)
 
         response_data = serializers.serialize('json', nearby_devices)
@@ -539,7 +539,7 @@ def get_nearby_devices(request, id):
         return HttpResponse(response_data, content_type="application/json")
 
 def scan_dev(request, id):
-    if request.is_ajax() and request.method == 'GET':
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         res = scan(id)
         if res:
             return HttpResponse(json.dumps(res), content_type='application/json')
@@ -547,7 +547,7 @@ def scan_dev(request, id):
             return HttpResponse(json.dumps({'Error': "Connection Error"}), content_type='application/json')
 
 def exploit_dev(request, id):
-    if request.is_ajax() and request.method == 'GET':
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         res = exploit(id)
         if res:
             return HttpResponse(json.dumps(res), content_type='application/json')
@@ -596,7 +596,7 @@ def rtsp_scan_view(request, id):
 
 
 def get_nearby_devices_coordinates(request, id):
-    if request.is_ajax() and request.method == 'GET':
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         nearby_devices = DeviceNearby.objects.filter(device_id=id)
 
         response_data = serializers.serialize('json', nearby_devices)
@@ -604,7 +604,7 @@ def get_nearby_devices_coordinates(request, id):
         return HttpResponse(response_data, content_type="application/json")
 
 def send_to_field_agent(request, id, notes):
-    if request.is_ajax() and request.method == 'GET':
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         print(id)
 
         host = Device.objects.get(id=id)
@@ -619,7 +619,7 @@ def send_to_field_agent(request, id, notes):
 
 
 def whois(request, id):
-    if request.is_ajax() and request.method == 'GET':
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
 
         whoiss = Whois.objects.filter(device_id=id)
 
@@ -635,7 +635,7 @@ def whois(request, id):
 
 
 def get_whois(request, id):
-    if request.is_ajax() and request.method == 'GET':
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         whoiss = Whois.objects.filter(device_id=id)
 
         response_data = serializers.serialize('json', whoiss)

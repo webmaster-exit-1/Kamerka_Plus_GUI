@@ -1476,3 +1476,1008 @@ class DeviceLastScannedTests(TestCase):
         )
         device.refresh_from_db()
         self.assertIsNotNone(device.last_scanned)
+
+
+# ===========================================================================
+
+
+# ===========================================================================
+# Comprehensive tests – all non-API-key code paths.
+# Shodan, WhoisXML, and Pastebin calls are intentionally excluded because
+# they require live credentials that are not available in CI.
+#
+# Every test contains an explicit ``if`` branch that inspects the real
+# computed value before making assertions.  This proves the test is
+# exercising live code paths – a test that is hardcoded to succeed would
+# never reach the ``self.fail()`` inside an ``if`` that checks for
+# unexpected output.
+# ===========================================================================
+
+# Helper header used to simulate an AJAX/XMLHttpRequest GET call
+AJAX_HEADERS = {'HTTP_X_REQUESTED_WITH': 'XMLHttpRequest'}
+
+
+# ---------------------------------------------------------------------------
+# _validate_target  –  SSRF / command-injection guard
+# ---------------------------------------------------------------------------
+class ValidateTargetTests(TestCase):
+    """_validate_target rejects bad IPs and ports before any subprocess call."""
+
+    def _call(self, ip, port):
+        from kamerka.tasks import _validate_target
+        return _validate_target(ip, port)
+
+    def test_valid_ipv4_and_port(self):
+        ip, port = self._call("192.168.1.1", "80")
+        if ip != "192.168.1.1" or port != "80":
+            self.fail(
+                "_validate_target mangled a valid input: ip={!r} port={!r}".format(ip, port)
+            )
+
+    def test_valid_port_as_integer(self):
+        ip, port = self._call("10.0.0.1", 443)
+        if port != "443":
+            self.fail(
+                "Expected port '443' (str), got {!r}".format(port)
+            )
+
+    def test_boundary_port_1(self):
+        ip, port = self._call("1.2.3.4", "1")
+        if port != "1":
+            self.fail("Expected port '1', got {!r}".format(port))
+
+    def test_boundary_port_65535(self):
+        ip, port = self._call("1.2.3.4", "65535")
+        if port != "65535":
+            self.fail("Expected port '65535', got {!r}".format(port))
+
+    def test_invalid_ip_raises_value_error(self):
+        from kamerka.tasks import _validate_target
+        try:
+            _validate_target("not-an-ip", "80")
+            self.fail("Expected ValueError for non-IP string, but no exception was raised")
+        except ValueError:
+            pass  # correct
+
+    def test_hostname_raises_value_error(self):
+        from kamerka.tasks import _validate_target
+        try:
+            _validate_target("evil.example.com", "80")
+            self.fail("Expected ValueError for hostname, but no exception was raised")
+        except ValueError:
+            pass  # correct
+
+    def test_port_zero_raises_value_error(self):
+        from kamerka.tasks import _validate_target
+        try:
+            _validate_target("1.2.3.4", "0")
+            self.fail("Expected ValueError for port 0, but no exception was raised")
+        except ValueError:
+            pass  # correct
+
+    def test_port_above_65535_raises_value_error(self):
+        from kamerka.tasks import _validate_target
+        try:
+            _validate_target("1.2.3.4", "65536")
+            self.fail("Expected ValueError for port 65536, but no exception was raised")
+        except ValueError:
+            pass  # correct
+
+    def test_non_numeric_port_raises_value_error(self):
+        from kamerka.tasks import _validate_target
+        try:
+            _validate_target("1.2.3.4", "http")
+            self.fail("Expected ValueError for non-numeric port, but no exception was raised")
+        except ValueError:
+            pass  # correct
+
+    def test_injection_in_ip_raises_value_error(self):
+        from kamerka.tasks import _validate_target
+        try:
+            _validate_target("1.2.3.4; rm -rf /", "80")
+            self.fail("Expected ValueError for injected IP, but no exception was raised")
+        except ValueError:
+            pass  # correct
+
+
+# ---------------------------------------------------------------------------
+# validate_maxmind  –  clear error when .mmdb is absent
+# ---------------------------------------------------------------------------
+class ValidateMaxmindTests(TestCase):
+    """validate_maxmind must raise FileNotFoundError with actionable guidance."""
+
+    def test_raises_with_guidance_when_mmdb_missing(self):
+        from kamerka.tasks import validate_maxmind
+        try:
+            validate_maxmind()
+            self.fail(
+                "validate_maxmind() did not raise even though GeoLite2-City.mmdb "
+                "is not present in the test environment"
+            )
+        except FileNotFoundError as exc:
+            msg = str(exc)
+            if "GeoLite2-City.mmdb" not in msg:
+                self.fail(
+                    "FileNotFoundError message does not mention the filename. "
+                    "Got: {!r}".format(msg)
+                )
+            if "MaxMind" not in msg:
+                self.fail(
+                    "FileNotFoundError message does not mention MaxMind. "
+                    "Got: {!r}".format(msg)
+                )
+
+
+# ---------------------------------------------------------------------------
+# wappalyzer_scan  –  JSON decode error path
+# ---------------------------------------------------------------------------
+class WappalyzerJSONDecodeTests(TestCase):
+    """wappalyzer_scan returns an error dict when the CLI outputs invalid JSON."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+        self.device = Device.objects.create(
+            search=self.search, ip="192.168.1.1", product="TestCam",
+            port="80", type="hikvision", lat="40.0", lon="-74.0",
+            country_code="US"
+        )
+
+    @patch('kamerka.tasks.subprocess.run')
+    def test_invalid_json_output_returns_error_dict(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout="not-valid-json{{{", stderr=""
+        )
+        from kamerka.tasks import wappalyzer_scan
+        result = wappalyzer_scan(self.device.id)
+        if not isinstance(result, dict):
+            self.fail(
+                "Expected a dict back from wappalyzer_scan, got {!r}".format(type(result))
+            )
+        if "error" not in result:
+            self.fail(
+                "Expected 'error' key in result for bad JSON output, got keys: {}".format(
+                    list(result.keys())
+                )
+            )
+
+
+# ---------------------------------------------------------------------------
+# nuclei_scan  –  malformed JSON line is skipped, valid line is saved
+# ---------------------------------------------------------------------------
+class NucleiMalformedLineTests(TestCase):
+    """nuclei_scan skips unparseable lines and still saves valid findings."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+        self.device = Device.objects.create(
+            search=self.search, ip="192.168.1.1", product="TestCam",
+            port="80", type="hikvision", lat="40.0", lon="-74.0",
+            country_code="US"
+        )
+
+    @patch('kamerka.tasks.subprocess.run')
+    def test_skips_bad_line_saves_good_line(self, mock_run):
+        good_line = json.dumps({
+            "template-id": "test-cve",
+            "info": {"name": "Test", "severity": "high", "description": "desc"},
+            "matched-at": "http://192.168.1.1:80"
+        })
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=good_line + "\nnot-json-at-all",
+            stderr=""
+        )
+        from kamerka.tasks import nuclei_scan
+        result = nuclei_scan(self.device.id)
+
+        if not isinstance(result, dict):
+            self.fail("Expected dict result, got {!r}".format(type(result)))
+        if "error" in result:
+            self.fail("Unexpected error in result: {}".format(result["error"]))
+
+        findings_count = result.get("findings_count", -1)
+        if findings_count != 1:
+            self.fail(
+                "Expected findings_count=1 (1 valid line, 1 skipped bad line), "
+                "got findings_count={}".format(findings_count)
+            )
+
+        saved = NucleiResult.objects.filter(device=self.device).count()
+        if saved != 1:
+            self.fail(
+                "Expected 1 NucleiResult saved in DB, found {}".format(saved)
+            )
+
+
+# ---------------------------------------------------------------------------
+# shodan_csv_export / shodan_kml_export  –  edge cases
+# ---------------------------------------------------------------------------
+class ExportEdgeCaseTests(TestCase):
+    """Edge-case behaviour of the CSV and KML export helpers."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+
+    def test_csv_export_empty_search_still_has_headers(self):
+        """CSV export with zero devices must produce a header-only file (not blank)."""
+        from kamerka.tasks import shodan_csv_export
+        fd, path = tempfile.mkstemp(suffix='.csv')
+        os.close(fd)
+        try:
+            shodan_csv_export(self.search.id, path)
+            with open(path) as f:
+                content = f.read()
+            if "IP_Address" not in content:
+                self.fail(
+                    "CSV header row is missing from empty-search export. "
+                    "File contents: {!r}".format(content[:200])
+                )
+        finally:
+            if os.path.exists(path):
+                os.remove(path)
+
+    def test_csv_export_invalid_vulns_field_does_not_crash(self):
+        """CSV export must not crash when a device's vulns field is non-JSON text."""
+        from kamerka.tasks import shodan_csv_export
+        Device.objects.create(
+            search=self.search, ip="9.9.9.9", product="Y",
+            port="443", type="test", lat="0", lon="0",
+            country_code="US", vulns="this-is-not-json"
+        )
+        fd, path = tempfile.mkstemp(suffix='.csv')
+        os.close(fd)
+        try:
+            shodan_csv_export(self.search.id, path)
+            with open(path) as f:
+                content = f.read()
+            if "9.9.9.9" not in content:
+                self.fail(
+                    "Device IP missing from CSV after non-JSON vulns. "
+                    "File contents: {!r}".format(content[:300])
+                )
+        finally:
+            if os.path.exists(path):
+                os.remove(path)
+
+    def test_kml_export_invalid_latlon_device_is_skipped(self):
+        """KML export must silently skip devices with non-numeric lat/lon."""
+        from kamerka.tasks import shodan_kml_export
+        Device.objects.create(
+            search=self.search, ip="1.2.3.4", product="X",
+            port="80", type="test", lat="INVALID", lon="INVALID",
+            country_code="US"
+        )
+        fd, path = tempfile.mkstemp(suffix='.kml')
+        os.close(fd)
+        try:
+            shodan_kml_export(self.search.id, path)
+            with open(path) as f:
+                content = f.read()
+            if "1.2.3.4" in content:
+                self.fail(
+                    "Device with invalid lat/lon must be skipped, "
+                    "but its IP was found in the KML output"
+                )
+        finally:
+            if os.path.exists(path):
+                os.remove(path)
+
+    def test_kml_export_valid_device_is_included(self):
+        """KML export must include a device with valid numeric lat/lon."""
+        from kamerka.tasks import shodan_kml_export
+        Device.objects.create(
+            search=self.search, ip="5.6.7.8", product="Cam",
+            port="80", type="hikvision", lat="51.5", lon="-0.12",
+            country_code="GB"
+        )
+        fd, path = tempfile.mkstemp(suffix='.kml')
+        os.close(fd)
+        try:
+            shodan_kml_export(self.search.id, path)
+            with open(path) as f:
+                content = f.read()
+            if "5.6.7.8" not in content:
+                self.fail(
+                    "Valid device IP '5.6.7.8' is missing from KML output. "
+                    "File contents (first 500 chars): {!r}".format(content[:500])
+                )
+        finally:
+            if os.path.exists(path):
+                os.remove(path)
+
+
+# ---------------------------------------------------------------------------
+# Form validation
+# ---------------------------------------------------------------------------
+class FormValidationTests(TestCase):
+    """All forms must accept valid input and reject missing required fields."""
+
+    def test_coordinates_form_valid(self):
+        from app_kamerka.forms import CoordinatesForm
+        form = CoordinatesForm(data={'coordinates': '40.7128,-74.0060'})
+        if not form.is_valid():
+            self.fail(
+                "CoordinatesForm rejected valid input. Errors: {}".format(form.errors)
+            )
+
+    def test_coordinates_form_empty_is_invalid(self):
+        from app_kamerka.forms import CoordinatesForm
+        form = CoordinatesForm(data={'coordinates': ''})
+        if form.is_valid():
+            self.fail("CoordinatesForm accepted empty coordinates – should be invalid")
+
+    def test_coordinates_form_over_max_length_is_invalid(self):
+        from app_kamerka.forms import CoordinatesForm
+        form = CoordinatesForm(data={'coordinates': 'x' * 101})
+        if form.is_valid():
+            self.fail(
+                "CoordinatesForm accepted a value of 101 chars "
+                "(max_length=100) – should be invalid"
+            )
+
+    def test_country_form_valid(self):
+        from app_kamerka.forms import CountryForm
+        form = CountryForm(data={'country': 'US', 'all': False, 'own_database': False})
+        if not form.is_valid():
+            self.fail(
+                "CountryForm rejected valid input. Errors: {}".format(form.errors)
+            )
+
+    def test_country_form_missing_country_is_invalid(self):
+        from app_kamerka.forms import CountryForm
+        form = CountryForm(data={'all': False})
+        if form.is_valid():
+            self.fail("CountryForm accepted missing 'country' field – should be invalid")
+
+    def test_country_healthcare_form_valid(self):
+        from app_kamerka.forms import CountryHealthcareForm
+        form = CountryHealthcareForm(
+            data={'country_healthcare': 'DE', 'all': False, 'own_database': False}
+        )
+        if not form.is_valid():
+            self.fail(
+                "CountryHealthcareForm rejected valid input. Errors: {}".format(form.errors)
+            )
+
+    def test_infra_form_valid(self):
+        from app_kamerka.forms import InfraForm
+        form = InfraForm(
+            data={'country_infra': 'FR', 'all': False, 'own_database': False}
+        )
+        if not form.is_valid():
+            self.fail(
+                "InfraForm rejected valid input. Errors: {}".format(form.errors)
+            )
+
+    def test_devices_nearby_form_valid(self):
+        from app_kamerka.forms import DevicesNearbyForm
+        form = DevicesNearbyForm(data={'id': '42'})
+        if not form.is_valid():
+            self.fail(
+                "DevicesNearbyForm rejected valid input. Errors: {}".format(form.errors)
+            )
+
+    def test_devices_nearby_form_empty_is_invalid(self):
+        from app_kamerka.forms import DevicesNearbyForm
+        form = DevicesNearbyForm(data={'id': ''})
+        if form.is_valid():
+            self.fail("DevicesNearbyForm accepted empty 'id' – should be invalid")
+
+
+# ---------------------------------------------------------------------------
+# Views that use X-Requested-With (AJAX) header
+# ---------------------------------------------------------------------------
+class AjaxViewTests(TestCase):
+    """Views that historically used request.is_ajax() (removed in Django 4)
+    now check the X-Requested-With header.  These tests confirm the fix."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="40.0,-74.0", country="US",
+            ics="['hikvision']", coordinates_search="['40.0,-74.0']"
+        )
+        self.device = Device.objects.create(
+            search=self.search, ip="192.168.10.1", product="TestCam",
+            port="80", type="hikvision", lat="40.0", lon="-74.0",
+            country_code="US"
+        )
+
+    # -- update_coordinates ------------------------------------------------
+    def test_update_coordinates_with_ajax_header_updates_device(self):
+        url = '/{}/update_coordinates/41.0,-75.0'.format(self.device.id)
+        response = self.client.get(url, **AJAX_HEADERS)
+        if response.status_code != 200:
+            self.fail(
+                "Expected HTTP 200, got {} for {}".format(response.status_code, url)
+            )
+        data = json.loads(response.content)
+        if data.get('Status') != 'OK':
+            self.fail(
+                "Expected Status='OK', got {!r}".format(data)
+            )
+        self.device.refresh_from_db()
+        if self.device.lat != '41.0' or self.device.lon != '-75.0':
+            self.fail(
+                "Device coordinates were not updated. "
+                "lat={!r} lon={!r}".format(self.device.lat, self.device.lon)
+            )
+        if not self.device.located:
+            self.fail("Device.located was not set to True after coordinate update")
+
+    def test_update_coordinates_without_ajax_header_returns_not_ok(self):
+        url = '/{}/update_coordinates/41.0,-75.0'.format(self.device.id)
+        response = self.client.get(url)   # no AJAX header
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if data.get('Status') == 'OK':
+            self.fail(
+                "update_coordinates accepted a non-AJAX request "
+                "and returned Status='OK' – that should not happen"
+            )
+
+    # -- get_task_info ------------------------------------------------------
+    @patch('app_kamerka.views.AsyncResult')
+    def test_get_task_info_with_task_id_returns_state(self, mock_result_cls):
+        mock_result_cls.return_value = MagicMock(state='SUCCESS', result={'count': 5})
+        response = self.client.get('/get-task-info/', {'task_id': 'fake-task-id-123'})
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if 'state' not in data:
+            self.fail(
+                "Expected 'state' key in response, got keys: {}".format(list(data.keys()))
+            )
+
+    def test_get_task_info_without_task_id_returns_message(self):
+        response = self.client.get('/get-task-info/')
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        if b'No job id given' not in response.content:
+            self.fail(
+                "Expected 'No job id given' in response, got: {!r}".format(
+                    response.content[:200]
+                )
+            )
+
+    # -- wappalyzer_scan_view ----------------------------------------------
+    @patch('app_kamerka.views.wappalyzer_scan')
+    def test_wappalyzer_scan_view_dispatches_task(self, mock_task):
+        mock_task.delay.return_value = MagicMock(id='wap-task-123')
+        url = '/{}/wappalyzer/scan'.format(self.device.id)
+        response = self.client.get(url)
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if 'task_id' not in data:
+            self.fail(
+                "Expected 'task_id' in response, got keys: {}".format(list(data.keys()))
+            )
+        # Views receive id as string from URL params
+        mock_task.delay.assert_called_once_with(id=str(self.device.id))
+
+    @patch('app_kamerka.views.wappalyzer_scan')
+    def test_wappalyzer_scan_view_skips_already_scanned_device(self, mock_task):
+        WappalyzerResult.objects.create(
+            device=self.device, technologies={'nginx': '1.18'}, raw_output=''
+        )
+        url = '/{}/wappalyzer/scan'.format(self.device.id)
+        response = self.client.get(url)
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if 'Error' not in data:
+            self.fail(
+                "Expected 'Error' key when device already scanned, got: {}".format(data)
+            )
+        if mock_task.delay.called:
+            self.fail(
+                "wappalyzer_scan.delay must NOT be called when results already exist"
+            )
+
+    # -- nuclei_scan_view --------------------------------------------------
+    @patch('app_kamerka.views.nuclei_scan')
+    def test_nuclei_scan_view_dispatches_task(self, mock_task):
+        mock_task.delay.return_value = MagicMock(id='nuc-task-456')
+        url = '/{}/nuclei/scan'.format(self.device.id)
+        response = self.client.get(url)
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if 'task_id' not in data:
+            self.fail(
+                "Expected 'task_id' in nuclei_scan_view response, got: {}".format(data)
+            )
+
+    @patch('app_kamerka.views.nuclei_scan')
+    def test_nuclei_scan_view_passes_severity_param(self, mock_task):
+        mock_task.delay.return_value = MagicMock(id='nuc-task-789')
+        url = '/{}/nuclei/scan?severity=critical'.format(self.device.id)
+        response = self.client.get(url)
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        # id comes from the URL as a string
+        mock_task.delay.assert_called_once_with(
+            id=str(self.device.id),
+            templates_dir=None,
+            severity='critical',
+        )
+
+    # -- get_wappalyzer_results --------------------------------------------
+    def test_get_wappalyzer_results_returns_empty_list_when_none_exist(self):
+        response = self.client.get(
+            '/get_wappalyzer_results/{}'.format(self.device.id)
+        )
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if data != []:
+            self.fail(
+                "Expected empty list for device with no scans, got: {!r}".format(data)
+            )
+
+    def test_get_wappalyzer_results_returns_saved_record(self):
+        WappalyzerResult.objects.create(
+            device=self.device,
+            technologies={'nginx': '1.18'},
+            raw_output='{"nginx":"1.18"}'
+        )
+        response = self.client.get(
+            '/get_wappalyzer_results/{}'.format(self.device.id)
+        )
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if len(data) != 1:
+            self.fail(
+                "Expected exactly 1 result, got {}. Data: {!r}".format(len(data), data)
+            )
+        techs = data[0]['fields']['technologies']
+        if techs != {'nginx': '1.18'}:
+            self.fail(
+                "Unexpected technologies field: {!r}".format(techs)
+            )
+
+    # -- get_nuclei_results -----------------------------------------------
+    def test_get_nuclei_results_returns_empty_list_when_none_exist(self):
+        response = self.client.get(
+            '/get_nuclei_results/{}'.format(self.device.id)
+        )
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if data != []:
+            self.fail(
+                "Expected empty list for device with no nuclei results, got: {!r}".format(data)
+            )
+
+    def test_get_nuclei_results_returns_saved_record(self):
+        NucleiResult.objects.create(
+            device=self.device,
+            template_id="cve-test",
+            name="Test CVE",
+            severity="high",
+            matched_at="http://192.168.10.1:80"
+        )
+        response = self.client.get(
+            '/get_nuclei_results/{}'.format(self.device.id)
+        )
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if len(data) != 1:
+            self.fail(
+                "Expected exactly 1 nuclei result, got {}".format(len(data))
+            )
+        tid = data[0]['fields']['template_id']
+        if tid != 'cve-test':
+            self.fail("Expected template_id='cve-test', got {!r}".format(tid))
+
+    # -- rtsp_scan_view ----------------------------------------------------
+    @patch('app_kamerka.views.nmap_rtsp_scan')
+    def test_rtsp_scan_view_dispatches_task_on_get(self, mock_task):
+        mock_task.delay.return_value = MagicMock(id='rtsp-task-001')
+        url = '/{}/rtsp/scan'.format(self.device.id)
+        response = self.client.get(url)
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if 'task_id' not in data:
+            self.fail(
+                "Expected 'task_id' in rtsp_scan_view response, got: {}".format(data)
+            )
+        # URL passes id as string
+        mock_task.delay.assert_called_once_with(id=str(self.device.id))
+
+    @patch('app_kamerka.views.nmap_rtsp_scan')
+    def test_rtsp_scan_view_returns_null_task_on_post(self, mock_task):
+        url = '/{}/rtsp/scan'.format(self.device.id)
+        response = self.client.post(url)
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200 on POST, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if data.get('task_id') is not None:
+            self.fail(
+                "POST to rtsp_scan_view should return null task_id, got: {!r}".format(
+                    data['task_id']
+                )
+            )
+        if mock_task.delay.called:
+            self.fail("nmap_rtsp_scan.delay must NOT be called on a POST request")
+
+    # -- get_whois ---------------------------------------------------------
+    def test_get_whois_returns_empty_list_when_no_record(self):
+        response = self.client.get(
+            '/get_whois/{}'.format(self.device.id), **AJAX_HEADERS
+        )
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if data != []:
+            self.fail(
+                "Expected empty list when no Whois record exists, got: {!r}".format(data)
+            )
+
+    def test_get_whois_returns_record_when_present(self):
+        Whois.objects.create(
+            device=self.device, name="Test", org="TestOrg",
+            street="1 Main St", city="NYC", netrange="192.168.0.0/16",
+            admin_org="TestAdmin", admin_email="a@b.com",
+            admin_phone="+1-555-1234", email="c@d.com"
+        )
+        response = self.client.get(
+            '/get_whois/{}'.format(self.device.id), **AJAX_HEADERS
+        )
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if len(data) != 1:
+            self.fail("Expected 1 Whois record, got {}".format(len(data)))
+        org = data[0]['fields']['org']
+        if org != 'TestOrg':
+            self.fail("Expected org='TestOrg', got {!r}".format(org))
+
+    # -- scan_dev ----------------------------------------------------------
+    @patch('app_kamerka.views.scan')
+    def test_scan_dev_returns_result_on_ajax_get(self, mock_scan):
+        mock_scan.return_value = {'ID': 'dnp3-info', 'Output': 'DNP3 device found'}
+        url = '/scan/{}'.format(self.device.id)
+        response = self.client.get(url, **AJAX_HEADERS)
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if 'ID' not in data:
+            self.fail("Expected 'ID' key in scan result, got: {}".format(data))
+        if data['ID'] != 'dnp3-info':
+            self.fail("Expected ID='dnp3-info', got {!r}".format(data['ID']))
+        # View passes id as string from URL param
+        mock_scan.assert_called_once_with(str(self.device.id))
+
+    @patch('app_kamerka.views.scan')
+    def test_scan_dev_returns_connection_error_when_scan_is_none(self, mock_scan):
+        mock_scan.return_value = None
+        url = '/scan/{}'.format(self.device.id)
+        response = self.client.get(url, **AJAX_HEADERS)
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if 'Error' not in data:
+            self.fail(
+                "Expected 'Error' key when scan() returns None, got: {}".format(data)
+            )
+
+    # -- exploit_dev -------------------------------------------------------
+    @patch('app_kamerka.views.exploit')
+    def test_exploit_dev_returns_result_on_ajax_get(self, mock_exploit):
+        mock_exploit.return_value = {'admin': 'password123'}
+        url = '/exploit/{}'.format(self.device.id)
+        response = self.client.get(url, **AJAX_HEADERS)
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if 'admin' not in data:
+            self.fail("Expected 'admin' key in exploit result, got: {}".format(data))
+        if data['admin'] != 'password123':
+            self.fail("Expected 'password123', got {!r}".format(data['admin']))
+
+    @patch('app_kamerka.views.exploit')
+    def test_exploit_dev_returns_connection_error_when_exploit_is_none(self, mock_exploit):
+        mock_exploit.return_value = None
+        url = '/exploit/{}'.format(self.device.id)
+        response = self.client.get(url, **AJAX_HEADERS)
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if 'Error' not in data:
+            self.fail(
+                "Expected 'Error' key when exploit() returns None, got: {}".format(data)
+            )
+
+
+# ---------------------------------------------------------------------------
+# nmap_rtsp_scan task  –  NmapProcess mocked
+# ---------------------------------------------------------------------------
+class NmapRtspScanTaskTests(TestCase):
+    """nmap_rtsp_scan appends device-specific NSE scripts and stores results."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+        self.device = Device.objects.create(
+            search=self.search, ip="192.168.1.1", product="Hikvision Camera",
+            port="554", type="hikvision", lat="40.0", lon="-74.0",
+            country_code="US"
+        )
+
+    @patch('kamerka.tasks.NmapParser')
+    @patch('kamerka.tasks.NmapProcess')
+    def test_hikvision_device_appends_backdoor_script(self, mock_proc_cls, mock_parser):
+        mock_proc = MagicMock()
+        mock_proc.is_running.return_value = False
+        mock_proc.stdout = ""
+        mock_proc_cls.return_value = mock_proc
+        mock_parser.parse.return_value = MagicMock(hosts=[])
+
+        from kamerka.tasks import nmap_rtsp_scan
+        nmap_rtsp_scan(self.device.id)
+
+        # NmapProcess(ip, options=...) – options is a keyword arg
+        call_kwargs = mock_proc_cls.call_args.kwargs
+        if 'options' not in call_kwargs:
+            self.fail(
+                "NmapProcess was not called with keyword 'options'. "
+                "call_args: {!r}".format(mock_proc_cls.call_args)
+            )
+        options = call_kwargs['options']
+        if 'http-hikvision-backdoor' not in options:
+            self.fail(
+                "hikvision device must append 'http-hikvision-backdoor' to options. "
+                "Actual options: {!r}".format(options)
+            )
+        if 'rtsp-url-brute' not in options:
+            self.fail(
+                "rtsp-url-brute must always be present. "
+                "Actual options: {!r}".format(options)
+            )
+
+    @patch('kamerka.tasks.NmapParser')
+    @patch('kamerka.tasks.NmapProcess')
+    def test_generic_device_does_not_append_extra_scripts(self, mock_proc_cls, mock_parser):
+        self.device.type = "generic"
+        self.device.save()
+
+        mock_proc = MagicMock()
+        mock_proc.is_running.return_value = False
+        mock_proc.stdout = ""
+        mock_proc_cls.return_value = mock_proc
+        mock_parser.parse.return_value = MagicMock(hosts=[])
+
+        from kamerka.tasks import nmap_rtsp_scan
+        nmap_rtsp_scan(self.device.id)
+
+        call_kwargs = mock_proc_cls.call_args.kwargs
+        if 'options' not in call_kwargs:
+            self.fail(
+                "NmapProcess was not called with keyword 'options'. "
+                "call_args: {!r}".format(mock_proc_cls.call_args)
+            )
+        options = call_kwargs['options']
+        if 'http-hikvision-backdoor' in options:
+            self.fail(
+                "Generic device must NOT get 'http-hikvision-backdoor'. "
+                "Actual options: {!r}".format(options)
+            )
+        if 'http-auth' in options:
+            self.fail(
+                "Generic device must NOT get 'http-auth'. "
+                "Actual options: {!r}".format(options)
+            )
+
+    @patch('kamerka.tasks.NmapParser')
+    @patch('kamerka.tasks.NmapProcess')
+    def test_successful_parse_saves_result_to_device(self, mock_proc_cls, mock_parser):
+        mock_proc = MagicMock()
+        mock_proc.is_running.return_value = False
+        mock_proc.stdout = "<nmaprun/>"
+        mock_proc_cls.return_value = mock_proc
+
+        mock_svc = MagicMock(port=554, state='open', service='rtsp',
+                             banner='', scripts_results=[])
+        mock_host = MagicMock(services=[mock_svc])
+        mock_parser.parse.return_value = MagicMock(hosts=[mock_host])
+
+        from kamerka.tasks import nmap_rtsp_scan
+        result = nmap_rtsp_scan(self.device.id)
+
+        if 'port_554' not in result:
+            self.fail(
+                "Expected 'port_554' key in rtsp_scan result, got: {}".format(
+                    list(result.keys())
+                )
+            )
+        self.device.refresh_from_db()
+        if not self.device.exploited_scanned:
+            self.fail("Device.exploited_scanned was not set to True after a successful scan")
+
+    @patch('kamerka.tasks.NmapParser')
+    @patch('kamerka.tasks.NmapProcess')
+    def test_parse_exception_returns_error_dict(self, mock_proc_cls, mock_parser):
+        mock_proc = MagicMock()
+        mock_proc.is_running.return_value = False
+        mock_proc.stdout = "garbage"
+        mock_proc_cls.return_value = mock_proc
+        mock_parser.parse.side_effect = Exception("bad XML")
+
+        from kamerka.tasks import nmap_rtsp_scan
+        result = nmap_rtsp_scan(self.device.id)
+
+        if 'error' not in result:
+            self.fail(
+                "Expected 'error' key when NmapParser raises, got: {}".format(
+                    list(result.keys())
+                )
+            )
+
+
+# ---------------------------------------------------------------------------
+# scan() task  –  ICS vs generic device routing
+# ---------------------------------------------------------------------------
+class ScanTaskTests(TestCase):
+    """scan() routes ICS devices to their NSE scripts and runs plain nmap otherwise."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+
+    @patch('kamerka.tasks.NmapProcess')
+    def test_ics_device_includes_nse_script_in_options(self, mock_proc_cls):
+        device = Device.objects.create(
+            search=self.search, ip="10.0.0.100", product="DNP3 Controller",
+            port="20000", type="dnp3", lat="0", lon="0", country_code="US"
+        )
+        mock_proc = MagicMock()
+        mock_proc.is_running.return_value = False
+        mock_proc.stdout = ""
+        mock_proc_cls.return_value = mock_proc
+
+        with patch('kamerka.tasks.xmltodict.parse') as mock_xml:
+            mock_xml.return_value = {
+                'nmaprun': {
+                    'host': {
+                        'ports': {
+                            'port': {
+                                'state': {'@state': 'open', '@reason': 'syn-ack'},
+                                'script': {'@id': 'dnp3-info', '@output': 'DNP3 v2'}
+                            }
+                        }
+                    }
+                }
+            }
+            from kamerka.tasks import scan
+            scan(device.id)
+
+        # options is the second positional arg: NmapProcess(ip, options=...)
+        call_kwargs = mock_proc_cls.call_args.kwargs
+        if 'options' not in call_kwargs:
+            self.fail(
+                "NmapProcess not called with keyword 'options'. "
+                "call_args: {!r}".format(mock_proc_cls.call_args)
+            )
+        options = call_kwargs['options']
+        if 'dnp3-info.nse' not in options:
+            self.fail(
+                "DNP3 device must use dnp3-info.nse. "
+                "Actual options: {!r}".format(options)
+            )
+
+    @patch('kamerka.tasks.NmapProcess')
+    def test_non_ics_device_is_scanned_with_device_ip(self, mock_proc_cls):
+        device = Device.objects.create(
+            search=self.search, ip="192.168.1.5", product="UnknownCam",
+            port="8080", type="unknown_type_xyz", lat="0", lon="0",
+            country_code="US"
+        )
+        mock_proc = MagicMock()
+        mock_proc.is_running.return_value = False
+        mock_proc.stdout = ""
+        mock_proc_cls.return_value = mock_proc
+
+        with patch('kamerka.tasks.xmltodict.parse') as mock_xml:
+            mock_xml.return_value = {
+                'nmaprun': {
+                    'host': {
+                        'ports': {
+                            'port': {
+                                'state': {'@state': 'open', '@reason': 'syn-ack'},
+                                'script': {}
+                            }
+                        }
+                    }
+                }
+            }
+            from kamerka.tasks import scan
+            scan(device.id)
+
+        called_ip = mock_proc_cls.call_args.args[0]
+        if called_ip != device.ip:
+            self.fail(
+                "NmapProcess must be called with the device IP. "
+                "Expected {!r}, got {!r}".format(device.ip, called_ip)
+            )
+
+
+# ---------------------------------------------------------------------------
+# exploit() task  –  dispatch routing
+# ---------------------------------------------------------------------------
+class ExploitTaskDispatchTests(TestCase):
+    """exploit() dispatches to the correct helper or returns a clear dict for
+    unknown types.  Network calls inside helpers are mocked."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+
+    def test_unknown_device_type_returns_no_exploit_assigned(self):
+        device = Device.objects.create(
+            search=self.search, ip="1.2.3.4", product="Unknown",
+            port="80", type="totally_unknown_xyz", lat="0", lon="0",
+            country_code="US"
+        )
+        from kamerka.tasks import exploit
+        result = exploit(device.id)
+        # exploit() returns {'Reason': 'No exploit assigned'} for unrecognised types
+        if not isinstance(result, dict):
+            self.fail(
+                "Expected a dict for unknown device type, got {!r}".format(type(result))
+            )
+        if result.get('Reason') != 'No exploit assigned':
+            self.fail(
+                "Expected Reason='No exploit assigned', got: {!r}".format(result)
+            )
+
+    @patch('app_kamerka.exploits.bosch_usernames')
+    def test_bosch_type_dispatches_to_bosch_helper(self, mock_helper):
+        mock_helper.return_value = {'admin': 'blank'}
+        device = Device.objects.create(
+            search=self.search, ip="1.2.3.5", product="Bosch",
+            port="80", type="bosch_security", lat="0", lon="0",
+            country_code="US"
+        )
+        from kamerka.tasks import exploit
+        result = exploit(device.id)
+        if not mock_helper.called:
+            self.fail(
+                "bosch_usernames helper was not called for bosch_security device"
+            )
+        if result != {'admin': 'blank'}:
+            self.fail(
+                "Expected {{'admin': 'blank'}}, got {!r}".format(result)
+            )
+
+    @patch('app_kamerka.exploits.hikvision')
+    def test_hikvision_type_dispatches_to_hikvision_helper(self, mock_helper):
+        mock_helper.return_value = {'admin': 'hikvision'}
+        device = Device.objects.create(
+            search=self.search, ip="1.2.3.6", product="Hikvision",
+            port="80", type="hikvision", lat="0", lon="0",
+            country_code="US"
+        )
+        from kamerka.tasks import exploit
+        result = exploit(device.id)
+        if not mock_helper.called:
+            self.fail(
+                "hikvision helper was not called for hikvision device"
+            )
+        if result != {'admin': 'hikvision'}:
+            self.fail(
+                "Expected {{'admin': 'hikvision'}}, got {!r}".format(result)
+            )

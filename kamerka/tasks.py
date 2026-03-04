@@ -1366,7 +1366,12 @@ def shodan_csv_export(search_id, output_path):
             "Device_Type": d.type,
         })
 
-    df = pd.DataFrame(records)
+    _CSV_COLUMNS = [
+        "IP_Address", "Latitude", "Longitude", "Severity_Count",
+        "Vendor_Name", "Network_Port", "Organization", "City",
+        "Country_Code", "Device_Type",
+    ]
+    df = pd.DataFrame(records, columns=_CSV_COLUMNS)
     df.to_csv(output_path, index=False)
     return output_path
 
