@@ -196,7 +196,7 @@ The standalone 3D globe viewer is a **PyQt6 desktop application** that loads dev
 ### Install the extra dependencies
 
 ```bash
-pip3 install pyvista pyvistaqt PyQt6 pyproj
+pip3 install -r requirements-3d.txt
 ```
 
 ### Launch
