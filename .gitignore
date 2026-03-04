@@ -13,3 +13,9 @@ node_modules/
 .env
 *.log
 /tmp/
+settings.json
+*.bak
+*.swp
+.DS_Store
+.idea/
+.vscode/

@@ -36,7 +36,7 @@
                             <div class="profile-image">
                             </div>
                             <div class="profile-data">
-                                  <img width=200px height=200px src="https://www.offensiveosint.io/content/images/2020/07/OffensiveOsint-logo-RGB-2.png">
+                                  <img width=200px height=200px src="{% static 'images/OffensiveOsint-logo-RGB-2.svg' %}">
 
                             </div>
 
@@ -125,7 +125,7 @@
 function initialize() {
     var centerLat = 0, centerLon = 0;
     {% for device in devices %}
-    {% if forloop.first %}
+    {% if forloop.first and device.lat and device.lon %}
     centerLat = {{ device.lat }};
     centerLon = {{ device.lon }};
     {% endif %}
@@ -142,11 +142,13 @@ function initialize() {
 
     var markers = [];
     {% for device in devices %}
+    {% if device.lat and device.lon %}
     (function() {
         var m = L.marker([{{device.lat}}, {{device.lon}}]).addTo(map);
         m.bindPopup('<a href="/results/{{device.search_id}}/{{device.id}}/{{device.ip}}">{{device.type}} - {{device.ip}}</a>');
         markers.push(m);
     })();
+    {% endif %}
     {% endfor %}
 
     if (markers.length > 1) {

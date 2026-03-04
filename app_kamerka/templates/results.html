@@ -36,7 +36,7 @@
                             <div class="profile-image">
                             </div>
                             <div class="profile-data">
-                                  <img width=200px height=200px src="https://www.offensiveosint.io/content/images/2020/07/OffensiveOsint-logo-RGB-2.png">
+                                  <img width=200px height=200px src="{% static 'images/OffensiveOsint-logo-RGB-2.svg' %}">
 
                             </div>
 
@@ -95,10 +95,14 @@
                 </ul>
                 <!-- START BREADCRUMB -->
 <ul class="breadcrumb">
-
-
-                </ul>
-                <!-- END BREADCRUMB -->
+    {% if task_id %}
+    <div class='progress-wrapper'>
+        <div id='progress-bar' class='progress-bar' style="background-color: #0064d7; width: 0%;">&nbsp;</div>
+    </div>
+    <div id="progress-bar-message" style="color:#ff00cd">Scan in progress...</div>
+    {% endif %}
+</ul>
+<!-- END BREADCRUMB -->
 
                 <!-- PAGE CONTENT WRAPPER -->
 
@@ -297,7 +301,7 @@
 function initialize() {
     var centerLat = 0, centerLon = 0;
     {% for device in search %}
-    {% if forloop.first %}
+    {% if forloop.first and device.lat and device.lon %}
     centerLat = {{ device.lat }};
     centerLon = {{ device.lon }};
     {% endif %}
@@ -314,11 +318,13 @@ function initialize() {
 
     var markers = [];
     {% for device in search %}
+    {% if device.lat and device.lon %}
     (function() {
         var m = L.marker([{{device.lat}}, {{device.lon}}]).addTo(map);
         m.bindPopup('<a href="{{device.search_id}}/{{device.id}}/{{device.ip}}">{{device.type}} - {{device.ip}}</a>');
         markers.push(m);
     })();
+    {% endif %}
     {% endfor %}
 
     if (markers.length > 1) {

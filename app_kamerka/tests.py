@@ -6,6 +6,8 @@ from unittest.mock import patch, MagicMock
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, RequestFactory
+from django.urls import reverse
+from libnmap.parser import NmapParserException
 
 from app_kamerka.models import (
     Search, Device, DeviceNearby, WappalyzerResult, NucleiResult,
@@ -364,7 +366,8 @@ class GUIVisualTests(TestCase):
         self.assertContains(response, 'ꓘamerka')
         self.assertContains(response, 'search')
 
-    def test_index_page_loads(self):
+    @patch('app_kamerka.views.check_credits', return_value=[])
+    def test_index_page_loads(self, _):
         """Verify the dashboard/index page renders."""
         response = self.client.get('/index')
         self.assertEqual(response.status_code, 200)
