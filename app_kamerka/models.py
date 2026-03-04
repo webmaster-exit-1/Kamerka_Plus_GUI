@@ -33,6 +33,15 @@ class Device(models.Model):
     scan = models.CharField(max_length=100000, default="")
     exploit = models.CharField(max_length=10000, default="")
     exploited_scanned = models.BooleanField(default=False)
+    last_scanned = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Timestamp of the most recent Shodan API scan for this IP. "
+            "Used by verification.shodan_analytics.should_skip_ip() to avoid "
+            "redundant API calls for recently-checked assets."
+        ),
+    )
 
 class DeviceNearby(models.Model):
     device = models.ForeignKey(Device, on_delete=models.CASCADE)

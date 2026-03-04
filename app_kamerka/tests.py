@@ -843,3 +843,636 @@ class NmapUploadTests(TestCase):
 
         # A Search record should exist
         self.assertTrue(Search.objects.filter(country='NMAP Scan', nmap=True).exists())
+
+
+# ===========================================================================
+# 3D Refactor – new module tests
+# ===========================================================================
+
+class CoordinateMapperTests(TestCase):
+    """Unit tests for globe_3d.coordinate_mapper spherical-trig math."""
+
+    def test_equator_prime_meridian(self):
+        """lat=0, lon=0 → (R, 0, 0)."""
+        from globe_3d.coordinate_mapper import latlon_to_xyz, EARTH_RADIUS
+        x, y, z = latlon_to_xyz(0.0, 0.0)
+        self.assertAlmostEqual(x, EARTH_RADIUS, places=9)
+        self.assertAlmostEqual(y, 0.0, places=9)
+        self.assertAlmostEqual(z, 0.0, places=9)
+
+    def test_north_pole(self):
+        """lat=90 → z = R, x ≈ 0, y ≈ 0."""
+        from globe_3d.coordinate_mapper import latlon_to_xyz, EARTH_RADIUS
+        x, y, z = latlon_to_xyz(90.0, 0.0)
+        self.assertAlmostEqual(z, EARTH_RADIUS, places=9)
+        self.assertAlmostEqual(x, 0.0, places=9)
+        self.assertAlmostEqual(y, 0.0, places=9)
+
+    def test_south_pole(self):
+        """lat=-90 → z = -R."""
+        from globe_3d.coordinate_mapper import latlon_to_xyz, EARTH_RADIUS
+        x, y, z = latlon_to_xyz(-90.0, 0.0)
+        self.assertAlmostEqual(z, -EARTH_RADIUS, places=9)
+
+    def test_equator_90_east(self):
+        """lat=0, lon=90 → (0, R, 0)."""
+        from globe_3d.coordinate_mapper import latlon_to_xyz, EARTH_RADIUS
+        x, y, z = latlon_to_xyz(0.0, 90.0)
+        self.assertAlmostEqual(x, 0.0, places=9)
+        self.assertAlmostEqual(y, EARTH_RADIUS, places=9)
+        self.assertAlmostEqual(z, 0.0, places=9)
+
+    def test_custom_radius(self):
+        """Custom radius is respected."""
+        from globe_3d.coordinate_mapper import latlon_to_xyz
+        x, y, z = latlon_to_xyz(0.0, 0.0, radius=2.5)
+        self.assertAlmostEqual(x, 2.5, places=9)
+
+    def test_on_sphere_surface(self):
+        """For any lat/lon the result lies on the unit sphere."""
+        import math
+        from globe_3d.coordinate_mapper import latlon_to_xyz, EARTH_RADIUS
+        for lat, lon in [(40.7128, -74.0060), (-33.8688, 151.2093), (51.5074, -0.1278)]:
+            x, y, z = latlon_to_xyz(lat, lon)
+            r = math.sqrt(x ** 2 + y ** 2 + z ** 2)
+            self.assertAlmostEqual(r, EARTH_RADIUS, places=9)
+
+    def test_round_trip(self):
+        """xyz_to_latlon(latlon_to_xyz(lat, lon)) ≈ (lat, lon)."""
+        from globe_3d.coordinate_mapper import latlon_to_xyz, xyz_to_latlon
+        for lat, lon in [(40.7128, -74.0060), (-33.8688, 151.2093)]:
+            x, y, z = latlon_to_xyz(lat, lon)
+            lat2, lon2 = xyz_to_latlon(x, y, z)
+            self.assertAlmostEqual(lat2, lat, places=6)
+            self.assertAlmostEqual(lon2, lon, places=6)
+
+    def test_spike_base_above_surface(self):
+        """spike_base_xyz returns a point strictly outside the unit sphere."""
+        import math
+        from globe_3d.coordinate_mapper import spike_base_xyz, EARTH_RADIUS, SPIKE_OFFSET
+        x, y, z = spike_base_xyz(0.0, 0.0)
+        r = math.sqrt(x ** 2 + y ** 2 + z ** 2)
+        self.assertAlmostEqual(r, EARTH_RADIUS + SPIKE_OFFSET, places=9)
+
+
+class SpikeRendererTests(TestCase):
+    """Unit tests for globe_3d.spike_renderer colour and scaling logic."""
+
+    def test_critical_is_red(self):
+        from globe_3d.spike_renderer import severity_to_colour
+        self.assertEqual(severity_to_colour("critical"), (1.0, 0.0, 0.0))
+
+    def test_high_is_red(self):
+        from globe_3d.spike_renderer import severity_to_colour
+        self.assertEqual(severity_to_colour("HIGH"), (1.0, 0.0, 0.0))
+
+    def test_medium_is_yellow(self):
+        from globe_3d.spike_renderer import severity_to_colour
+        self.assertEqual(severity_to_colour("Medium"), (1.0, 1.0, 0.0))
+
+    def test_unknown_severity_falls_back(self):
+        from globe_3d.spike_renderer import severity_to_colour, SEVERITY_COLOURS
+        self.assertEqual(severity_to_colour(""), SEVERITY_COLOURS["unknown"])
+        self.assertEqual(severity_to_colour("nonsense"), SEVERITY_COLOURS["unknown"])
+
+    def test_spike_height_scales_with_count(self):
+        from globe_3d.spike_renderer import scale_spike_height, MIN_SPIKE_HEIGHT, MAX_SPIKE_HEIGHT
+        h_min = scale_spike_height(1, 100)
+        h_max = scale_spike_height(100, 100)
+        self.assertGreater(h_max, h_min)
+        self.assertAlmostEqual(h_max, MAX_SPIKE_HEIGHT, places=9)
+        self.assertGreaterEqual(h_min, MIN_SPIKE_HEIGHT)
+
+    def test_spike_height_clamps_zero(self):
+        from globe_3d.spike_renderer import scale_spike_height, MIN_SPIKE_HEIGHT
+        self.assertEqual(scale_spike_height(0, 100), MIN_SPIKE_HEIGHT)
+        self.assertEqual(scale_spike_height(5, 0), MIN_SPIKE_HEIGHT)
+
+    def test_build_spike_data_empty(self):
+        from globe_3d.spike_renderer import build_spike_data
+        self.assertEqual(build_spike_data([]), [])
+
+    def test_build_spike_data_returns_correct_keys(self):
+        from globe_3d.spike_renderer import build_spike_data
+        clusters = [{"lat": 40.0, "lon": -74.0, "count": 5, "severity": "medium"}]
+        result = build_spike_data(clusters)
+        self.assertEqual(len(result), 1)
+        spike = result[0]
+        for key in ("lat", "lon", "height", "colour", "count", "severity", "devices"):
+            self.assertIn(key, spike, "Missing key: {}".format(key))
+
+    def test_dominant_severity_priority(self):
+        from globe_3d.spike_renderer import dominant_severity
+        self.assertEqual(dominant_severity(["low", "critical", "medium"]), "critical")
+        self.assertEqual(dominant_severity(["high", "medium"]), "high")
+        self.assertEqual(dominant_severity([]), "unknown")
+        self.assertEqual(dominant_severity(["info"]), "info")
+
+
+class LODManagerTests(TestCase):
+    """Unit tests for globe_3d.lod_manager cluster/dissolve logic."""
+
+    def _make_devices(self, count, lat_base=40.0, lon_base=-74.0, step=0.1):
+        return [
+            {"lat": str(lat_base + i * step), "lon": str(lon_base), "severity": "low"}
+            for i in range(count)
+        ]
+
+    def test_cluster_devices_groups_close_points(self):
+        """Devices within 2° of each other should form one cluster."""
+        from globe_3d.lod_manager import cluster_devices
+        devices = self._make_devices(5, lat_base=40.0, step=0.1)
+        clusters = cluster_devices(devices, radius_deg=2.0)
+        self.assertEqual(len(clusters), 1)
+        self.assertEqual(clusters[0]["count"], 5)
+
+    def test_cluster_devices_separates_distant_points(self):
+        """Devices > 2° apart should form separate clusters."""
+        from globe_3d.lod_manager import cluster_devices
+        devices = [
+            {"lat": "10.0", "lon": "10.0", "severity": "low"},
+            {"lat": "50.0", "lon": "50.0", "severity": "low"},
+        ]
+        clusters = cluster_devices(devices, radius_deg=2.0)
+        self.assertEqual(len(clusters), 2)
+
+    def test_cluster_skips_invalid_coords(self):
+        """Devices with unparseable lat/lon are silently skipped."""
+        from globe_3d.lod_manager import cluster_devices
+        devices = [
+            {"lat": "bad", "lon": "-74.0", "severity": "low"},
+            {"lat": "40.0", "lon": "-74.0", "severity": "low"},
+        ]
+        clusters = cluster_devices(devices)
+        self.assertEqual(sum(c["count"] for c in clusters), 1)
+
+    def test_dissolve_cluster_returns_individuals(self):
+        """dissolve_cluster must return one entry per device."""
+        from globe_3d.lod_manager import dissolve_cluster
+        cluster = {
+            "lat": 40.0, "lon": -74.0, "count": 3,
+            "severity": "medium",
+            "devices": [
+                {"lat": "40.0", "lon": "-74.0", "severity": "medium"},
+                {"lat": "40.1", "lon": "-74.0", "severity": "low"},
+                {"lat": "40.2", "lon": "-74.0", "severity": "high"},
+            ],
+        }
+        result = dissolve_cluster(cluster)
+        self.assertEqual(len(result), 3)
+        for item in result:
+            self.assertEqual(item["count"], 1)
+
+    def test_get_render_data_global_view(self):
+        """zoom < threshold → aggregate clusters."""
+        from globe_3d.lod_manager import get_render_data, CLUSTER_RADIUS_DEG
+        devices = self._make_devices(10, step=0.05)
+        result = get_render_data(devices, zoom_level=0.0)
+        self.assertLess(len(result), 10, "Global view should aggregate into fewer clusters")
+
+    def test_get_render_data_zoomed_view(self):
+        """zoom > threshold → individual points."""
+        from globe_3d.lod_manager import get_render_data
+        devices = self._make_devices(5, step=0.05)
+        result = get_render_data(devices, zoom_level=1.0)
+        total = sum(r["count"] for r in result)
+        self.assertEqual(total, 5, "Zoomed view should show all individual devices")
+
+
+class HoneypotFilterTests(TestCase):
+    """Unit tests for verification.honeypot_filter."""
+
+    def _make_devices(self, subnet, banner, count):
+        """Create *count* device dicts all in the same /24 subnet with *banner*.
+
+        Host IDs cycle through 1–254 (valid IPv4 range) so every IP is
+        parseable by ipaddress.ip_address even when count > 254.  Multiple
+        entries may share the same IP address; that is intentional — the
+        honeypot filter counts list entries (banner occurrences), not unique
+        IPs.
+        """
+        return [
+            {"ip": "{}.{}".format(subnet, (i % 254) + 1), "data": banner}
+            for i in range(count)
+        ]
+
+    def test_detect_cluster_above_threshold(self):
+        """≥500 entries sharing a /24 subnet and banner must be flagged."""
+        from verification.honeypot_filter import detect_honeypot_clusters
+        devices = self._make_devices("1.2.3", "HTTP/1.1 200 OK", 500)
+        flagged = detect_honeypot_clusters(devices, threshold=500)
+        self.assertEqual(len(flagged), 1)
+        subnet, banner = flagged[0]
+        self.assertIn("1.2.3", subnet)
+        self.assertEqual(banner, "HTTP/1.1 200 OK")
+
+    def test_no_flag_below_threshold(self):
+        """<500 entries with identical banner must not be flagged."""
+        from verification.honeypot_filter import detect_honeypot_clusters
+        devices = self._make_devices("1.2.3", "HTTP/1.1 200 OK", 499)
+        self.assertEqual(detect_honeypot_clusters(devices, threshold=500), [])
+
+    def test_different_banners_not_flagged(self):
+        """500 devices with unique banners must not trigger the filter."""
+        from verification.honeypot_filter import detect_honeypot_clusters
+        devices = [
+            {"ip": "1.2.3.{}".format(i + 1), "data": "banner_{}".format(i)}
+            for i in range(500)
+        ]
+        self.assertEqual(detect_honeypot_clusters(devices, threshold=500), [])
+
+    def test_filter_honeypots_removes_flagged(self):
+        """filter_honeypots must remove all devices belonging to flagged clusters."""
+        from verification.honeypot_filter import filter_honeypots
+        bad = self._make_devices("1.2.3", "HONEYPOT", 500)
+        good = [{"ip": "9.9.9.9", "data": "legit banner"}]
+        clean = filter_honeypots(bad + good, threshold=500)
+        ips = [d["ip"] for d in clean]
+        self.assertIn("9.9.9.9", ips)
+        for d in bad:
+            self.assertNotIn(d["ip"], ips)
+
+    def test_filter_honeypots_empty_input(self):
+        from verification.honeypot_filter import filter_honeypots
+        self.assertEqual(filter_honeypots([]), [])
+
+    def test_is_honeypot_device(self):
+        from verification.honeypot_filter import is_honeypot_device
+        flagged = [("1.2.3.0/24", "bad banner")]
+        self.assertTrue(
+            is_honeypot_device({"ip": "1.2.3.5", "data": "bad banner"}, flagged)
+        )
+        self.assertFalse(
+            is_honeypot_device({"ip": "1.2.3.5", "data": "good banner"}, flagged)
+        )
+
+    def test_invalid_ip_not_flagged(self):
+        """Devices with non-IPv4 addresses are gracefully skipped."""
+        from verification.honeypot_filter import detect_honeypot_clusters
+        devices = [{"ip": "not-an-ip", "data": "banner"}] * 500
+        self.assertEqual(detect_honeypot_clusters(devices, threshold=500), [])
+
+
+class InternetDBTests(TestCase):
+    """Unit tests for verification.internet_db using mocked HTTP calls."""
+
+    @patch('verification.internet_db.requests.get')
+    def test_returns_dict_on_success(self, mock_get):
+        from verification.internet_db import check_internetdb
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"ip": "8.8.8.8", "ports": [53, 443], "tags": []}
+        )
+        result = check_internetdb("8.8.8.8")
+        self.assertIsNotNone(result)
+        self.assertEqual(result["ports"], [53, 443])
+
+    @patch('verification.internet_db.requests.get')
+    def test_returns_none_on_404(self, mock_get):
+        from verification.internet_db import check_internetdb
+        mock_get.return_value = MagicMock(status_code=404)
+        self.assertIsNone(check_internetdb("8.8.8.8"))
+
+    @patch('verification.internet_db.requests.get')
+    def test_returns_none_on_timeout(self, mock_get):
+        import requests as req
+        from verification.internet_db import check_internetdb
+        mock_get.side_effect = req.exceptions.Timeout()
+        self.assertIsNone(check_internetdb("8.8.8.8"))
+
+    @patch('verification.internet_db.requests.get')
+    def test_returns_none_on_request_error(self, mock_get):
+        import requests as req
+        from verification.internet_db import check_internetdb
+        mock_get.side_effect = req.exceptions.RequestException("fail")
+        self.assertIsNone(check_internetdb("8.8.8.8"))
+
+    def test_private_ip_skipped(self):
+        """Private IPs must be rejected without making an HTTP request."""
+        from verification.internet_db import check_internetdb
+        self.assertIsNone(check_internetdb("192.168.1.1"))
+        self.assertIsNone(check_internetdb("127.0.0.1"))
+        self.assertIsNone(check_internetdb("10.0.0.1"))
+
+    @patch('verification.internet_db.requests.get')
+    def test_is_alive_returns_true_with_ports(self, mock_get):
+        from verification.internet_db import is_alive_internetdb
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"ports": [80]}
+        )
+        self.assertTrue(is_alive_internetdb("8.8.8.8"))
+
+    @patch('verification.internet_db.requests.get')
+    def test_is_alive_returns_false_no_ports(self, mock_get):
+        from verification.internet_db import is_alive_internetdb
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"ports": []}
+        )
+        self.assertFalse(is_alive_internetdb("8.8.8.8"))
+
+
+class NaabuScannerTests(TestCase):
+    """Unit tests for verification.naabu_scanner using mocked subprocess."""
+
+    @patch('verification.naabu_scanner.subprocess.run')
+    def test_parses_json_output(self, mock_run):
+        from verification.naabu_scanner import run_naabu
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout='{"ip":"1.2.3.4","port":80}\n{"ip":"1.2.3.4","port":443}\n',
+        )
+        results = run_naabu("1.2.3.4")
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0]["port"], 80)
+        self.assertEqual(results[1]["port"], 443)
+
+    @patch('verification.naabu_scanner.subprocess.run')
+    def test_parses_plaintext_fallback(self, mock_run):
+        from verification.naabu_scanner import run_naabu
+        mock_run.return_value = MagicMock(returncode=0, stdout="1.2.3.4:8080\n")
+        results = run_naabu("1.2.3.4")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["port"], 8080)
+
+    @patch('verification.naabu_scanner.subprocess.run')
+    def test_returns_empty_on_no_open_ports(self, mock_run):
+        from verification.naabu_scanner import run_naabu
+        mock_run.return_value = MagicMock(returncode=0, stdout="")
+        self.assertEqual(run_naabu("1.2.3.4"), [])
+
+    @patch('verification.naabu_scanner.subprocess.run')
+    def test_returns_empty_on_file_not_found(self, mock_run):
+        from verification.naabu_scanner import run_naabu
+        mock_run.side_effect = FileNotFoundError()
+        self.assertEqual(run_naabu("1.2.3.4"), [])
+
+    @patch('verification.naabu_scanner.subprocess.run')
+    def test_returns_empty_on_timeout(self, mock_run):
+        import subprocess
+        from verification.naabu_scanner import run_naabu
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="naabu", timeout=60)
+        self.assertEqual(run_naabu("1.2.3.4"), [])
+
+    @patch('verification.naabu_scanner.subprocess.run')
+    def test_is_alive_true(self, mock_run):
+        from verification.naabu_scanner import is_alive_naabu
+        mock_run.return_value = MagicMock(returncode=0, stdout='{"ip":"1.2.3.4","port":80}\n')
+        self.assertTrue(is_alive_naabu("1.2.3.4"))
+
+    @patch('verification.naabu_scanner.subprocess.run')
+    def test_is_alive_false(self, mock_run):
+        from verification.naabu_scanner import is_alive_naabu
+        mock_run.return_value = MagicMock(returncode=0, stdout="")
+        self.assertFalse(is_alive_naabu("1.2.3.4"))
+
+    @patch('verification.naabu_scanner.subprocess.run')
+    def test_uses_configured_bin_path(self, mock_run):
+        """run_naabu must use the binary path from settings.NAABU_BIN."""
+        from unittest.mock import patch as _patch
+        from verification.naabu_scanner import run_naabu
+        mock_run.return_value = MagicMock(returncode=0, stdout="")
+        with _patch('verification.naabu_scanner._get_naabu_bin', return_value='/opt/naabu'):
+            run_naabu("1.2.3.4")
+        called_cmd = mock_run.call_args[0][0]
+        self.assertEqual(called_cmd[0], '/opt/naabu')
+
+    @patch('verification.naabu_scanner.subprocess.run')
+    def test_no_shell_true(self, mock_run):
+        """subprocess.run must never be called with shell=True."""
+        from verification.naabu_scanner import run_naabu
+        mock_run.return_value = MagicMock(returncode=0, stdout="")
+        run_naabu("1.2.3.4")
+        kwargs = mock_run.call_args[1]
+        self.assertFalse(kwargs.get('shell', False))
+
+
+class ShodanAnalyticsTests(TestCase):
+    """Unit tests for verification.shodan_analytics credit reporting and dedup."""
+
+    def _make_mock_api(self, total=50, facets=None):
+        api = MagicMock()
+        api.count.return_value = {"total": total}
+        api.stats.return_value = {"facets": facets or {"country": [["US", 30]]}}
+        return api
+
+    def test_credit_cost_report_structure(self):
+        from verification.shodan_analytics import credit_cost_report
+        api = self._make_mock_api(total=50)
+        report = credit_cost_report(api, "port:502")
+        for key in ("query", "total_results", "estimated_credits", "facets", "recommendation"):
+            self.assertIn(key, report)
+
+    def test_credit_cost_report_zero_results(self):
+        from verification.shodan_analytics import credit_cost_report
+        api = self._make_mock_api(total=0)
+        report = credit_cost_report(api, "port:502")
+        self.assertIn("No results", report["recommendation"])
+
+    def test_credit_cost_report_single_credit(self):
+        from verification.shodan_analytics import credit_cost_report
+        api = self._make_mock_api(total=47)
+        report = credit_cost_report(api, "port:502")
+        self.assertEqual(report["estimated_credits"], 1)
+        self.assertIn("1 credit", report["recommendation"])
+
+    def test_credit_cost_report_multiple_credits(self):
+        from verification.shodan_analytics import credit_cost_report
+        api = self._make_mock_api(total=250)
+        report = credit_cost_report(api, "port:502")
+        self.assertEqual(report["estimated_credits"], 3)
+        self.assertIn("Caution", report["recommendation"])
+
+    def test_credit_cost_report_api_failure(self):
+        from verification.shodan_analytics import credit_cost_report
+        api = MagicMock()
+        api.count.side_effect = Exception("network error")
+        report = credit_cost_report(api, "port:502")
+        self.assertIsNotNone(report["error"])
+
+    def test_should_skip_ip_fresh(self):
+        """should_skip_ip returns True when a recent scan exists."""
+        from datetime import datetime, timezone
+        from verification.shodan_analytics import should_skip_ip
+        search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+        device = Device.objects.create(
+            search=search, ip="8.8.8.8", product="Google DNS",
+            port="53", type="dns", lat="37.0", lon="-122.0",
+            country_code="US", last_scanned=datetime.now(tz=timezone.utc),
+        )
+        self.assertTrue(should_skip_ip("8.8.8.8", max_age_hours=24))
+
+    def test_should_skip_ip_stale(self):
+        """should_skip_ip returns False when last_scanned is None."""
+        from verification.shodan_analytics import should_skip_ip
+        search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+        Device.objects.create(
+            search=search, ip="1.1.1.1", product="Cloudflare",
+            port="53", type="dns", lat="0.0", lon="0.0",
+            country_code="AU", last_scanned=None,
+        )
+        self.assertFalse(should_skip_ip("1.1.1.1", max_age_hours=24))
+
+    def test_update_last_scanned_stamps_device(self):
+        from datetime import datetime, timezone
+        from verification.shodan_analytics import update_last_scanned
+        search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+        device = Device.objects.create(
+            search=search, ip="2.2.2.2", product="",
+            port="80", type="http", lat="0.0", lon="0.0",
+            country_code="US", last_scanned=None,
+        )
+        update_last_scanned("2.2.2.2")
+        device.refresh_from_db()
+        self.assertIsNotNone(device.last_scanned)
+
+
+class ToolSettingsTests(TestCase):
+    """Verify kamerka/tool_settings.py and its integration with Django settings."""
+
+    def test_tool_settings_module_importable(self):
+        from kamerka import tool_settings
+        self.assertTrue(hasattr(tool_settings, 'NAABU_BIN'))
+        self.assertTrue(hasattr(tool_settings, 'NUCLEI_BIN'))
+
+    def test_naabu_bin_default_is_naabu(self):
+        """Default NAABU_BIN must be the bare executable name (PATH lookup)."""
+        import os
+        # Only check default when env var is not overriding it
+        if 'KAMERKA_NAABU_BIN' not in os.environ:
+            from kamerka.tool_settings import NAABU_BIN
+            self.assertEqual(NAABU_BIN, 'naabu')
+
+    def test_nuclei_bin_default_is_nuclei(self):
+        import os
+        if 'KAMERKA_NUCLEI_BIN' not in os.environ:
+            from kamerka.tool_settings import NUCLEI_BIN
+            self.assertEqual(NUCLEI_BIN, 'nuclei')
+
+    def test_django_settings_exposes_naabu_bin(self):
+        from django.conf import settings
+        self.assertTrue(hasattr(settings, 'NAABU_BIN'))
+        self.assertIsInstance(settings.NAABU_BIN, str)
+        self.assertTrue(len(settings.NAABU_BIN) > 0)
+
+    def test_django_settings_exposes_nuclei_bin(self):
+        from django.conf import settings
+        self.assertTrue(hasattr(settings, 'NUCLEI_BIN'))
+        self.assertIsInstance(settings.NUCLEI_BIN, str)
+        self.assertTrue(len(settings.NUCLEI_BIN) > 0)
+
+    def test_django_settings_exposes_timeouts(self):
+        from django.conf import settings
+        self.assertTrue(hasattr(settings, 'NAABU_DEFAULT_TIMEOUT'))
+        self.assertTrue(hasattr(settings, 'NUCLEI_DEFAULT_TIMEOUT'))
+        self.assertIsInstance(settings.NAABU_DEFAULT_TIMEOUT, int)
+        self.assertIsInstance(settings.NUCLEI_DEFAULT_TIMEOUT, int)
+
+    def test_env_var_override_naabu(self):
+        """Setting KAMERKA_NAABU_BIN env var is reflected in tool_settings."""
+        import importlib, os
+        original = os.environ.get('KAMERKA_NAABU_BIN')
+        try:
+            os.environ['KAMERKA_NAABU_BIN'] = '/custom/naabu'
+            import kamerka.tool_settings as ts
+            importlib.reload(ts)
+            self.assertEqual(ts.NAABU_BIN, '/custom/naabu')
+        finally:
+            if original is None:
+                os.environ.pop('KAMERKA_NAABU_BIN', None)
+            else:
+                os.environ['KAMERKA_NAABU_BIN'] = original
+            importlib.reload(ts)
+
+    def test_env_var_override_nuclei(self):
+        """Setting KAMERKA_NUCLEI_BIN env var is reflected in tool_settings."""
+        import importlib, os
+        original = os.environ.get('KAMERKA_NUCLEI_BIN')
+        try:
+            os.environ['KAMERKA_NUCLEI_BIN'] = '/custom/nuclei'
+            import kamerka.tool_settings as ts
+            importlib.reload(ts)
+            self.assertEqual(ts.NUCLEI_BIN, '/custom/nuclei')
+        finally:
+            if original is None:
+                os.environ.pop('KAMERKA_NUCLEI_BIN', None)
+            else:
+                os.environ['KAMERKA_NUCLEI_BIN'] = original
+            importlib.reload(ts)
+
+
+class NucleiConfiguredBinTests(TestCase):
+    """Verify nuclei_scan task uses the configured NUCLEI_BIN path."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+        self.device = Device.objects.create(
+            search=self.search, ip="192.168.1.1", product="TestCam",
+            port="80", type="hikvision", lat="40.0", lon="-74.0",
+            country_code="US"
+        )
+
+    @patch('kamerka.tasks.subprocess.run')
+    def test_nuclei_scan_uses_settings_bin(self, mock_run):
+        """nuclei_scan must pass settings.NUCLEI_BIN as the first cmd element."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        from unittest.mock import patch as _patch
+        from django.conf import settings as django_settings
+        with _patch.object(django_settings, 'NUCLEI_BIN', '/opt/nuclei'):
+            from kamerka.tasks import nuclei_scan
+            nuclei_scan(self.device.id)
+        called_cmd = mock_run.call_args[0][0]
+        self.assertEqual(called_cmd[0], '/opt/nuclei')
+
+    @patch('kamerka.tasks.subprocess.run')
+    def test_nuclei_scan_uses_settings_timeout(self, mock_run):
+        """nuclei_scan must honour settings.NUCLEI_DEFAULT_TIMEOUT."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        from unittest.mock import patch as _patch
+        from django.conf import settings as django_settings
+        with _patch.object(django_settings, 'NUCLEI_DEFAULT_TIMEOUT', 42):
+            from kamerka.tasks import nuclei_scan
+            nuclei_scan(self.device.id)
+        called_timeout = mock_run.call_args[1].get('timeout')
+        self.assertEqual(called_timeout, 42)
+
+
+class DeviceLastScannedTests(TestCase):
+    """Verify the Device.last_scanned field is present and nullable."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+
+    def test_last_scanned_field_exists(self):
+        from app_kamerka.models import Device
+        self.assertTrue(hasattr(Device, 'last_scanned'))
+
+    def test_last_scanned_nullable(self):
+        device = Device.objects.create(
+            search=self.search, ip="1.2.3.4", product="Test",
+            port="80", type="test", lat="0.0", lon="0.0",
+            country_code="US",
+        )
+        self.assertIsNone(device.last_scanned)
+
+    def test_last_scanned_can_be_set(self):
+        from datetime import datetime, timezone
+        now = datetime.now(tz=timezone.utc)
+        device = Device.objects.create(
+            search=self.search, ip="1.2.3.5", product="Test",
+            port="80", type="test", lat="0.0", lon="0.0",
+            country_code="US", last_scanned=now,
+        )
+        device.refresh_from_db()
+        self.assertIsNotNone(device.last_scanned)

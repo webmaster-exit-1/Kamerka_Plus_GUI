@@ -915,7 +915,18 @@ def wappalyzer_scan(id):
 
 @shared_task(bind=False)
 def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150):
-    """Run Nuclei vulnerability scanner against a device."""
+    """Run Nuclei vulnerability scanner against a device.
+
+    The Nuclei binary path is read from ``settings.NUCLEI_BIN`` (configured
+    in ``kamerka/tool_settings.py``).  It defaults to ``"nuclei"`` so the
+    system ``$PATH`` is used, but can be overridden with the
+    ``KAMERKA_NUCLEI_BIN`` environment variable or by editing
+    ``kamerka/tool_settings.py`` directly.
+    """
+    from django.conf import settings as django_settings
+    nuclei_bin = getattr(django_settings, "NUCLEI_BIN", "nuclei")
+    nuclei_timeout = getattr(django_settings, "NUCLEI_DEFAULT_TIMEOUT", 300)
+
     device = Device.objects.get(id=id)
     try:
         ip, port = _validate_target(device.ip, device.port)
@@ -923,7 +934,7 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150):
         return {"error": str(e)}
     target_url = "http://{}:{}".format(ip, port)
 
-    cmd = ["nuclei", "-u", target_url, "-jsonl", "-silent"]
+    cmd = [nuclei_bin, "-u", target_url, "-jsonl", "-silent"]
 
     if templates_dir:
         cmd.extend(["-t", templates_dir])
@@ -940,7 +951,7 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150):
             cmd,
             capture_output=True,
             text=True,
-            timeout=300
+            timeout=nuclei_timeout,
         )
         findings = []
         if result.stdout.strip():
