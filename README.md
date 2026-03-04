@@ -92,6 +92,44 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 
 **Make sure your API keys are correct and put them in `keys.json` in the main directory.**
 
+### GeoLite2 Database (Required for NMAP scan)
+
+NMAP XML uploads require MaxMind's GeoLite2 City database for IP geolocation.
+The `.mmdb` file is not bundled in this repository — download it for free:
+
+1. Register for a free MaxMind account at https://www.maxmind.com/en/geolite2/signup
+2. After logging in, go to **Download Databases** → **GeoLite2 City** → **Download (mmdb)**
+3. Extract the archive and place **`GeoLite2-City.mmdb`** in the project root (`Kamerka_Plus_GUI/`)
+
+### Default Superuser
+
+A default superuser is created automatically when you run the `create_default_superuser` management command (see Run section below).
+
+| Setting | Default value |
+|---------|---------------|
+| Username | `admin` |
+| Email | `admin@example.com` |
+| Password | Randomly generated (20 characters) |
+
+**The generated password is not printed to the console by default** (to prevent credential leakage in logs).
+
+To display the generated password during creation:
+```bash
+DJANGO_SUPERUSER_PRINT_PASSWORD=true python3 manage.py create_default_superuser
+```
+
+To set your own password instead of using a generated one:
+```bash
+DJANGO_SUPERUSER_PASSWORD=your_password python3 manage.py create_default_superuser
+```
+
+**To change the admin password after creation**, run:
+```bash
+python3 manage.py changepassword admin
+```
+
+Or log in to the Django admin panel at `http://localhost:8000/admin/` and change it there.
+
 ### Run
 
 ```bash
@@ -100,6 +138,7 @@ cd Kamerka_Plus_GUI
 pip3 install -r requirements.txt
 python3 manage.py makemigrations
 python3 manage.py migrate
+python3 manage.py create_default_superuser
 python3 manage.py runserver
 ```
 

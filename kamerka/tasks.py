@@ -1,4 +1,5 @@
 import json
+import logging
 import math
 import re
 import subprocess
@@ -10,7 +11,6 @@ from time import sleep
 import requests
 from celery import shared_task, current_task
 from celery_progress.backend import ProgressRecorder
-from pybinaryedge import BinaryEdge
 from shodan import Shodan
 import time
 from bs4 import BeautifulSoup
@@ -28,8 +28,10 @@ import xml.etree.ElementTree as et
 
 from app_kamerka import exploits
 
-from app_kamerka.models import Device, DeviceNearby, Search, ShodanScan, BinaryEdgeScore, \
+from app_kamerka.models import Device, DeviceNearby, Search, ShodanScan, \
     Whois, Bosch, WappalyzerResult, NucleiResult
+
+logger = logging.getLogger(__name__)
 
 healthcare_queries = {"zoll": "http.favicon.hash:-236942626",
                       'dicom': "dicom",
@@ -577,15 +579,6 @@ def check_credits():
     except Exception as e:
         print(e)
 
-    try:
-        be_key = keys['keys']['binaryedge']
-        headers = {"X-Key": be_key}
-        req = requests.get("https://api.binaryedge.io/v2/user/subscription", headers=headers)
-        req_json = json.loads(req.content)
-        keys_list.append(req_json['requests_left'])
-    except Exception as e:
-        print(e)
-
     return keys_list
 
 
@@ -806,14 +799,17 @@ def nmap_host_worker(host_arg, max_reader, search):
     hostname = host_arg.hostnames[0] if host_arg.hostnames else ""
 
     a = max_reader.get(host_arg.address)
-    if not a:
-        return
-    lat = a.get('location', {}).get('latitude')
-    lon = a.get('location', {}).get('longitude')
+    if a is None:
+        logger.warning("MaxMind lookup returned no result for IP: %s", host_arg.address)
+        a = {}
+    location = a.get('location') or {}
+    lat = location.get('latitude')
+    lon = location.get('longitude')
     if lat is None or lon is None:
-        return
-    country_code = a.get('country', {}).get('iso_code') or ""
-
+        logger.warning("Missing latitude/longitude in MaxMind data for IP: %s", host_arg.address)
+    country = a.get('country') or {}
+    country_code = country.get('iso_code', '')
+    logger.debug("lat=%s lon=%s", lat, lon)
     for ports in host_arg.services:
         if ports.state == 'open':
             ports_list.append(ports.port)
@@ -821,30 +817,40 @@ def nmap_host_worker(host_arg, max_reader, search):
             ports_list.append("None")
 
     ports_string = ', '.join(str(e) for e in ports_list)
+    logger.debug("ports_string length=%d", len(ports_string))
     device = Device(search=search, ip=host_arg.address, product="", org="",
                     data="", port=ports_string, type="NMAP", city="NMAP",
-                    lat=lat, lon=lon,
+                    lat=lat if lat is not None else "",
+                    lon=lon if lon is not None else "",
                     country_code=country_code, query="NMAP SCAN", category="NMAP",
                     vulns="", indicator="", hostnames=hostname, screenshot="")
     device.save()
 
 
 def validate_nmap(file):
-    NmapParser.parse_fromfile(os.getcwd() + file)
+    NmapParser.parse_fromfile(file)
 
 
 def validate_maxmind():
-    maxminddb.open_database('GeoLite2-City.mmdb')
+    try:
+        maxminddb.open_database('GeoLite2-City.mmdb')
+    except FileNotFoundError:
+        raise FileNotFoundError(
+            "GeoLite2-City.mmdb not found in the project root. "
+            "Download it for free from MaxMind: "
+            "https://dev.maxmind.com/geoip/geolite2-free-geolocation-data "
+            "and place GeoLite2-City.mmdb in the Kamerka_Plus_GUI root directory."
+        )
 
 
 @shared_task(bind=True)
 def nmap_scan(self, file, fk):
     progress_recorder = ProgressRecorder(self)
     result = 0
-    print(os.getcwd() + file)
+    print(file)
     search = Search.objects.get(id=fk)
     max_reader = maxminddb.open_database('GeoLite2-City.mmdb')
-    nmap_report = NmapParser.parse_fromfile(os.getcwd() + file)
+    nmap_report = NmapParser.parse_fromfile(file)
     total = len(nmap_report.hosts)
     for c, i in enumerate(nmap_report.hosts):
         result += c
@@ -1116,29 +1122,6 @@ def shodan_scan_task(id):
 
     except Exception as e:
         print(e.args)
-
-
-@shared_task(bind=False)
-def binary_edge_scan(id):
-    key = keys['keys']['binaryedge']
-    device1 = Device.objects.get(id=id)
-    be = BinaryEdge(key)
-    results = be.host_score(device1.ip)
-    normalized_ip_score = results['normalized_ip_score']
-
-    cve = {}
-
-    if 'cve' in results['results_detailed']:
-        for cc in results['results_detailed']['cve']['result']:
-            if isinstance(cc['cve'], list):
-                for i in cc['cve']:
-                    cve[i['cpe']] = i['cve_list']
-            if isinstance(cc['cve'], dict):
-                if 'cpe' in cc['cve']:
-                    cve[cc['cve']['cpe'][0]] = cc['cve']['cve_list']
-
-    device2 = BinaryEdgeScore(device=device1, grades=results['ip_score_detailed'], cve=cve, score=normalized_ip_score)
-    device2.save()
 
 
 ics_scan = {"dnp3": "--script=nmap_scripts/dnp3-info.nse", "niagara": "--script=nmap_scripts/fox-info.nse",
