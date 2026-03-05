@@ -19,3 +19,5 @@ settings.json
 .DS_Store
 .idea/
 .vscode/
+# Large binary assets – download separately (see assets/README.md)
+assets/earth_surface.jpg

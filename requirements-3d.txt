@@ -1,0 +1,17 @@
+# 3D globe rendering — native local-first pipeline (PyVista + PyQt6)
+#
+# These packages depend on VTK (large binary, ~100 MB) and Qt6 and are NOT
+# required to run the Django web application or its test suite.  They are
+# only needed when launching the standalone 3D globe viewer:
+#
+#   python3 -m gui.launch
+#
+# Install:
+#   pip install -r requirements-3d.txt
+#
+# CI note: these packages are intentionally excluded from requirements.txt to
+# prevent failures in headless environments that lack OpenGL / Qt6 libraries.
+pyvista>=0.43.0
+pyvistaqt>=0.11.0
+PyQt6>=6.4.0
+pyproj>=3.5.0

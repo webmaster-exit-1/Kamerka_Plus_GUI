@@ -20,6 +20,24 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 - **Removed** Twitter and Flickr integrations (deprecated)
 - **Removed** Google Maps API dependency
 
+### 3D Globe (local-first rendering engine)
+
+- **Native 3D globe** powered by [PyVista](https://pyvista.org/) + PyQt6 — renders a textured Earth sphere locally with no external API calls
+- **3D device spikes** (cylinders) rise from the globe at each device's geolocation; colour encodes Nuclei severity (red = critical/high, yellow = medium, green = low) and height scales with cluster density
+- **Level-of-Detail (LOD)** — the globe shows aggregate cluster bars at the global view and automatically dissolves them into individual device points as you zoom in
+- **Click-to-inspect** — clicking any spike populates the Details panel with the device's IP, banner, open ports, Nuclei findings, and notes; no page reload required
+
+### Verification Pipeline (credit-aware intel gathering)
+
+- **Count-before-commit** — `shodan.count()` / `shodan.stats()` are always called first; a "Credit Cost vs Result Density" report is presented before any paid download
+- **Tiered liveness check** — InternetDB (free, no key) → Naabu port scan (FOSS) → only verified-live targets are rendered as spikes
+- **Deduplication** — `Device.last_scanned` timestamp prevents redundant Shodan API calls for assets checked within the last 24 hours (configurable)
+- **Honeypot filtering** — clusters of ≥ 500 devices sharing an identical banner in the same /24 subnet are automatically flagged and excluded from the 3D render
+
+### Configurable Tool Paths
+
+- **`kamerka/tool_settings.py`** is the single place to configure external binary paths for Naabu and Nuclei; defaults to resolving both from `$PATH` with full environment-variable override support
+
 ## NSA and CISA Recommend Immediate Actions to Reduce Exposure Across Operational Technologies and Control Systems
 
 > Shodan, Kamerka, are creating a “perfect storm” of
@@ -48,12 +66,16 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 
 - More than 100 ICS device queries
 - Interactive maps powered by Leaflet.js and OpenStreetMap (no API key needed)
+- **Native 3D globe viewer** (PyVista + PyQt6) with textured Earth, device spikes, LOD clustering, and click-to-inspect
 - Nuclei vulnerability scanning with custom China-IoT templates
 - Wappalyzer web technology detection
 - RTSP camera stream scanning
 - CSV and KML export for search results
 - Gallery section shows every gathered screenshot in one place
 - Celery task progress tracking in the UI
+- **Tiered verification pipeline**: InternetDB (free) → Naabu → Shodan, with credit cost reporting
+- **Honeypot cluster detection**: filters /24 subnets with ≥ 500 identical banners before rendering
+- **Scan deduplication**: `Device.last_scanned` field prevents repeat Shodan calls within a configurable window
 - Possibility to implement own exploits or scanning techniques
 - Support for NMAP scan in XML format as an input
 - Find the route and change location of device
@@ -87,6 +109,8 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 - Pastebin PRO (Optional)
 - [Wappalyzer CLI](https://github.com/AliasIO/wappalyzer) (Optional, for tech detection)
 - [Nuclei](https://github.com/projectdiscovery/nuclei) (Optional, for vulnerability scanning)
+- [Naabu](https://github.com/projectdiscovery/naabu) (Optional, for tiered liveness verification)
+- **PyVista / PyQt6** (Optional, for the native 3D globe viewer — see below)
 
 > **Note:** Google Maps API is no longer required. Maps are rendered with Leaflet.js and OpenStreetMap tiles.
 
@@ -162,6 +186,66 @@ The server should be available at `http://localhost:8000/`
 ```bash
 python3 manage.py test app_kamerka -v2
 ```
+
+---
+
+## 3D Globe Launcher
+
+The standalone 3D globe viewer is a **PyQt6 desktop application** that loads device records directly from the local Django database and renders them as colour-coded spikes on a textured Earth sphere.
+
+### Install the extra dependencies
+
+```bash
+pip3 install -r requirements-3d.txt
+```
+
+### Launch
+
+```bash
+python3 -m gui.launch
+```
+
+The window opens with two panes:
+
+| Pane | Contents |
+|------|----------|
+| **Left – Details** | IP, organisation, city, banner, Nuclei vulnerability findings, notes |
+| **Right – Globe** | Textured 3D Earth; scroll to zoom, click-drag to rotate |
+
+Click **Load Devices** in the toolbar to fetch all device records from the database.  Click any spike to populate the Details panel for that device or cluster.
+
+> **First run:** the globe downloads a high-resolution Earth texture from the PyVista asset server and caches it at `assets/earth_surface.jpg`.  All subsequent runs are fully offline.  See `assets/README.md` for air-gapped / manual texture setup.
+
+---
+
+## Tool Path Configuration
+
+Naabu and Nuclei are resolved via `$PATH` by default.  To point them at a custom binary (e.g. a Go workspace install), edit **`kamerka/tool_settings.py`** directly:
+
+```python
+# kamerka/tool_settings.py
+NAABU_DEFAULT  = "/home/user/go/bin/naabu"   # ← change this
+NUCLEI_DEFAULT = "/home/user/go/bin/nuclei"  # ← change this
+```
+
+Or use environment variables (recommended for CI / containers):
+
+```bash
+export KAMERKA_NAABU_BIN=/opt/tools/naabu
+export KAMERKA_NUCLEI_BIN=/opt/tools/nuclei
+```
+
+Additional tunables in `kamerka/tool_settings.py`:
+
+| Variable | Env override | Default | Description |
+|----------|-------------|---------|-------------|
+| `NAABU_BIN` | `KAMERKA_NAABU_BIN` | `naabu` | Naabu binary path |
+| `NUCLEI_BIN` | `KAMERKA_NUCLEI_BIN` | `nuclei` | Nuclei binary path |
+| `NAABU_DEFAULT_PORTS` | `KAMERKA_NAABU_PORTS` | `top-100` | Port spec for liveness checks |
+| `NAABU_DEFAULT_TIMEOUT` | `KAMERKA_NAABU_TIMEOUT` | `60` | Naabu subprocess timeout (s) |
+| `NUCLEI_DEFAULT_TIMEOUT` | `KAMERKA_NUCLEI_TIMEOUT` | `300` | Nuclei subprocess timeout (s) |
+
+---
 
 ## Search
 
@@ -278,6 +362,9 @@ Custom vulnerability templates for China-IoT devices, organized by vendor:
 
 - Leaflet.js (v1.9.4) - <https://leafletjs.com/> (BSD-2-Clause)
 - OpenStreetMap tiles - <https://www.openstreetmap.org/>
+- [PyVista](https://pyvista.org/) — 3D globe rendering (MIT)
+- [PyQt6](https://www.riverbankcomputing.com/software/pyqt/) — native desktop GUI container
+- [pyproj](https://pyproj4.github.io/pyproj/) — coordinate reference system math
 - Joli admin template - <https://github.com/sbilly/joli-admin>
 - Search form - Colorlib Search Form v15
 - country picker - <https://github.com/mojoaxel/bootstrap-select-country>

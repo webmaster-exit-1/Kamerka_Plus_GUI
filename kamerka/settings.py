@@ -126,3 +126,18 @@ USE_TZ = True
 # Default primary key field type
 # https://docs.djangoproject.com/en/3.2/ref/settings/#default-auto-field
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# ---------------------------------------------------------------------------
+# External tool binary paths
+# Imported from kamerka/tool_settings.py so every component (Celery tasks,
+# verification pipeline, GUI) reads from a single authoritative source.
+# To override, set KAMERKA_NAABU_BIN / KAMERKA_NUCLEI_BIN env vars or edit
+# kamerka/tool_settings.py directly.
+# ---------------------------------------------------------------------------
+from kamerka.tool_settings import (  # noqa: E402
+    NAABU_BIN,
+    NAABU_DEFAULT_PORTS,
+    NAABU_DEFAULT_TIMEOUT,
+    NUCLEI_BIN,
+    NUCLEI_DEFAULT_TIMEOUT,
+)
