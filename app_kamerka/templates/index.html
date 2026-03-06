@@ -83,7 +83,7 @@
     {# data-text must match element text — both are required by the CSS glitch ::before/::after pseudo-elements #}
     <span class="cp-glitch" data-text="ICS &amp; IoT Reconnaissance">ICS &amp; IoT Reconnaissance</span>
   </h1>
-  <div style="font-family:var(--cp-font);font-size:0.62em;letter-spacing:0.18em;color:var(--cp-dim);padding-bottom:6px;">
+  <div style="font-family:var(--cp-font);font-size:0.95em;letter-spacing:0.18em;color:var(--cp-dim);padding-bottom:6px;">
     INDUSTRIAL CONTROL SYSTEMS · INTERNET OF THINGS · OSINT
   </div>
 </center>
@@ -217,8 +217,8 @@
                                     <div class="cp-sysstat">
                                         <div class="cp-sysstat-row">
                                             <span class="cp-sysstat-key">SHODAN API</span>
-                                            <span class="cp-sysstat-val {% if credits.0 %}cp-sysstat-ok{% else %}cp-warn{% endif %}">
-                                                {% if credits.0 %}<span class="cp-blink">●</span> ONLINE{% else %}○ OFFLINE{% endif %}
+                                            <span class="cp-sysstat-val {% if credits %}cp-sysstat-ok{% else %}cp-warn{% endif %}">
+                                                {% if credits %}<span class="cp-blink">●</span> ONLINE{% else %}○ OFFLINE{% endif %}
                                             </span>
                                         </div>
                                         <div class="cp-sysstat-row">
@@ -248,7 +248,7 @@
                                     <div class="panel-title-box"><h3>Port Scan Task</h3></div>
                                 </div>
                                 <div class="panel-body">
-                                    <div style="font-family:var(--cp-font);font-size:0.72em;color:var(--cp-dim);margin-bottom:10px;">
+                                    <div style="font-family:var(--cp-font);font-size:0.95em;color:var(--cp-dim);margin-bottom:10px;">
                                         Use this widget to run a full Naabu all-port discovery then chain Nuclei automatically.<br>
                                         Enter a device ID from your database below.
                                     </div>
@@ -259,7 +259,7 @@
                                             ⚡ SCAN PORTS
                                         </button>
                                     </div>
-                                    <div id="cp-port-scan-status" style="margin-top:8px;font-family:var(--cp-font);font-size:0.72em;"></div>
+                                    <div id="cp-port-scan-status" style="margin-top:8px;font-family:var(--cp-font);font-size:0.95em;"></div>
                                     <div class="progress" style="margin-top:8px;display:none;" id="cp-port-scan-bar-wrap">
                                         <div id="cp-port-scan-bar" class="progress-bar" role="progressbar"
                                              style="width:0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">&nbsp;</div>

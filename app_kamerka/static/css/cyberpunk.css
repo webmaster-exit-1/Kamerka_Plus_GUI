@@ -81,6 +81,7 @@ body {
     ) !important;
   background-attachment: fixed !important;
   font-family: var(--cp-font) !important;
+  font-size: 14px !important;
   color: #c8d6e5 !important;
 }
 
@@ -231,7 +232,7 @@ body::after {
 .panel-heading .panel-title,
 .panel-title-box h3 {
   font-family: var(--cp-display) !important;
-  font-size: 0.75em !important;
+  font-size: 1em !important;
   font-weight: 700 !important;
   letter-spacing: 0.12em !important;
   text-transform: uppercase !important;
@@ -266,7 +267,7 @@ body::after {
 }
 .widget-title {
   font-family: var(--cp-font) !important;
-  font-size: 0.65em !important;
+  font-size: 0.88em !important;
   letter-spacing: 0.15em !important;
   text-transform: uppercase !important;
   color: var(--cp-dim) !important;
@@ -280,7 +281,7 @@ body::after {
 }
 .widget-subtitle {
   font-family: var(--cp-font) !important;
-  font-size: 0.7em !important;
+  font-size: 0.92em !important;
   color: var(--cp-dim) !important;
 }
 
@@ -288,7 +289,7 @@ body::after {
 .btn,
 button.btn {
   font-family: var(--cp-font) !important;
-  font-size: 0.75em !important;
+  font-size: 0.95em !important;
   letter-spacing: 0.08em !important;
   text-transform: uppercase !important;
   border-radius: 0 !important;
@@ -324,7 +325,7 @@ progress,
 .progress-bar,
 .progress {
   border-radius: 0 !important;
-  height: 8px !important;
+  height: 18px !important;
 }
 .progress {
   background: #0a1020 !important;
@@ -343,14 +344,14 @@ progress::-moz-progress-bar      { background: linear-gradient(90deg, var(--cp-b
 /* ── Tables ─────────────────────────────────────────────────── */
 .table {
   font-family: var(--cp-font) !important;
-  font-size: 0.78em !important;
+  font-size: 1em !important;
   color: #b0c4d8 !important;
   border-collapse: separate !important;
   border-spacing: 0 2px !important;
 }
 .table thead th {
   font-family: var(--cp-display) !important;
-  font-size: 0.65em !important;
+  font-size: 0.88em !important;
   letter-spacing: 0.12em !important;
   text-transform: uppercase !important;
   color: var(--cp-cyan) !important;
@@ -390,7 +391,7 @@ textarea {
   border-radius: 0 !important;
   color: var(--cp-cyan) !important;
   font-family: var(--cp-font) !important;
-  font-size: 0.82em !important;
+  font-size: 1em !important;
   padding: 6px 10px !important;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
@@ -420,7 +421,7 @@ pre, code {
   border-bottom: 1px solid rgba(0,100,215,0.2) !important;
   border-radius: 0 !important;
   font-family: var(--cp-font) !important;
-  font-size: 0.72em !important;
+  font-size: 0.95em !important;
   letter-spacing: 0.06em !important;
   padding: 6px 18px !important;
 }
@@ -437,7 +438,7 @@ pre, code {
 .cp-warn    { color: var(--cp-yellow);  font-family: var(--cp-font); }
 .cp-cyan    { color: var(--cp-cyan);    font-family: var(--cp-font); }
 .cp-magenta { color: var(--cp-magenta); font-family: var(--cp-font); }
-.cp-dim     { color: var(--cp-dim);     font-family: var(--cp-font); font-size: 0.8em; }
+.cp-dim     { color: var(--cp-dim);     font-family: var(--cp-font); font-size: 0.95em; }
 
 /* Blinking cursor / status dot */
 .cp-blink { animation: blink 1s step-end infinite; }
@@ -452,7 +453,7 @@ pre, code {
 }
 .cp-threat-label {
   font-family: var(--cp-display);
-  font-size: 0.62em;
+  font-size: 0.88em;
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--cp-dim);
@@ -487,7 +488,7 @@ pre, code {
 /* ── System status panel ────────────────────────────────────── */
 .cp-sysstat {
   font-family: var(--cp-font);
-  font-size: 0.72em;
+  font-size: 0.95em;
   line-height: 2em;
 }
 .cp-sysstat-row {
