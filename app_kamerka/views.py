@@ -631,7 +631,7 @@ def port_scan_view(request, id):
 
 
 def export_csv(request, id):
-    """Export search results as CSV for SandDance visualization."""
+    """Export search results as CSV for FOSS geospatial tools (QGIS, Kepler.gl, the built-in globe)."""
     import tempfile
     fd, output_path = tempfile.mkstemp(suffix='.csv')
     os.close(fd)
@@ -647,7 +647,7 @@ def export_csv(request, id):
 
 
 def export_kml(request, id):
-    """Export search results as KML for Mapbox geospatial intelligence."""
+    """Export search results as KML for FOSS geospatial tools (QGIS, Leaflet, uMap)."""
     import tempfile
     fd, output_path = tempfile.mkstemp(suffix='.kml')
     os.close(fd)
@@ -717,3 +717,69 @@ def get_whois(request, id):
         response_data = serializers.serialize('json', whoiss)
 
         return HttpResponse(response_data, content_type="application/json")
+
+
+def globe(request):
+    """Render the 3-D WebGL globe page."""
+    return render(request, 'globe.html', {})
+
+
+def globe_devices_json(request):
+    """
+    Return all devices as JSON for the Three.js globe.
+
+    Each record mirrors the CSV export schema (IP, lat, lon, product, type,
+    port, city, org, vuln_count, severity) so the same data that feeds
+    QGIS / Kepler.gl also drives the built-in globe and heat-map.
+
+    Severity is derived from the vuln count using the same bands as the
+    desktop globe_3d widget:
+        0 vulns  → info
+        1-2      → low
+        3-5      → medium
+        6-10     → high
+        >10      → critical
+    """
+    devices = Device.objects.all()
+    records = []
+    for d in devices:
+        try:
+            lat = float(d.lat)
+            lon = float(d.lon)
+        except (ValueError, TypeError):
+            continue
+
+        vuln_count = 0
+        if d.vulns:
+            try:
+                vuln_list = json.loads(d.vulns.replace("'", '"'))
+                vuln_count = len(vuln_list) if isinstance(vuln_list, list) else 0
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        if vuln_count > 10:
+            severity = 'critical'
+        elif vuln_count > 5:
+            severity = 'high'
+        elif vuln_count > 2:
+            severity = 'medium'
+        elif vuln_count > 0:
+            severity = 'low'
+        else:
+            severity = 'info'
+
+        records.append({
+            'ip':         d.ip,
+            'lat':        lat,
+            'lon':        lon,
+            'product':    d.product or '',
+            'type':       d.type or '',
+            'port':       d.port or '',
+            'city':       d.city or '',
+            'org':        d.org or '',
+            'country':    d.country_code or '',
+            'vuln_count': vuln_count,
+            'severity':   severity,
+        })
+
+    return JsonResponse(records, safe=False)

@@ -17,7 +17,7 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
   device type identified during the Shodan scan
 - **Wappalyzer integration** for web technology fingerprinting of discovered devices
 - **RTSP stream scanning** for camera devices
-- **CSV and KML export** for search results
+- **CSV and KML export** for search results — load directly into QGIS, Kepler.gl, uMap, or the built-in globe
 - **Celery progress tracking** with real-time task status in the UI
 - **Comprehensive test suite** covering models, views, URL patterns, exports, and scanning tasks
 - **API keys via environment variables** — no more `keys.json`; copy `.env.example` → `.env` and export `SHODAN_API_KEY` (and optional Pastebin keys). `keys.json` is now `.gitignore`d.
@@ -76,7 +76,8 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 - WHOIS lookups powered by the FOSS `ipwhois` library (no API key required)
 - Wappalyzer web technology detection
 - RTSP camera stream scanning
-- CSV and KML export for search results
+- CSV and KML export for search results — compatible with QGIS, Kepler.gl, uMap, and the built-in globe
+- **3-D WebGL globe** (`/globe`) — Three.js globe with device spikes, heat-map overlay, five cyberpunk themes, and click-to-inspect; data sourced from the same CSV/KML pipeline
 - Gallery section shows every gathered screenshot in one place
 - Celery task progress tracking in the UI
 - **Tiered verification pipeline**: InternetDB (free) → Naabu → Shodan, with credit cost reporting
@@ -266,6 +267,40 @@ Additional tunables in `kamerka/tool_settings.py`:
 | `NAABU_DEFAULT_PORTS` | `KAMERKA_NAABU_PORTS` | `top-100` | Port spec for liveness checks |
 | `NAABU_DEFAULT_TIMEOUT` | `KAMERKA_NAABU_TIMEOUT` | `60` | Naabu subprocess timeout (s) |
 | `NUCLEI_DEFAULT_TIMEOUT` | `KAMERKA_NUCLEI_TIMEOUT` | `300` | Nuclei subprocess timeout (s) |
+
+---
+
+## Cyberpunk UI
+
+All pages use the dark neon cyberpunk design system (`app_kamerka/static/css/cyberpunk.css`) built on top of the existing layout. No external font CDN — fonts are self-hosted (SIL OFL).
+
+### Search
+
+![Search — cyberpunk UI](screens/cyberpunk_search.png)
+
+### Dashboard
+
+![Dashboard — cyberpunk UI](screens/cyberpunk_dashboard.png)
+
+### History
+
+![History — cyberpunk UI](screens/cyberpunk_history.png)
+
+### Devices
+
+![Devices list — cyberpunk UI](screens/cyberpunk_devices_list.png)
+
+### Gallery
+
+![Gallery — cyberpunk UI](screens/cyberpunk_gallery.png)
+
+### Map (Leaflet + OpenStreetMap)
+
+![Map — cyberpunk UI](screens/cyberpunk_map.png)
+
+### Useful Links
+
+![Sources — cyberpunk UI](screens/cyberpunk_sources.png)
 
 ---
 
