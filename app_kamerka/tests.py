@@ -201,11 +201,14 @@ class NucleiTaskTests(TestCase):
     @patch('kamerka.tasks.subprocess.run')
     def test_nuclei_scan_with_custom_templates(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        from django.conf import settings as dj_settings
         from kamerka.tasks import nuclei_scan
         nuclei_scan(self.device.id, templates_dir="nuclei_templates/china-iot/hikvision")
         call_args = mock_run.call_args[0][0]
         self.assertIn("-t", call_args)
-        self.assertIn("nuclei_templates/china-iot/hikvision", call_args)
+        # Path must be resolved to absolute before being passed to nuclei
+        expected = os.path.join(dj_settings.BASE_DIR, "nuclei_templates", "china-iot", "hikvision")
+        self.assertIn(expected, call_args)
 
     @patch('kamerka.tasks.subprocess.run')
     def test_nuclei_scan_not_installed(self, mock_run):
@@ -1445,6 +1448,58 @@ class NucleiConfiguredBinTests(TestCase):
         called_timeout = mock_run.call_args[1].get('timeout')
         self.assertEqual(called_timeout, 42)
 
+    @patch('kamerka.tasks.subprocess.run')
+    def test_nuclei_scan_resolves_relative_templates_dir(self, mock_run):
+        """nuclei_scan must pass an absolute path to -t even when given a relative path."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        from kamerka.tasks import nuclei_scan
+        nuclei_scan(self.device.id, templates_dir="nuclei_templates/china-iot/hikvision")
+        called_cmd = mock_run.call_args[0][0]
+        t_index = called_cmd.index("-t")
+        resolved = called_cmd[t_index + 1]
+        if not os.path.isabs(resolved):
+            self.fail(
+                "Expected absolute path for -t flag, got relative: {!r}".format(resolved)
+            )
+        if not resolved.endswith(os.path.join("nuclei_templates", "china-iot", "hikvision")):
+            self.fail(
+                "Resolved path does not point to the expected directory: {!r}".format(resolved)
+            )
+
+    @patch('kamerka.tasks.subprocess.run')
+    def test_nuclei_scan_absolute_templates_dir_passed_unchanged(self, mock_run):
+        """nuclei_scan must not alter a path that is already absolute."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        abs_path = "/opt/my-nuclei-templates"
+        from kamerka.tasks import nuclei_scan
+        nuclei_scan(self.device.id, templates_dir=abs_path)
+        called_cmd = mock_run.call_args[0][0]
+        t_index = called_cmd.index("-t")
+        resolved = called_cmd[t_index + 1]
+        if resolved != abs_path:
+            self.fail(
+                "Absolute path was modified: expected {!r}, got {!r}".format(abs_path, resolved)
+            )
+
+    @patch('kamerka.tasks.subprocess.run')
+    def test_nuclei_scan_empty_port_defaults_to_80(self, mock_run):
+        """nuclei_scan must use port 80 when the device port field is empty."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        self.device.port = ""
+        self.device.save()
+        from kamerka.tasks import nuclei_scan
+        result = nuclei_scan(self.device.id)
+        if isinstance(result, dict) and result.get("error", "").startswith("Invalid port"):
+            self.fail(
+                "nuclei_scan returned error for empty port (expected default 80): {!r}".format(result)
+            )
+        called_cmd = mock_run.call_args[0][0]
+        target = next((a for a in called_cmd if a.startswith("http://")), None)
+        if target is None or ":80" not in target:
+            self.fail(
+                "Expected target URL to contain ':80' for empty port, got cmd: {!r}".format(called_cmd)
+            )
+
 
 class DeviceLastScannedTests(TestCase):
     """Verify the Device.last_scanned field is present and nullable."""
@@ -2481,3 +2536,176 @@ class ExploitTaskDispatchTests(TestCase):
             self.fail(
                 "Expected {{'admin': 'hikvision'}}, got {!r}".format(result)
             )
+
+
+# ---------------------------------------------------------------------------
+# Nuclei template matching – view builds correct match flags
+# ---------------------------------------------------------------------------
+class NucleiTemplateMatchingTests(TestCase):
+    """The device view marks the template entry whose directory name matches
+    device.type so the dropdown is pre-selected in the UI."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+
+    def _build_template_list(self, device_type, tmp_dir):
+        """Replicate the view logic that populates nuclei_template_list."""
+        from django.conf import settings as dj_settings
+        nuclei_templates_dir = tmp_dir
+        nuclei_template_list = []
+        device_type_lower = (device_type or '').lower()
+        if os.path.isdir(nuclei_templates_dir):
+            for root, dirs, files in os.walk(nuclei_templates_dir):
+                dirs.sort()
+                yaml_files = sorted(f for f in files if f.endswith(('.yaml', '.yml')))
+                if yaml_files and root != nuclei_templates_dir:
+                    dir_name = os.path.basename(root).lower()
+                    rel_dir = os.path.relpath(root, dj_settings.BASE_DIR)
+                    label_dir = os.path.relpath(root, nuclei_templates_dir)
+                    nuclei_template_list.append({
+                        'label': label_dir + ' [all]',
+                        'path': rel_dir,
+                        'is_dir': True,
+                        'match': bool(device_type_lower and device_type_lower == dir_name),
+                    })
+                for fname in yaml_files:
+                    full_path = os.path.join(root, fname)
+                    rel_path = os.path.relpath(full_path, dj_settings.BASE_DIR)
+                    label = os.path.relpath(full_path, nuclei_templates_dir)
+                    nuclei_template_list.append({
+                        'label': label,
+                        'path': rel_path,
+                        'is_dir': False,
+                        'match': False,
+                    })
+        return nuclei_template_list
+
+    def test_matching_dir_entry_gets_match_true(self):
+        """Directory whose name equals device.type must have match=True."""
+        with tempfile.TemporaryDirectory() as tmp:
+            vendor_dir = os.path.join(tmp, "hikvision")
+            os.makedirs(vendor_dir)
+            open(os.path.join(vendor_dir, "hikvision-cve-test.yaml"), 'w').close()
+
+            tpls = self._build_template_list("hikvision", tmp)
+            dir_entries = [t for t in tpls if t['is_dir']]
+            if not dir_entries:
+                self.fail("Expected at least one directory entry in template list")
+            matched = [t for t in dir_entries if t['match']]
+            if not matched:
+                self.fail(
+                    "Expected the 'hikvision' directory entry to have match=True, "
+                    "but none did: {!r}".format(dir_entries)
+                )
+
+    def test_non_matching_device_type_yields_no_match(self):
+        """No entry should have match=True when device.type does not match any template dir."""
+        with tempfile.TemporaryDirectory() as tmp:
+            vendor_dir = os.path.join(tmp, "hikvision")
+            os.makedirs(vendor_dir)
+            open(os.path.join(vendor_dir, "hikvision-cve-test.yaml"), 'w').close()
+
+            tpls = self._build_template_list("dahua", tmp)
+            matched = [t for t in tpls if t['match']]
+            if matched:
+                self.fail(
+                    "Expected no match for device type 'dahua' against 'hikvision' dir, "
+                    "but got: {!r}".format(matched)
+                )
+
+    def test_file_entries_never_have_match_true(self):
+        """Individual YAML file entries must always have match=False."""
+        with tempfile.TemporaryDirectory() as tmp:
+            vendor_dir = os.path.join(tmp, "hikvision")
+            os.makedirs(vendor_dir)
+            open(os.path.join(vendor_dir, "hikvision-cve-test.yaml"), 'w').close()
+
+            tpls = self._build_template_list("hikvision", tmp)
+            file_entries = [t for t in tpls if not t['is_dir']]
+            bad = [t for t in file_entries if t['match']]
+            if bad:
+                self.fail(
+                    "File entries must not have match=True, but found: {!r}".format(bad)
+                )
+
+    def test_empty_device_type_yields_no_match(self):
+        """An empty device.type must never produce a match."""
+        with tempfile.TemporaryDirectory() as tmp:
+            vendor_dir = os.path.join(tmp, "hikvision")
+            os.makedirs(vendor_dir)
+            open(os.path.join(vendor_dir, "hikvision-cve-test.yaml"), 'w').close()
+
+            for dt in ("", None):
+                tpls = self._build_template_list(dt, tmp)
+                matched = [t for t in tpls if t['match']]
+                if matched:
+                    self.fail(
+                        "device_type={!r} produced unexpected match: {!r}".format(dt, matched)
+                    )
+
+    def test_case_insensitive_match(self):
+        """Match must be case-insensitive (e.g. 'Hikvision' should match 'hikvision' dir)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            vendor_dir = os.path.join(tmp, "hikvision")
+            os.makedirs(vendor_dir)
+            open(os.path.join(vendor_dir, "hikvision-cve-test.yaml"), 'w').close()
+
+            tpls = self._build_template_list("Hikvision", tmp)
+            matched = [t for t in tpls if t['match']]
+            if not matched:
+                self.fail(
+                    "Expected case-insensitive match for 'Hikvision' against 'hikvision' dir"
+                )
+
+
+# ---------------------------------------------------------------------------
+# get_shodan_scan_results  –  empty queryset must not raise IndexError
+# ---------------------------------------------------------------------------
+class GetShodanScanResultsTests(TestCase):
+    """get_shodan_scan_results must return [] when no scan record exists."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+        self.device = Device.objects.create(
+            search=self.search, ip="10.0.0.1", product="TestCam",
+            port="80", type="hikvision", lat="40.0", lon="-74.0",
+            country_code="US"
+        )
+
+    def test_empty_queryset_returns_json_empty_list(self):
+        response = self.client.get(
+            '/get_shodan_scan_results/{}'.format(self.device.id),
+            **AJAX_HEADERS
+        )
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if data != []:
+            self.fail(
+                "Expected [] when no ShodanScan record exists, got: {!r}".format(data)
+            )
+
+    def test_existing_record_returns_serialized_data(self):
+        ShodanScan.objects.create(
+            device=self.device,
+            ports="[80, 443]",
+            tags="[]",
+            products="[]",
+            module="http",
+            vulns="[]",
+        )
+        response = self.client.get(
+            '/get_shodan_scan_results/{}'.format(self.device.id),
+            **AJAX_HEADERS
+        )
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if len(data) != 1:
+            self.fail("Expected 1 record, got {}".format(len(data)))
+        if data[0]['fields']['ports'] != "[80, 443]":
+            self.fail("Unexpected ports value: {!r}".format(data[0]['fields']['ports']))

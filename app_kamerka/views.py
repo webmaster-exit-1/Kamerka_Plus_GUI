@@ -413,14 +413,32 @@ def device(request, id, device_id, ip):
 
     nuclei_templates_dir = os.path.join(settings.BASE_DIR, 'nuclei_templates')
     nuclei_template_list = []
+    device_type_lower = (all_devices.type or '').lower()
     if os.path.isdir(nuclei_templates_dir):
         for root, dirs, files in os.walk(nuclei_templates_dir):
-            for fname in sorted(files):
-                if fname.endswith('.yaml') or fname.endswith('.yml'):
-                    full_path = os.path.join(root, fname)
-                    rel_path = os.path.relpath(full_path, settings.BASE_DIR)
-                    label = os.path.relpath(full_path, nuclei_templates_dir)
-                    nuclei_template_list.append({'label': label, 'path': rel_path})
+            dirs.sort()
+            yaml_files = sorted(f for f in files if f.endswith(('.yaml', '.yml')))
+            # Directory-level entry lets the user run all templates in that folder at once.
+            if yaml_files and root != nuclei_templates_dir:
+                rel_dir = os.path.relpath(root, settings.BASE_DIR)
+                label_dir = os.path.relpath(root, nuclei_templates_dir)
+                dir_name = os.path.basename(root).lower()
+                nuclei_template_list.append({
+                    'label': label_dir + ' [all]',
+                    'path': rel_dir,
+                    'is_dir': True,
+                    'match': bool(device_type_lower and device_type_lower == dir_name),
+                })
+            for fname in yaml_files:
+                full_path = os.path.join(root, fname)
+                rel_path = os.path.relpath(full_path, settings.BASE_DIR)
+                label = os.path.relpath(full_path, nuclei_templates_dir)
+                nuclei_template_list.append({
+                    'label': label,
+                    'path': rel_path,
+                    'is_dir': False,
+                    'match': False,
+                })
 
     context = {'device': all_devices,
                'nearby': nearby,

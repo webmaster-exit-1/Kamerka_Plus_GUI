@@ -12,7 +12,9 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 
 - **Leaflet.js + OpenStreetMap** replaces Google Maps — no API key required, no cost, fully open-source (BSD-2-Clause)
 - **WHOIS Lookup** via the FOSS [`ipwhois`](https://pypi.org/project/ipwhois/) library — no API key required, uses standard RDAP/WHOIS servers
-- **Nuclei vulnerability scanning** with 12 custom templates targeting China-IoT devices (Hikvision, Dahua, Huawei, ZTE) **plus a one-click "All Default Templates" mode** that runs Nuclei with its full built-in template library
+- **Nuclei vulnerability scanning** with 12 custom templates targeting China-IoT devices
+  (Hikvision, Dahua, Huawei, ZTE); the template dropdown is pre-selected based on the
+  device type identified during the Shodan scan
 - **Wappalyzer integration** for web technology fingerprinting of discovered devices
 - **RTSP stream scanning** for camera devices
 - **CSV and KML export** for search results

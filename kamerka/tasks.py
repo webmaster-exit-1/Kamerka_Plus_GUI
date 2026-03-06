@@ -942,6 +942,11 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150):
     cmd = [nuclei_bin, "-u", target_url, "-jsonl", "-silent"]
 
     if templates_dir:
+        # Resolve relative paths (sent from the UI) to absolute so nuclei
+        # can find them regardless of the working directory.
+        if not os.path.isabs(templates_dir):
+            from django.conf import settings as _s
+            templates_dir = os.path.join(_s.BASE_DIR, templates_dir)
         cmd.extend(["-t", templates_dir])
     else:
         cmd.append("-as")
@@ -1280,9 +1285,9 @@ def whoisxml(id):
             contact = entity.get('contact') or {}
 
             entity_name = contact.get('name', "") or ""
-            entity_org = (contact.get('org') or [{}])[0].get('value', "") if contact.get('org') else ""
-            entity_email = (contact.get('email') or [{}])[0].get('value', "") if contact.get('email') else ""
-            entity_phone = (contact.get('phone') or [{}])[0].get('value', "") if contact.get('phone') else ""
+            entity_org = (contact.get('org') or [{}])[0].get('value', "")
+            entity_email = (contact.get('email') or [{}])[0].get('value', "")
+            entity_phone = (contact.get('phone') or [{}])[0].get('value', "")
             address_parts = contact.get('address') or []
             entity_street = address_parts[0].get('value', "") if address_parts else ""
             entity_city = ""
