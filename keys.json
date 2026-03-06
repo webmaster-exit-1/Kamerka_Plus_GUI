@@ -1,8 +1,0 @@
-{
-  "keys": {
-    "shodan": "SHODAN_KEY",
-    "pastebin_user": "PASTEBIN_USER",
-    "pastebin_password": "PASTEBIN_PASSWORD",
-    "pastebin_dev_key": "PASTEBIN_DEVELOPER_KEY"
-  }
-}
