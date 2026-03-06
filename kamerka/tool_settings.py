@@ -51,6 +51,20 @@ NAABU_DEFAULT_PORTS: str = os.environ.get("KAMERKA_NAABU_PORTS", "top-100")
 NAABU_DEFAULT_TIMEOUT: int = int(os.environ.get("KAMERKA_NAABU_TIMEOUT", "60"))
 
 # ---------------------------------------------------------------------------
+# Naabu – on-demand device port discovery
+# ---------------------------------------------------------------------------
+# When a Device has no port data, scan tasks call _resolve_open_ports() which
+# runs a full Naabu scan to discover open ports before further testing.
+# Override via env vars or edit below.
+
+#: Port range used for device port discovery (when device.port is empty).
+#: "1-65535" scans every TCP port; tune to "top-1000" for faster results.
+NAABU_DISCOVERY_PORTS: str = os.environ.get("KAMERKA_NAABU_DISCOVERY_PORTS", "1-65535")
+
+#: Timeout in seconds for a discovery scan (full range needs more time).
+NAABU_DISCOVERY_TIMEOUT: int = int(os.environ.get("KAMERKA_NAABU_DISCOVERY_TIMEOUT", "120"))
+
+# ---------------------------------------------------------------------------
 # Nuclei
 # ---------------------------------------------------------------------------
 

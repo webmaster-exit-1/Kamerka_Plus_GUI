@@ -155,7 +155,12 @@ class WappalyzerTaskTests(TestCase):
         from kamerka.tasks import wappalyzer_scan
         result = wappalyzer_scan(self.device.id)
         self.assertIn("error", result)
-        self.assertIn("timed out", result["error"])
+        # Timeout per-port is now logged as warning; the task returns the
+        # "no output" summary error once all ports have been tried.
+        self.assertTrue(
+            "timed out" in result["error"] or "No output" in result["error"],
+            "Expected timeout or no-output error, got: {!r}".format(result["error"])
+        )
 
 
 class NucleiTaskTests(TestCase):
@@ -1482,8 +1487,11 @@ class NucleiConfiguredBinTests(TestCase):
             )
 
     @patch('kamerka.tasks.subprocess.run')
-    def test_nuclei_scan_empty_port_defaults_to_80(self, mock_run):
-        """nuclei_scan must use port 80 when the device port field is empty."""
+    @patch('verification.naabu_scanner.run_naabu')
+    def test_nuclei_scan_empty_port_triggers_naabu_discovery(self, mock_naabu, mock_run):
+        """nuclei_scan must call _resolve_open_ports when device.port is empty,
+        which in turn calls Naabu to discover open ports."""
+        mock_naabu.return_value = [{'ip': '192.168.1.1', 'port': 80}]
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         self.device.port = ""
         self.device.save()
@@ -1491,14 +1499,11 @@ class NucleiConfiguredBinTests(TestCase):
         result = nuclei_scan(self.device.id)
         if isinstance(result, dict) and result.get("error", "").startswith("Invalid port"):
             self.fail(
-                "nuclei_scan returned error for empty port (expected default 80): {!r}".format(result)
+                "nuclei_scan should not return 'Invalid port' — it should discover ports via Naabu: {!r}".format(result)
             )
-        called_cmd = mock_run.call_args[0][0]
-        target = next((a for a in called_cmd if a.startswith("http://")), None)
-        if target is None or ":80" not in target:
-            self.fail(
-                "Expected target URL to contain ':80' for empty port, got cmd: {!r}".format(called_cmd)
-            )
+        # Naabu must have been invoked since port was empty
+        if not mock_naabu.called:
+            self.fail("Expected Naabu discovery to be called for empty-port device")
 
 
 class DeviceLastScannedTests(TestCase):
@@ -2715,33 +2720,36 @@ class GetShodanScanResultsTests(TestCase):
 # Fix 1 – Device.port coercion
 # ===========================================================================
 class DevicePortCoercionTests(TestCase):
-    """Device.save() must default an empty/blank port to '80'."""
+    """Device model stores port as-is; port discovery is deferred to _resolve_open_ports()."""
 
     def setUp(self):
         self.search = Search.objects.create(
             coordinates="0,0", country="US", ics="test", coordinates_search="test"
         )
 
-    def test_empty_string_port_becomes_80(self):
+    def test_empty_string_port_stays_empty(self):
+        """Empty port is stored as-is — _resolve_open_ports() handles discovery at scan time."""
         device = Device.objects.create(
             search=self.search, ip="1.2.3.4", product="Cam",
             port="", type="hikvision", lat="0", lon="0", country_code="US"
         )
         device.refresh_from_db()
-        if device.port != "80":
+        if device.port != "":
             self.fail(
-                "Expected port='80' after saving with port='', got {!r}".format(device.port)
+                "Expected port='' to be stored unchanged, got {!r}".format(device.port)
             )
 
-    def test_whitespace_port_becomes_80(self):
+    def test_whitespace_port_stays_whitespace(self):
+        """Whitespace-only port is stored as-is; the model no longer coerces it."""
         device = Device.objects.create(
             search=self.search, ip="1.2.3.5", product="Cam",
             port="   ", type="hikvision", lat="0", lon="0", country_code="US"
         )
         device.refresh_from_db()
-        if device.port != "80":
+        # The model doesn't strip or default the port; that's _resolve_open_ports' job.
+        if device.port.strip() not in ("", "   "):
             self.fail(
-                "Expected port='80' after saving with whitespace port, got {!r}".format(device.port)
+                "Expected whitespace port to be stored unchanged, got {!r}".format(device.port)
             )
 
     def test_valid_port_is_unchanged(self):
@@ -2975,3 +2983,148 @@ class NucleiScanInputValidationTests(TestCase):
         rl_idx = cmd.index("-rate-limit") + 1
         if cmd[rl_idx] != "42":
             self.fail("Expected '42' as rate-limit arg, got {!r}".format(cmd[rl_idx]))
+
+
+# ===========================================================================
+# Port discovery – _resolve_open_ports
+# ===========================================================================
+class ResolveOpenPortsTests(TestCase):
+    """_resolve_open_ports returns existing port data or runs Naabu discovery."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+
+    def _make_device(self, port):
+        return Device.objects.create(
+            search=self.search, ip="1.2.3.4", product="Cam",
+            port=port, type="hikvision", lat="0", lon="0", country_code="US"
+        )
+
+    def test_single_port_string_returned_without_naabu(self):
+        device = self._make_device("8080")
+        from kamerka.tasks import _resolve_open_ports
+        with patch('verification.naabu_scanner.run_naabu') as mock_naabu:
+            ports = _resolve_open_ports(device)
+            if mock_naabu.called:
+                self.fail("Naabu should NOT be called when port data already exists")
+        if ports != [8080]:
+            self.fail("Expected [8080], got {!r}".format(ports))
+
+    def test_multiport_string_parsed_without_naabu(self):
+        device = self._make_device("22, 80, 443")
+        from kamerka.tasks import _resolve_open_ports
+        with patch('verification.naabu_scanner.run_naabu') as mock_naabu:
+            ports = _resolve_open_ports(device)
+            if mock_naabu.called:
+                self.fail("Naabu should NOT be called when port data already exists")
+        if sorted(ports) != [22, 80, 443]:
+            self.fail("Expected [22, 80, 443], got {!r}".format(ports))
+
+    def test_empty_port_triggers_naabu_and_persists(self):
+        device = self._make_device("")
+        from kamerka.tasks import _resolve_open_ports
+        with patch('verification.naabu_scanner.run_naabu') as mock_naabu:
+            mock_naabu.return_value = [
+                {'ip': '1.2.3.4', 'port': 80},
+                {'ip': '1.2.3.4', 'port': 443},
+            ]
+            ports = _resolve_open_ports(device)
+        if not mock_naabu.called:
+            self.fail("Naabu should be called when port data is empty")
+        if sorted(ports) != [80, 443]:
+            self.fail("Expected [80, 443], got {!r}".format(ports))
+        # Ports must be persisted back to the database
+        device.refresh_from_db()
+        if "80" not in device.port or "443" not in device.port:
+            self.fail("Discovered ports not persisted to device.port: {!r}".format(device.port))
+
+    def test_naabu_unavailable_returns_empty_list(self):
+        device = self._make_device("")
+        from kamerka.tasks import _resolve_open_ports
+        with patch('verification.naabu_scanner.run_naabu', return_value=[]):
+            ports = _resolve_open_ports(device)
+        if ports != []:
+            self.fail("Expected [] when Naabu finds no ports, got {!r}".format(ports))
+
+    def test_nuclei_scan_returns_error_when_no_ports(self):
+        device = self._make_device("")
+        from kamerka.tasks import nuclei_scan
+        with patch('verification.naabu_scanner.run_naabu', return_value=[]):
+            result = nuclei_scan(device.id)
+        if not (isinstance(result, dict) and "error" in result):
+            self.fail("Expected error dict when no ports found, got: {!r}".format(result))
+
+    @patch('kamerka.tasks.subprocess.run')
+    def test_nuclei_scan_uses_targets_file_for_multiple_ports(self, mock_run):
+        """nuclei_scan must pass -l <targets_file> when multiple ports are found."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        device = self._make_device("80, 443")
+        from kamerka.tasks import nuclei_scan
+        nuclei_scan(device.id)
+        cmd = mock_run.call_args[0][0]
+        if "-l" not in cmd:
+            self.fail(
+                "Expected '-l <targets_file>' in nuclei command for multi-port device, "
+                "got: {!r}".format(cmd)
+            )
+        # -u must NOT be present when -l is used
+        if "-u" in cmd:
+            self.fail("Expected '-u' to be absent when '-l' is used, got: {!r}".format(cmd))
+
+    def test_naabu_discovery_ports_setting_exposed(self):
+        from django.conf import settings
+        self.assertTrue(hasattr(settings, 'NAABU_DISCOVERY_PORTS'))
+        self.assertTrue(len(settings.NAABU_DISCOVERY_PORTS) > 0)
+
+    def test_naabu_discovery_timeout_setting_exposed(self):
+        from django.conf import settings
+        self.assertTrue(hasattr(settings, 'NAABU_DISCOVERY_TIMEOUT'))
+        self.assertIsInstance(settings.NAABU_DISCOVERY_TIMEOUT, int)
+        self.assertGreater(settings.NAABU_DISCOVERY_TIMEOUT, 0)
+
+
+# ===========================================================================
+# Progress bar – get_task_info view
+# ===========================================================================
+class GetTaskInfoViewTests(TestCase):
+    """get_task_info returns state and result for a Celery task ID."""
+
+    def test_no_task_id_returns_plain_text(self):
+        response = self.client.get('/get-task-info/')
+        if response.status_code != 200:
+            self.fail("Expected 200, got {}".format(response.status_code))
+        if b'No job id given' not in response.content:
+            self.fail("Expected 'No job id given' in response, got: {}".format(response.content))
+
+    @patch('app_kamerka.views.AsyncResult')
+    def test_pending_task_returns_state(self, mock_async):
+        mock_async.return_value = MagicMock(state='PENDING', result=None)
+        response = self.client.get('/get-task-info/', {'task_id': 'fake-id'})
+        if response.status_code != 200:
+            self.fail("Expected 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if data.get('state') != 'PENDING':
+            self.fail("Expected state='PENDING', got: {!r}".format(data))
+
+    @patch('app_kamerka.views.AsyncResult')
+    def test_progress_task_returns_percent(self, mock_async):
+        mock_async.return_value = MagicMock(
+            state='PROGRESS',
+            result={'current': 50, 'total': 100, 'percent': 50.0}
+        )
+        response = self.client.get('/get-task-info/', {'task_id': 'fake-id'})
+        data = json.loads(response.content)
+        if data.get('state') != 'PROGRESS':
+            self.fail("Expected state='PROGRESS', got: {!r}".format(data))
+        if data.get('result', {}).get('percent') != 50.0:
+            self.fail("Expected percent=50.0, got: {!r}".format(data))
+
+    @patch('app_kamerka.views.AsyncResult')
+    def test_success_task_returns_result(self, mock_async):
+        mock_async.return_value = MagicMock(state='SUCCESS', result={'findings_count': 3})
+        response = self.client.get('/get-task-info/', {'task_id': 'fake-id'})
+        data = json.loads(response.content)
+        if data.get('state') != 'SUCCESS':
+            self.fail("Expected state='SUCCESS', got: {!r}".format(data))

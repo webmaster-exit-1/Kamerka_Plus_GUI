@@ -23,7 +23,7 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 - **API keys via environment variables** — no more `keys.json`; copy `.env.example` → `.env` and export `SHODAN_API_KEY` (and optional Pastebin keys). `keys.json` is now `.gitignore`d.
 - **Nuclei template manifest** — `nuclei_templates/manifest.yaml` maps device types to template paths; adding a new vendor requires only a YAML entry, no code change
 - **Hardened input validation** — `nuclei_scan` validates `severity` against the Nuclei allowlist and clamps `rate_limit` to [1, 500]
-- **`Device.port` coercion** — `Device.save()` defaults an empty port to `"80"` so downstream scans never receive an invalid target
+- **Automatic port discovery** — when a device has no port data, `_resolve_open_ports()` runs a full Naabu scan (`1-65535` by default, configurable via `KAMERKA_NAABU_DISCOVERY_PORTS`) and persists the results; both `nuclei_scan` and `wappalyzer_scan` cover every discovered open port
 
 ### 3D Globe (local-first rendering engine)
 

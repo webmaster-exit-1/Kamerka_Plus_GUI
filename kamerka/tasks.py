@@ -871,15 +871,17 @@ def nmap_scan(self, file, fk):
 def _validate_target(ip, port):
     """Validate IP address and port to prevent SSRF and injection.
 
-    If *port* is empty or ``None`` it defaults to ``80``.
+    Raises ``ValueError`` for any invalid input including an empty port.
+    Callers that need port discovery for devices with no recorded port should
+    call ``_resolve_open_ports()`` first.
     """
     import ipaddress
     try:
         ipaddress.ip_address(ip)
     except ValueError:
         raise ValueError("Invalid IP address: {}".format(ip))
-    if not port:
-        port = 80
+    if not port or not str(port).strip():
+        raise ValueError("Invalid port: (empty) — run a port scan first")
     try:
         port_int = int(port)
         if not (1 <= port_int <= 65535):
@@ -889,57 +891,148 @@ def _validate_target(ip, port):
     return ip, str(port_int)
 
 
+def _resolve_open_ports(device):
+    """Return a sorted list of open TCP port numbers for *device*.
+
+    Resolution order
+    ----------------
+    1. If ``device.port`` already contains port data (a single number or a
+       comma-separated list from an Nmap/Shodan scan), parse and return it.
+    2. Otherwise run a full Naabu port scan against ``device.ip``.
+
+    **Side effect (case 2 only):** when port discovery succeeds the
+    discovered port list is persisted to ``device.port`` and saved to the
+    database via ``device.save(update_fields=['port'])``.
+
+    Returns
+    -------
+    list[int]
+        Sorted open port numbers.  Empty list when the stored port field is
+        blank *and* Naabu finds no open ports (or is not installed).
+    """
+    from verification.naabu_scanner import run_naabu, _get_naabu_bin
+    from django.conf import settings as _s
+
+    existing = str(device.port).strip() if device.port else ""
+    if existing:
+        ports = []
+        for part in re.split(r'[,\s]+', existing):
+            part = part.strip()
+            if part.isdigit():
+                p = int(part)
+                if 1 <= p <= 65535:
+                    ports.append(p)
+        if ports:
+            return sorted(set(ports))
+
+    # No usable port data — discover ports with a full Naabu scan.
+    # Distinguish "not installed" from "host has no open ports" for clearer logging.
+    naabu_bin = _get_naabu_bin()
+    if not os.path.isfile(naabu_bin) and naabu_bin != "naabu":
+        logger.error(
+            "_resolve_open_ports: Naabu binary '%s' not found. "
+            "Install: go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest",
+            naabu_bin,
+        )
+        return []
+
+    discovery_ports = getattr(_s, 'NAABU_DISCOVERY_PORTS', '1-65535')
+    discovery_timeout = getattr(_s, 'NAABU_DISCOVERY_TIMEOUT', 120)
+    logger.info(
+        "_resolve_open_ports: running Naabu discovery against %s (ports: %s)",
+        device.ip, discovery_ports,
+    )
+    results = run_naabu(device.ip, ports=discovery_ports, timeout=discovery_timeout)
+    if results:
+        open_ports = sorted(set(r['port'] for r in results if r.get('port')))
+        device.port = ', '.join(str(p) for p in open_ports)
+        device.save(update_fields=['port'])
+        logger.info(
+            "_resolve_open_ports: discovered ports %s on %s",
+            device.port, device.ip,
+        )
+        return open_ports
+
+    logger.warning(
+        "_resolve_open_ports: no open ports found on %s "
+        "(host may be unreachable or all ports filtered)", device.ip
+    )
+    return []
+
+
 @shared_task(bind=False)
 def wappalyzer_scan(id):
-    """Run Wappalyzer CLI against a device to fingerprint technologies."""
+    """Run Wappalyzer CLI against all open ports of a device.
+
+    Calls ``_resolve_open_ports()`` to discover (or reuse) open ports before
+    running Wappalyzer against each one so no port data is required up-front.
+    """
     device = Device.objects.get(id=id)
-    try:
-        ip, port = _validate_target(device.ip, device.port)
-    except ValueError as e:
-        return {"error": str(e)}
-    target_url = "http://{}:{}".format(ip, port)
 
     try:
-        result = subprocess.run(
-            ["wappalyzer", target_url, "-oJ"],
-            capture_output=True,
-            text=True,
-            timeout=60
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            technologies = json.loads(result.stdout)
-            wap_result = WappalyzerResult(
-                device=device,
-                technologies=technologies,
-                raw_output=result.stdout[:10000]
+        ipaddress_mod = __import__('ipaddress')
+        ipaddress_mod.ip_address(device.ip)  # basic SSRF guard
+    except ValueError:
+        return {"error": "Invalid IP address: {}".format(device.ip)}
+
+    ports = _resolve_open_ports(device)
+    if not ports:
+        return {"error": "No open ports discovered on {} — Naabu may not be installed "
+                "(see KAMERKA_NAABU_BIN) or the host is unreachable".format(device.ip)}
+
+    _HTTPS_PORTS = {443, 8443, 4443, 9443}
+    all_technologies = {}
+    for port in ports:
+        scheme = "https" if port in _HTTPS_PORTS else "http"
+        target_url = "{}://{}:{}".format(scheme, device.ip, port)
+        try:
+            result = subprocess.run(
+                ["wappalyzer", target_url, "-oJ"],
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
-            wap_result.save()
-            return technologies
-        else:
-            return {"error": result.stderr or "No output from Wappalyzer"}
-    except FileNotFoundError:
-        return {"error": "Wappalyzer CLI not installed"}
-    except subprocess.TimeoutExpired:
-        return {"error": "Wappalyzer scan timed out"}
-    except json.JSONDecodeError:
-        return {"error": "Failed to parse Wappalyzer output"}
-    except Exception as e:
-        return {"error": str(e)}
+            if result.returncode == 0 and result.stdout.strip():
+                technologies = json.loads(result.stdout)
+                wap_result = WappalyzerResult(
+                    device=device,
+                    technologies=technologies,
+                    raw_output=result.stdout[:10000],
+                )
+                wap_result.save()
+                all_technologies[str(port)] = technologies
+        except FileNotFoundError:
+            return {"error": "Wappalyzer CLI not installed"}
+        except subprocess.TimeoutExpired:
+            logger.warning("wappalyzer_scan: timed out on %s:%s", device.ip, port)
+        except json.JSONDecodeError:
+            logger.warning("wappalyzer_scan: JSON parse error on %s:%s", device.ip, port)
+        except Exception as exc:
+            logger.warning("wappalyzer_scan: error on %s:%s — %s", device.ip, port, exc)
+
+    return all_technologies if all_technologies else {"error": "No output from Wappalyzer on any port"}
 
 
 @shared_task(bind=False)
 def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150):
-    """Run Nuclei vulnerability scanner against a device.
+    """Run Nuclei against all open ports of a device.
 
-    The Nuclei binary path is read from ``settings.NUCLEI_BIN`` (configured
-    in ``kamerka/tool_settings.py``).  It defaults to ``"nuclei"`` so the
-    system ``$PATH`` is used, but can be overridden with the
-    ``KAMERKA_NUCLEI_BIN`` environment variable or by editing
-    ``kamerka/tool_settings.py`` directly.
+    Port resolution
+    ---------------
+    ``_resolve_open_ports()`` is called first.  If ``device.port`` is already
+    set (from a prior Shodan or Nmap scan) those ports are used directly.
+    Otherwise a full Naabu scan discovers open ports and persists them.
+
+    All discovered ports are written to a temporary target-list file and
+    passed to Nuclei via ``-l`` so a single Nuclei process covers every port.
+
+    The Nuclei binary path is read from ``settings.NUCLEI_BIN``.
 
     ``severity`` is validated against the Nuclei allowlist before use.
     ``rate_limit`` is clamped to [1, 500] to prevent accidental DoS.
     """
+    import tempfile as _tmp
+
     # ── Input validation ────────────────────────────────────────────────────
     _VALID_SEVERITIES = {"info", "low", "medium", "high", "critical"}
     if severity is not None:
@@ -961,29 +1054,54 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150):
     nuclei_timeout = getattr(django_settings, "NUCLEI_DEFAULT_TIMEOUT", 300)
 
     device = Device.objects.get(id=id)
-    try:
-        ip, port = _validate_target(device.ip, device.port)
-    except ValueError as e:
-        return {"error": str(e)}
-    target_url = "http://{}:{}".format(ip, port)
-
-    cmd = [nuclei_bin, "-u", target_url, "-jsonl", "-silent"]
-
-    if templates_dir:
-        # Resolve relative paths (sent from the UI) to absolute so nuclei
-        # can find them regardless of the working directory.
-        if not os.path.isabs(templates_dir):
-            templates_dir = os.path.join(django_settings.BASE_DIR, templates_dir)
-        cmd.extend(["-t", templates_dir])
-    else:
-        cmd.append("-as")
-
-    if severity:
-        cmd.extend(["-severity", severity])
-
-    cmd.extend(["-rate-limit", str(rate_limit)])
 
     try:
+        ipaddress_mod = __import__('ipaddress')
+        ipaddress_mod.ip_address(device.ip)
+    except ValueError:
+        return {"error": "Invalid IP address: {}".format(device.ip)}
+
+    ports = _resolve_open_ports(device)
+    if not ports:
+        return {"error": "No open ports discovered on {} — Naabu may not be installed "
+                "(see KAMERKA_NAABU_BIN) or the host is unreachable".format(device.ip)}
+
+    # Build one target URL per open port and write to a temp file for -l flag.
+    # Use https:// for well-known TLS ports so Nuclei negotiates TLS correctly.
+    _HTTPS_PORTS = {443, 8443, 4443, 9443}
+    target_urls = [
+        "{}://{}:{}".format("https" if p in _HTTPS_PORTS else "http", device.ip, p)
+        for p in ports
+    ]
+    targets_file = None
+    try:
+        # Create the targets file inside the try block so the finally block
+        # always runs after the file exists (avoids orphaned files on SIGKILL).
+        import tempfile as _tmp
+        fd, targets_file = _tmp.mkstemp(suffix='.txt', text=True)
+        try:
+            with os.fdopen(fd, 'w') as tf:
+                tf.write('\n'.join(target_urls) + '\n')
+        except Exception:
+            os.close(fd)
+            raise
+
+        cmd = [nuclei_bin, "-l", targets_file, "-jsonl", "-silent"]
+
+        if templates_dir:
+            # Resolve relative paths (sent from the UI) to absolute so nuclei
+            # can find them regardless of the working directory.
+            if not os.path.isabs(templates_dir):
+                templates_dir = os.path.join(django_settings.BASE_DIR, templates_dir)
+            cmd.extend(["-t", templates_dir])
+        else:
+            cmd.append("-as")
+
+        if severity:
+            cmd.extend(["-severity", severity])
+
+        cmd.extend(["-rate-limit", str(rate_limit)])
+
         result = subprocess.run(
             cmd,
             capture_output=True,
@@ -1002,7 +1120,7 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150):
                         severity=finding.get("info", {}).get("severity", ""),
                         matched_at=finding.get("matched-at", ""),
                         description=finding.get("info", {}).get("description", ""),
-                        raw_output=line[:10000]
+                        raw_output=line[:10000],
                     )
                     nuclei_result.save()
                     findings.append(finding)
@@ -1014,8 +1132,11 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150):
         return {"error": "Nuclei binary not installed"}
     except subprocess.TimeoutExpired:
         return {"error": "Nuclei scan timed out"}
-    except Exception as e:
-        return {"error": str(e)}
+    except Exception as exc:
+        return {"error": str(exc)}
+    finally:
+        if targets_file and os.path.exists(targets_file):
+            os.unlink(targets_file)
 
 
 def paste_login(username, password, key):

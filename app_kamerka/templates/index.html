@@ -81,10 +81,15 @@
                 <!-- START BREADCRUMB -->
                 <ul class="breadcrumb">
                 {% if task_id %}
-                           <div class='progress-wrapper'>
-                <div id='progress-bar' class='progress-bar' style="background-color: #0064d7; width: 0%;">&nbsp;</div>
-                </div>
-                <div id="progress-bar-message" style="color:#ff00cd">Scan in progress...</div>
+                <li style="width:100%; padding: 0; list-style:none;">
+                    <div class="progress" style="margin-bottom:4px; height:18px;">
+                        <div id="progress-bar" class="progress-bar"
+                             role="progressbar"
+                             style="width:0%; background-color:#0064d7; height:18px;"
+                             aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">&nbsp;</div>
+                    </div>
+                    <div id="progress-bar-message" style="color:#ff00cd;">Scan in progress...</div>
+                </li>
                 {% endif %}
                 </ul>
                 <!-- END BREADCRUMB -->                       

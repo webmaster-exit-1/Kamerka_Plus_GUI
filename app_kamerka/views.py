@@ -431,14 +431,23 @@ def device(request, id, device_id, ip):
             import yaml as _yaml
             with open(manifest_path) as _mf:
                 _manifest = _yaml.safe_load(_mf) or {}
-            for _tpl_rel in (_manifest.get('mappings') or {}).get(device_type_lower, []):
-                # Normalise: strip trailing slash, convert to the path form
-                # stored in each template entry (relative to BASE_DIR).
-                _tpl_rel = _tpl_rel.rstrip('/')
-                _abs = os.path.join(nuclei_templates_dir, _tpl_rel)
-                manifest_matched_paths.add(os.path.relpath(_abs, settings.BASE_DIR))
-        except Exception:
-            pass  # manifest is optional; fall back gracefully
+            for tpl_path in (_manifest.get('mappings') or {}).get(device_type_lower, []):
+                # Normalise: strip trailing slash, resolve to absolute, then
+                # verify the result is still inside nuclei_templates_dir to
+                # prevent path-traversal attacks via a malicious manifest entry.
+                tpl_path = tpl_path.rstrip('/')
+                abs_path = os.path.realpath(os.path.join(nuclei_templates_dir, tpl_path))
+                real_templates_dir = os.path.realpath(nuclei_templates_dir)
+                if not abs_path.startswith(real_templates_dir + os.sep) and \
+                        abs_path != real_templates_dir:
+                    _views_logger.warning(
+                        "manifest.yaml path %r resolves outside nuclei_templates — skipped",
+                        tpl_path,
+                    )
+                    continue
+                manifest_matched_paths.add(os.path.relpath(abs_path, settings.BASE_DIR))
+        except Exception as exc:
+            _views_logger.debug("Failed to load nuclei_templates/manifest.yaml: %s", exc)
 
     if os.path.isdir(nuclei_templates_dir):
         for root, dirs, files in os.walk(nuclei_templates_dir):

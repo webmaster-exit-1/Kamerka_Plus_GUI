@@ -168,7 +168,7 @@
                                 <div class="panel-body">
                                     <input type="text" id="nearby_search" placeholder="device:webcam" style="width: 300px" /><br><br>
                                     <button type="button" id="nearby" class="btn btn-primary active">Search</button>
-
+                                    <progress id="progress-bar3" value="0" max="100" style="display:none; margin-bottom: 1em;"></progress>
 
 
                                                                     <button type="button" id="show_nearby_devices" class="btn btn-primary active">Show</button>
@@ -699,35 +699,42 @@ var frm = $('#generate-user-form');
     });
 
 var frm = $('#generate-user-form');
-function get_task_info(task_id,pgrbar) {
-        $.ajax({
-            type: 'get',
-            url: '/get-task-info/',
-            data: {'task_id': task_id},
-            success: function (data) {
-                frm.html('');
-                if (data.state == 'PENDING') {
-                    frm.html('Please wait...');
-                }
-                else if (data.state == 'PROGRESS') {
-                    pgrbar.css('display', 'block');
-                    pgrbar.val(data.result.percent);
-                }
-                else if (data.state == 'SUCCESS') {
-                                    pgrbar.css('display', 'none');
-}
-                if (data.state != 'SUCCESS') {
-                    setTimeout(function () {
-                        get_task_info(task_id, pgrbar)
-                    }, 100);
-
-                }
-            },
-            error: function (data) {
-                frm.html("Something went wrong!");
-            }
-        });
+function get_task_info(task_id, pgrbar, attempts) {
+    attempts = attempts || 0;
+    var MAX_ATTEMPTS = 600; // ~10 minutes at 1 s interval
+    if (attempts >= MAX_ATTEMPTS) {
+        pgrbar.css('display', 'none');
+        frm.html('Task timed out waiting for a response.');
+        return;
     }
+    $.ajax({
+        type: 'get',
+        url: '/get-task-info/',
+        data: {'task_id': task_id},
+        success: function (data) {
+            frm.html('');
+            if (data.state === 'PENDING') {
+                frm.html('Please wait...');
+                setTimeout(function () { get_task_info(task_id, pgrbar, attempts + 1); }, 1000);
+            } else if (data.state === 'PROGRESS') {
+                pgrbar.css('display', 'block');
+                // Use .attr() so <progress value="X"> updates correctly in all browsers
+                pgrbar.attr('value', data.result.percent);
+                setTimeout(function () { get_task_info(task_id, pgrbar, attempts + 1); }, 1000);
+            } else if (data.state === 'SUCCESS') {
+                pgrbar.attr('value', 100);
+                setTimeout(function () { pgrbar.css('display', 'none'); }, 600);
+            } else {
+                // FAILURE, REVOKED, or unknown — stop polling and hide bar
+                pgrbar.css('display', 'none');
+                frm.html('Task ended with state: ' + data.state);
+            }
+        },
+        error: function () {
+            frm.html('Something went wrong!');
+        }
+    });
+}
 
 $('#nuclei_scan_btn').on('click', function(){
     var tpl = $('#nuclei_template_select').val();

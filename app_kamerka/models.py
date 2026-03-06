@@ -18,14 +18,6 @@ class Device(models.Model):
     data = models.CharField(max_length=1000, default="")
     port = models.TextField(default="")
     type = models.CharField(max_length=100, default="")
-
-    def save(self, *args, **kwargs):
-        # Ensure port is never stored as empty — default to "80" so that
-        # downstream tasks (_validate_target, nuclei_scan, etc.) always have
-        # a valid port to work with.
-        if not self.port or not str(self.port).strip():
-            self.port = "80"
-        super().save(*args, **kwargs)
     city = models.CharField(max_length=100, default="", null=True)
     lon = models.CharField(max_length=100, default="")
     lat = models.CharField(max_length=100, default="")
