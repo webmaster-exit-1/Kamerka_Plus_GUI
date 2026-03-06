@@ -4,7 +4,7 @@
 
 ![logo](https://www.offensiveosint.io/content/images/2020/07/OffensiveOsint-logo-RGB-2.png)
 
-### Powered by Shodan - Supported by Binary Edge
+### Powered by Shodan
 
 ## What's New in the Plus Edition
 
@@ -59,7 +59,7 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 
 ### 1. Scan for Internet facing Industrial Control Systems, Medical and Internet of Things devices based on country or coordinates
 
-### 2. Gather passive intelligence from WHOIS (ipwhois), BinaryEdge and Shodan or active by scanning target directly
+### 2. Gather passive intelligence from WHOIS (ipwhois), Shodan or active by scanning target directly
 
 ### 3. Thanks to indicators from devices and Leaflet maps, pinpoint device to specific place or facility (hospital, wastewater treatment plant, gas station, university, etc.)
 
@@ -110,7 +110,6 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 - Celery (5.2+)
 - Redis (4.0+)
 - Shodan paid account
-- BinaryEdge (Optional)
 - Pastebin PRO (Optional)
 - [Wappalyzer CLI](https://github.com/AliasIO/wappalyzer) (Optional, for tech detection)
 - [Nuclei](https://github.com/projectdiscovery/nuclei) (Optional, for vulnerability scanning)
