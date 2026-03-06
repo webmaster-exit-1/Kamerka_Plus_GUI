@@ -185,18 +185,30 @@
                                 </div>
                                 <div class="panel-body">
                                     <select id="nuclei_template_select" style="width: 300px; margin-bottom: 8px;">
-                                        <option value="">-- Select Template --</option>
+                                        <option value="">-- Select Custom Template --</option>
                                         {% for tpl in nuclei_templates %}
                                         <option value="{{ tpl.path }}">{{ tpl.label }}</option>
                                         {% endfor %}
                                     </select><br>
-                                    <button type="button" id="nuclei_scan_btn" class="btn btn-primary active">Scan</button>
+                                    <button type="button" id="nuclei_scan_btn" class="btn btn-primary active">Scan with Selected Template</button>
                                     <button type="button" id="nuclei_show_btn" class="btn btn-primary active">Show Results</button>
                                     <progress id="progress-bar-nuclei" value="0" max="100" style="display:none; margin-bottom: 1em;"></progress>
                                     <div id="nuclei_results" style="display:none;"></div>
                                 </div>
                             </div>
+                            <div class="panel panel-default">
+                                <div class="panel-heading ui-draggable-handle">
+                                    <h3 class="panel-title">Nuclei – All Default Templates</h3>
                                 </div>
+                                <div class="panel-body">
+                                    <p style="margin-bottom:8px;">Run Nuclei with the full built-in template library (<code>-as</code> auto-scan flag).</p>
+                                    <button type="button" id="nuclei_all_btn" class="btn btn-warning active">Scan with All Default Templates</button>
+                                    <button type="button" id="nuclei_all_show_btn" class="btn btn-primary active">Show Results</button>
+                                    <progress id="progress-bar-nuclei-all" value="0" max="100" style="display:none; margin-bottom: 1em;"></progress>
+                                </div>
+                            </div>
+                                </div>
+
 
 
 
@@ -253,7 +265,7 @@
                             <div class="panel panel-default">
                                 <div class="panel-heading ui-draggable-handle">
                                     <div class="panel-title-box">
-                                        <h3>Whois XML API</h3>
+                                     <h3>WHOIS Lookup</h3>
                                     </div>
 
                                 </div>
@@ -753,6 +765,53 @@ $('#nuclei_scan_btn').on('click', function(){
 });
 
 $('#nuclei_show_btn').on('click', function(){
+    var x = document.getElementById("nuclei_results");
+    if (x.style.display === "none") {
+        x.style.display = "block";
+    } else {
+        x.style.display = "none";
+    }
+    if (x.innerHTML == "") {
+        $.ajax({
+            url: "/get_nuclei_results/{{device.id}}",
+            type: "get",
+            success: function(response) {
+                if (response.length == 0) {
+                    noty({text: "No nuclei results" , layout: 'topRight', type: 'error', timeout: 2000});
+                } else {
+                    $.each(response, function(key, val) {
+                        var f = val.fields;
+                        $("#nuclei_results").append("<p><b>" + f.name + "</b> [" + f.severity + "]<br>" + f.matched_at + "<br>" + f.description + "</p>");
+                    });
+                }
+            }
+        });
+    }
+});
+
+$('#nuclei_all_btn').on('click', function(){
+    var pgrbar_nuclei_all = $('#progress-bar-nuclei-all');
+    var url = "/{{device.id}}/nuclei/scan";
+    $.ajax({
+        type: "GET",
+        url: url,
+        success: function (data) {
+            if (data.task_id != null) {
+                pgrbar_nuclei_all.css('display', 'block');
+                get_task_info(data.task_id, pgrbar_nuclei_all);
+                noty({text: "Nuclei full-template scan started" , layout: 'topRight', type: 'success', timeout: 3000});
+            } else if (data.Error) {
+                noty({text: data.Error , layout: 'topRight', type: 'error', timeout: 3000});
+            }
+        },
+        error: function (data) {
+            console.log("Something went wrong!");
+        }
+    });
+    return false;
+});
+
+$('#nuclei_all_show_btn').on('click', function(){
     var x = document.getElementById("nuclei_results");
     if (x.style.display === "none") {
         x.style.display = "block";

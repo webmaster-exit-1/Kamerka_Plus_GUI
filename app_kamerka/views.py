@@ -516,14 +516,8 @@ def get_shodan_scan_results(request, id):
     if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         shodan_scan2 = ShodanScan.objects.filter(device_id=id)
 
-        print(shodan_scan2)
-
-        # shodan_scan2[0].ports = shodan_scan2[0].ports[:1][:-1]
-        # shodan_scan2[0].tags = shodan_scan2[0].tags[:1][:-1]
-        # shodan_scan2[0].vulns = shodan_scan2[0].vulns[:1][:-1]
-        # shodan_scan2[0].products = shodan_scan2[0].products[:1][:-1]
-
-        print(shodan_scan2[0].ports)
+        if not shodan_scan2.exists():
+            return HttpResponse(json.dumps([]), content_type="application/json")
 
         response_data = serializers.serialize('json', shodan_scan2)
 

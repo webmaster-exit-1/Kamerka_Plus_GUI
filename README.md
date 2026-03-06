@@ -4,14 +4,15 @@
 
 ![logo](https://www.offensiveosint.io/content/images/2020/07/OffensiveOsint-logo-RGB-2.png)
 
-### Powered by Shodan - Supported by Binary Edge & WhoisXMLAPI
+### Powered by Shodan - Supported by Binary Edge
 
 ## What's New in the Plus Edition
 
 This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-ciech/Kamerka-GUI) with the following major changes:
 
 - **Leaflet.js + OpenStreetMap** replaces Google Maps — no API key required, no cost, fully open-source (BSD-2-Clause)
-- **Nuclei vulnerability scanning** with 12 custom templates targeting China-IoT devices (Hikvision, Dahua, Huawei, ZTE)
+- **WHOIS Lookup** via the FOSS [`ipwhois`](https://pypi.org/project/ipwhois/) library — no API key required, uses standard RDAP/WHOIS servers
+- **Nuclei vulnerability scanning** with 12 custom templates targeting China-IoT devices (Hikvision, Dahua, Huawei, ZTE) **plus a one-click "All Default Templates" mode** that runs Nuclei with its full built-in template library
 - **Wappalyzer integration** for web technology fingerprinting of discovered devices
 - **RTSP stream scanning** for camera devices
 - **CSV and KML export** for search results
@@ -54,7 +55,7 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 
 ### 1. Scan for Internet facing Industrial Control Systems, Medical and Internet of Things devices based on country or coordinates
 
-### 2. Gather passive intelligence from WHOISXML, BinaryEdge and Shodan or active by scanning target directly
+### 2. Gather passive intelligence from WHOIS (ipwhois), BinaryEdge and Shodan or active by scanning target directly
 
 ### 3. Thanks to indicators from devices and Leaflet maps, pinpoint device to specific place or facility (hospital, wastewater treatment plant, gas station, university, etc.)
 
@@ -67,7 +68,8 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 - More than 100 ICS device queries
 - Interactive maps powered by Leaflet.js and OpenStreetMap (no API key needed)
 - **Native 3D globe viewer** (PyVista + PyQt6) with textured Earth, device spikes, LOD clustering, and click-to-inspect
-- Nuclei vulnerability scanning with custom China-IoT templates
+- Nuclei vulnerability scanning with custom China-IoT templates and full default template library support
+- WHOIS lookups powered by the FOSS `ipwhois` library (no API key required)
 - Wappalyzer web technology detection
 - RTSP camera stream scanning
 - CSV and KML export for search results
@@ -105,7 +107,6 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 - Redis (4.0+)
 - Shodan paid account
 - BinaryEdge (Optional)
-- WHOISXMLAPI (Optional)
 - Pastebin PRO (Optional)
 - [Wappalyzer CLI](https://github.com/AliasIO/wappalyzer) (Optional, for tech detection)
 - [Nuclei](https://github.com/projectdiscovery/nuclei) (Optional, for vulnerability scanning)
