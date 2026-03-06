@@ -84,7 +84,7 @@ def _get_env_key(name, *, required=False):
     """Return an environment-variable API key value.
 
     Logs a warning when a required key is missing so operators know which
-    variable to set in their shell or .env file.
+    variable to set in their shell.
     """
     import os as _os
     value = _os.environ.get(name, "")

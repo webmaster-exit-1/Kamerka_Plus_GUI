@@ -22,7 +22,7 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 - **CSV and KML export** for search results — load directly into QGIS, Kepler.gl, uMap, or the built-in globe
 - **Celery progress tracking** with real-time task status in the UI
 - **Comprehensive test suite** covering models, views, URL patterns, exports, and scanning tasks
-- **API keys via environment variables** — no more `keys.json`; copy `.env.example` → `.env` and export `SHODAN_API_KEY` (and optional Pastebin keys). `keys.json` is now `.gitignore`d.
+- **API keys via environment variables** — no more `keys.json`; export `SHODAN_API_KEY` (and optional Pastebin keys) in your shell. `keys.json` is now `.gitignore`d.
 - **Nuclei template manifest** — `nuclei_templates/manifest.yaml` maps device types to template paths; adding a new vendor requires only a YAML entry, no code change
 - **Hardened input validation** — `nuclei_scan` validates `severity` against the Nuclei allowlist and clamps `rate_limit` to [1, 500]
 - **Automatic port discovery** — when a device has no port data, `_resolve_open_ports()` runs a full Naabu scan (`1-65535` by default, configurable via `KAMERKA_NAABU_DISCOVERY_PORTS`) and persists the results; both `nuclei_scan` and `wappalyzer_scan` cover every discovered open port
@@ -123,11 +123,14 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 
 **API keys are read from environment variables — never from a file committed to git.**
 
-Copy `.env.example` to `.env` and fill in your values:
+Export the required variables in your shell before starting the server:
 
 ```bash
-cp .env.example .env
-# then edit .env and set SHODAN_API_KEY (required) and any optional keys
+export SHODAN_API_KEY=your_shodan_api_key_here
+# optional:
+# export PASTEBIN_USER=your_pastebin_username
+# export PASTEBIN_PASSWORD=your_pastebin_password
+# export PASTEBIN_DEV_KEY=your_pastebin_developer_key
 ```
 
 | Variable | Required | Description |
@@ -137,9 +140,6 @@ cp .env.example .env
 | `PASTEBIN_PASSWORD` | optional | Pastebin password |
 | `PASTEBIN_DEV_KEY` | optional | Pastebin developer key |
 | `DJANGO_SECRET_KEY` | optional | Override the auto-generated Django secret key |
-
-> `.env` is listed in `.gitignore` and will never be committed.
-> In CI or Docker, export the variables directly in your shell instead of using a file.
 
 ### GeoLite2 Database (Required for NMAP scan)
 
