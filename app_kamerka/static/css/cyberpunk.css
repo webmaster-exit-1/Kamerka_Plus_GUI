@@ -15,8 +15,37 @@
  *   --cp-font     'Courier New', 'Lucida Console', monospace
  */
 
-/* ── Google Font: Orbitron (display) + Share Tech Mono (data) ── */
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+/* ── Self-hosted FOSS fonts (SIL OFL) — zero external requests ── */
+/* Orbitron: geometric sci-fi display face by Matt McInerney        */
+@font-face {
+  font-family: 'Orbitron';
+  font-style:  normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../fonts/orbitron-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Orbitron';
+  font-style:  normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../fonts/orbitron-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Orbitron';
+  font-style:  normal;
+  font-weight: 900;
+  font-display: swap;
+  src: url('../fonts/orbitron-900.woff2') format('woff2');
+}
+/* Share Tech Mono: monospace terminal face by Carrois Apostrophe   */
+@font-face {
+  font-family: 'Share Tech Mono';
+  font-style:  normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../fonts/share-tech-mono-400.woff2') format('woff2');
+}
 
 :root {
   --cp-bg:      #0a0d12;

@@ -30,7 +30,7 @@ var KamerkaTiles = (function () {
             createTile: function () {
                 var canvas = document.createElement('canvas');
                 canvas.width = canvas.height = 256;
-                var ctx = canvas.getContext('2d');
+                var ctx = canvas.getContext('2d', { willReadFrequently: true });
                 ctx.fillStyle = bgColour;
                 ctx.fillRect(0, 0, 256, 256);
                 ctx.strokeStyle = gridColour;
@@ -117,55 +117,50 @@ var KamerkaTiles = (function () {
         var t = THEMES[themeKey];
         if (!t) { t = THEMES.cyberpunk; }
 
-        // Always try the real tile URL first; fall back silently to canvas.
+        // Canvas layer is added immediately so the map always looks good offline.
         var CanvasClass = _canvasLayer(t.fallbackBg, t.fallbackGrid, 0.15);
         var canvasFallback = new CanvasClass();
 
-        // Probe reachability with a single tile request (z/x/y = 1/0/0).
+        // Apply CSS colour filter for tinted themes.
+        function _applyFilter(map) {
+            var pane = map && map.getPanes && map.getPanes().tilePane;
+            if (pane && t.cssFilter) {
+                pane.style.filter = t.cssFilter;
+                pane.style.webkitFilter = t.cssFilter;
+            }
+        }
+
+        // Probe reachability; replace canvas with real tiles only if reachable.
         var probeUrl = t.url
             .replace('{s}', (t.subdomains || 'a')[0] || 'a')
             .replace('{z}', '1').replace('{x}', '0').replace('{y}', '0')
             .replace('{r}', '');
 
-        var tileLayer = L.tileLayer(t.url, {
-            attribution: t.attribution,
-            maxZoom: t.maxZoom || 19,
-            subdomains: t.subdomains || 'abc',
-            errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
-        });
-
-        // Apply CSS colour filter on the tile pane for tinted themes.
-        tileLayer.on('add', function () {
-            var pane = tileLayer._map && tileLayer._map.getPanes().tilePane;
-            if (pane && t.cssFilter) {
-                pane.style.filter = t.cssFilter;
-                pane.style.webkitFilter = t.cssFilter;
-            }
-        });
-        tileLayer.on('remove', function () {
-            var pane = tileLayer._map && tileLayer._map.getPanes().tilePane;
-            if (pane) {
-                pane.style.filter = '';
-                pane.style.webkitFilter = '';
-            }
-        });
-
-        // Fallback: if the probe request fails switch to the canvas layer.
         var img = new Image();
-        img.onerror = function () {
-            if (tileLayer._map) {
-                tileLayer._map.removeLayer(tileLayer);
-                canvasFallback.addTo(tileLayer._map);
-                // apply CSS filter on canvas pane too
-                var pane = tileLayer._map.getPanes().tilePane;
-                if (pane && t.cssFilter) {
-                    pane.style.filter = t.cssFilter;
-                }
+        img.onload = function () {
+            // Tile server reachable — swap canvas for the real tile layer.
+            if (canvasFallback._map) {
+                var map = canvasFallback._map;
+                map.removeLayer(canvasFallback);
+                var tileLayer = L.tileLayer(t.url, {
+                    attribution: t.attribution,
+                    maxZoom: t.maxZoom || 19,
+                    subdomains: t.subdomains || 'abc',
+                    errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+                });
+                tileLayer.on('add', function () { _applyFilter(tileLayer._map); });
+                tileLayer.on('remove', function () {
+                    var pane = tileLayer._map && tileLayer._map.getPanes().tilePane;
+                    if (pane) { pane.style.filter = ''; pane.style.webkitFilter = ''; }
+                });
+                tileLayer.addTo(map);
             }
         };
+        // onerror: do nothing — canvas stays in place.
+        img.onerror = function () {};
         img.src = probeUrl;
 
-        return tileLayer;
+        return canvasFallback;
     }
 
     // ── Public API ──────────────────────────────────────────────────────────
