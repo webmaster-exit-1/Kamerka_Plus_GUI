@@ -36,6 +36,7 @@ urlpatterns = [
     path('get_whois/<id>', views.get_whois, name="get_whois"),
     path('scan/<id>', views.scan_dev, name="scan"),
     path('exploit/<id>', views.exploit_dev, name="exploit"),
+    path('port_scan/<id>', views.port_scan_view, name='port_scan'),
 
     path('export/csv/<id>', views.export_csv, name="export_csv"),
     path('export/kml/<id>', views.export_kml, name="export_kml"),

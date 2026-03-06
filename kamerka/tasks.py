@@ -457,22 +457,29 @@ attackers_infra_queries = {"cobaltstrike": 'product:"Cobalt Strike Beacon"',
                            }
 
 
-def get_keys():
-    try:
-        with open('keys.json') as keys:
-            keys_json = json.load(keys)
 
-        return keys_json
-    except Exception as e:
-        print(e)
+def _get_env_key(name, *, required=False):
+    """Return an environment variable value.
 
+    Logs a warning when a key that is marked *required* is missing so that
+    operators know immediately which variable to set, without crashing the
+    whole worker on startup.
+    """
+    value = os.environ.get(name, "")
+    if required and not value:
+        logger.warning(
+            "Environment variable %s is not set. "
+            "Features that depend on it will fail at runtime. "
+            "Set it in your shell or in a .env file.",
+            name,
+        )
+    return value
 
-keys = get_keys()
 
 
 @shared_task(bind=False)
 def devices_nearby(lat, lon, id, query):
-    SHODAN_API_KEY = keys['keys']['shodan']
+    SHODAN_API_KEY = _get_env_key('SHODAN_API_KEY', required=True)
 
     device = Device.objects.get(id=id)
 
@@ -482,15 +489,15 @@ def devices_nearby(lat, lon, id, query):
     try:
         # Search Shodan
         results = api.search("geo:" + lat + "," + lon + ",15 " + query)
-    except:
+    except Exception as exc:
         fail = 1
-        print('fail1')
+        logger.warning("devices_nearby: Shodan search failed (attempt 1): %s", exc)
 
     if fail == 1:
         try:
             results = api.search("geo:" + lat + "," + lon + ",15 " + query)
         except Exception as e:
-            print(e)
+            logger.warning("devices_nearby: Shodan search failed (attempt 2): %s", e)
 
     try:  # Show the results
         total = len(results['matches'])
@@ -509,7 +516,7 @@ def devices_nearby(lat, lon, id, query):
 
         return {'current': total, 'total': total, 'percent': 100}
     except Exception as e:
-        print(e)
+        logger.warning("%s", e)
 
 
 @shared_task(bind=True)
@@ -529,7 +536,7 @@ def shodan_search(self, fk, country=None, coordinates=None, ics=None, healthcare
                                              category="healthcare",
                                              all_results=all_results)
                         progress_recorder.set_progress(c + 1, total=total)
-                    except:
+                    except Exception:
                         pass
             else:
 
@@ -540,7 +547,7 @@ def shodan_search(self, fk, country=None, coordinates=None, ics=None, healthcare
                                              category="ics",
                                              all_results=all_results)
                         progress_recorder.set_progress(c + 1, total=total)
-                    except:
+                    except Exception:
                         pass
 
                 if i in attackers_infra_queries:
@@ -551,7 +558,7 @@ def shodan_search(self, fk, country=None, coordinates=None, ics=None, healthcare
                                              all_results=all_results)
                         progress_recorder.set_progress(c + 1, total=total)
                     except Exception as e:
-                        print(e)
+                        logger.warning("%s", e)
 
     if coordinates:
         total = len(coordinates_search)
@@ -563,7 +570,7 @@ def shodan_search(self, fk, country=None, coordinates=None, ics=None, healthcare
                     shodan_search_worker(fk=fk, query=coordinates_queries[i], search_type=i, category="coordinates",
                                          coordinates=coordinates, all_results=all_results)
                     progress_recorder.set_progress(c + 1, total=total)
-                except:
+                except Exception:
                     pass
     return result
 
@@ -571,13 +578,13 @@ def shodan_search(self, fk, country=None, coordinates=None, ics=None, healthcare
 def check_credits():
     keys_list = []
     try:
-        SHODAN_API_KEY = keys['keys']['shodan']
+        SHODAN_API_KEY = _get_env_key('SHODAN_API_KEY', required=True)
 
         api = Shodan(SHODAN_API_KEY)
         a = api.info()
         keys_list.append(a['query_credits'])
     except Exception as e:
-        print(e)
+        logger.warning("%s", e)
 
     return keys_list
 
@@ -585,7 +592,7 @@ def check_credits():
 def shodan_search_worker(fk, query, search_type, category, country=None, coordinates=None, all_results=False):
     results = True
     page = 1
-    SHODAN_API_KEY = keys['keys']['shodan']
+    SHODAN_API_KEY = _get_env_key('SHODAN_API_KEY', required=True)
     pages = 0
     screenshot = ""
     print(query)
@@ -616,9 +623,11 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                 else:
                     results = api.search("country:" + country + " " + query, page)
                     fail = True
-            except:
+            except Exception as exc:
                 fail = False
-                print('fail1, sleeping...')
+                logger.warning("shodan_search_worker: Shodan API call failed, will retry: %s", exc)
+                # Brief back-off before retrying to respect Shodan's rate limit.
+                sleep(2)
 
         try:
             total = results['total']
@@ -627,7 +636,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                 print("no results")
                 break
         except Exception as e:
-            print(e)
+            logger.warning("%s", e)
             break
 
         # print(results)
@@ -641,7 +650,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
 
             try:
                 product = result['product']
-            except:
+            except Exception:
                 product = ""
 
             if 'vulns' in result:
@@ -656,7 +665,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
             try:
                 if 'hostnames' in result:
                     hostnames = result['hostnames'][0]
-            except:
+            except Exception:
                 pass
 
             try:
@@ -691,7 +700,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                     soup = BeautifulSoup(result['http']['html'], features="html.parser")
                     nws = soup.find("div", {"class": "top"})
                     indicator.append(nws.contents[0])
-                except:
+                except Exception:
                     pass
 
             if "SOURCETABLE" in query:
@@ -714,7 +723,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                         if "station.name" in i:
                             splitted = i.split(":")
                             indicator.append(splitted[1])
-                except:
+                except Exception:
                     pass
 
             # get indicator from tank
@@ -722,7 +731,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                 try:
                     tank_info = result['data'].split("\r\n\r\n")
                     indicator.append(tank_info[1])
-                except:
+                except Exception:
                     pass
 
             if result['port'] == 2000:
@@ -737,7 +746,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                     sch_el = result['data'].split('\n')
                     if sch_el[4].startswith("-- Project"):
                         indicator.append(sch_el[4].split(": ")[1])
-                except:
+                except Exception:
                     pass
 
             if "GPGGA" in result['data']:
@@ -762,7 +771,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                             indicator.append(i.split(":")[1])
                         if i.startswith("Module name"):
                             indicator.append(i.split(":")[1])
-                except:
+                except Exception:
                     pass
             # get indicator from bacnet
             if result['port'] == 47808:
@@ -779,7 +788,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                         if "Location" in i:
                             splitted3 = i.split(":")
                             indicator.append(splitted3[1])
-                except:
+                except Exception:
                     pass
 
             device = Device(search=search, ip=result['ip_str'], product=product, org=result['org'],
@@ -860,12 +869,19 @@ def nmap_scan(self, file, fk):
 
 
 def _validate_target(ip, port):
-    """Validate IP address and port to prevent SSRF and injection."""
+    """Validate IP address and port to prevent SSRF and injection.
+
+    Raises ``ValueError`` for any invalid input including an empty port.
+    Callers that need port discovery for devices with no recorded port should
+    call ``_resolve_open_ports()`` first.
+    """
     import ipaddress
     try:
         ipaddress.ip_address(ip)
     except ValueError:
         raise ValueError("Invalid IP address: {}".format(ip))
+    if not port or not str(port).strip():
+        raise ValueError("Invalid port: (empty) — run a port scan first")
     try:
         port_int = int(port)
         if not (1 <= port_int <= 65535):
@@ -875,78 +891,391 @@ def _validate_target(ip, port):
     return ip, str(port_int)
 
 
-@shared_task(bind=False)
-def wappalyzer_scan(id):
-    """Run Wappalyzer CLI against a device to fingerprint technologies."""
-    device = Device.objects.get(id=id)
-    try:
-        ip, port = _validate_target(device.ip, device.port)
-    except ValueError as e:
-        return {"error": str(e)}
-    target_url = "http://{}:{}".format(ip, port)
-
-    try:
-        result = subprocess.run(
-            ["wappalyzer", target_url, "-oJ"],
-            capture_output=True,
-            text=True,
-            timeout=60
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            technologies = json.loads(result.stdout)
-            wap_result = WappalyzerResult(
-                device=device,
-                technologies=technologies,
-                raw_output=result.stdout[:10000]
-            )
-            wap_result.save()
-            return technologies
-        else:
-            return {"error": result.stderr or "No output from Wappalyzer"}
-    except FileNotFoundError:
-        return {"error": "Wappalyzer CLI not installed"}
-    except subprocess.TimeoutExpired:
-        return {"error": "Wappalyzer scan timed out"}
-    except json.JSONDecodeError:
-        return {"error": "Failed to parse Wappalyzer output"}
-    except Exception as e:
-        return {"error": str(e)}
+# ---------------------------------------------------------------------------
+# Ports in this set are assumed to run TLS.  Any port NOT in this set is
+# tried with http:// first; if a TLS handshake error is detected the caller
+# retries with https://.  Well-known TLS ports are given https:// directly
+# without the first-pass overhead.
+# ---------------------------------------------------------------------------
+_HTTPS_PORTS = frozenset({443, 8443, 4443, 9443})
 
 
-@shared_task(bind=False)
-def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150):
-    """Run Nuclei vulnerability scanner against a device.
+def _build_target_urls(ip, ports):
+    """Return a list of (url, is_tls) tuples for every open port.
 
-    The Nuclei binary path is read from ``settings.NUCLEI_BIN`` (configured
-    in ``kamerka/tool_settings.py``).  It defaults to ``"nuclei"`` so the
-    system ``$PATH`` is used, but can be overridden with the
-    ``KAMERKA_NUCLEI_BIN`` environment variable or by editing
-    ``kamerka/tool_settings.py`` directly.
+    For well-known TLS ports (443, 8443 …) ``https://`` is used directly.
+    For all other ports an HTTP URL is returned; callers should retry with
+    ``https://`` if they receive a TLS/SSL connection error (two-pass probing).
+
+    Parameters
+    ----------
+    ip : str
+        Validated IPv4/IPv6 address.
+    ports : list[int]
+        Open port numbers from ``_resolve_open_ports()``.
+
+    Returns
+    -------
+    list[tuple[str, bool]]
+        Each element is ``(url, is_known_tls)``.
     """
+    result = []
+    for p in ports:
+        if p in _HTTPS_PORTS:
+            result.append(("https://{}:{}".format(ip, p), True))
+        else:
+            result.append(("http://{}:{}".format(ip, p), False))
+    return result
+
+
+def _rate_limit_check(ip, window_seconds=60, max_scans=10):
+    """Enforce a per-IP scan rate limit using the Django cache (Redis).
+
+    Uses a simple counter with a sliding TTL window.  If the number of scans
+    initiated against *ip* in the last *window_seconds* seconds exceeds
+    *max_scans* this function returns ``False`` and the caller should abort
+    the scan to avoid inadvertent DoS.
+
+    Falls back to ``True`` (allow) when the cache is unavailable so that a
+    Redis outage never silently blocks legitimate scans.
+
+    Parameters
+    ----------
+    ip : str             Target IP address (used as the cache key).
+    window_seconds : int Sliding window size in seconds (default 60).
+    max_scans : int      Maximum allowed scans per window (default 10).
+
+    Returns
+    -------
+    bool  ``True`` if the scan is within the rate limit, ``False`` if it
+          should be rejected.
+    """
+    from django.core.cache import cache
+    cache_key = "ratelimit:scan:{}".format(ip)
+    try:
+        count = cache.get(cache_key, 0)
+        if count >= max_scans:
+            logger.warning(
+                "_rate_limit_check: IP %s has exceeded %d scans in %ds — scan rejected",
+                ip, max_scans, window_seconds,
+            )
+            return False
+        # Increment; set TTL only on first write so the window resets naturally.
+        if count == 0:
+            cache.set(cache_key, 1, timeout=window_seconds)
+        else:
+            cache.incr(cache_key)
+        return True
+    except Exception as exc:
+        logger.warning(
+            "_rate_limit_check: cache unavailable (%s) — allowing scan for %s",
+            exc, ip,
+        )
+        return True  # fail open to avoid blocking legitimate scans
+
+
+def _resolve_open_ports(device):
+    """Return a sorted list of open TCP port numbers for *device*.
+
+    Resolution order
+    ----------------
+    1. If ``device.port`` already contains port data (a single number or a
+       comma-separated list from an Nmap/Shodan scan), parse and return it.
+    2. Otherwise run a full Naabu port scan against ``device.ip``.
+
+    **Side effect (case 2 only):** when port discovery succeeds the
+    discovered port list is persisted to ``device.port`` and saved to the
+    database via ``device.save(update_fields=['port'])``.
+
+    Returns
+    -------
+    list[int]
+        Sorted open port numbers.  Empty list when the stored port field is
+        blank *and* Naabu finds no open ports (or is not installed).
+    """
+    from verification.naabu_scanner import run_naabu, _get_naabu_bin
+    from django.conf import settings as _s
+
+    existing = str(device.port).strip() if device.port else ""
+    if existing:
+        ports = []
+        for part in re.split(r'[,\s]+', existing):
+            part = part.strip()
+            if part.isdigit():
+                p = int(part)
+                if 1 <= p <= 65535:
+                    ports.append(p)
+        if ports:
+            return sorted(set(ports))
+
+    # No usable port data — discover ports with a full Naabu scan.
+    # Distinguish "not installed" from "host has no open ports" for clearer logging.
+    naabu_bin = _get_naabu_bin()
+    if not os.path.isfile(naabu_bin) and naabu_bin != "naabu":
+        logger.error(
+            "_resolve_open_ports: Naabu binary '%s' not found. "
+            "Install: go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest",
+            naabu_bin,
+        )
+        return []
+
+    discovery_ports = getattr(_s, 'NAABU_DISCOVERY_PORTS', '1-65535')
+    discovery_timeout = getattr(_s, 'NAABU_DISCOVERY_TIMEOUT', 120)
+    logger.info(
+        "_resolve_open_ports: running Naabu discovery against %s (ports: %s)",
+        device.ip, discovery_ports,
+    )
+    results = run_naabu(device.ip, ports=discovery_ports, timeout=discovery_timeout)
+    if results:
+        open_ports = sorted(set(r['port'] for r in results if r.get('port')))
+        device.port = ', '.join(str(p) for p in open_ports)
+        device.save(update_fields=['port'])
+        logger.info(
+            "_resolve_open_ports: discovered ports %s on %s",
+            device.port, device.ip,
+        )
+        return open_ports
+
+    logger.warning(
+        "_resolve_open_ports: no open ports found on %s "
+        "(host may be unreachable or all ports filtered)", device.ip
+    )
+    return []
+
+
+@shared_task(bind=True)
+def port_scan_task(self, device_id):
+    """Discover open TCP ports for a device using Naabu.
+
+    This task is intended as the *first stage* of a two-stage Celery chain::
+
+        chain(port_scan_task.s(device_id), nuclei_scan.s()).delay()
+        chain(port_scan_task.s(device_id), wappalyzer_scan.s()).delay()
+
+    Port resolution
+    ---------------
+    * If ``device.port`` is already populated (set by Shodan or Nmap) those
+      ports are returned immediately — no Naabu call is made.  Shodan's port
+      data is the *primary* source; Naabu is only the *fallback* for devices
+      that arrive with an empty port field.
+    * When Naabu runs the discovered ports are persisted to ``device.port``
+      so subsequent tasks (nuclei_scan, wappalyzer_scan) can reuse them
+      without running Naabu again.
+
+    Progress
+    --------
+    Uses ``ProgressRecorder`` so the dashboard progress bar tracks the
+    discovery phase before the scan phase begins.
+
+    Returns
+    -------
+    dict
+        ``{"device_id": int, "ports": list[int]}``
+        The returned dict is passed as the first positional argument to the
+        next task in the chain.  ``nuclei_scan`` / ``wappalyzer_scan``
+        accept an optional ``discovered_ports`` kwarg and skip
+        ``_resolve_open_ports`` when it is set.
+    """
+    progress_recorder = ProgressRecorder(self)
+    progress_recorder.set_progress(0, 3, description="Resolving device…")
+
+    device = Device.objects.get(id=device_id)
+    progress_recorder.set_progress(1, 3, description="Running port scan…")
+
+    ports = _resolve_open_ports(device)
+    progress_recorder.set_progress(3, 3, description="Port scan complete")
+
+    return {"device_id": device_id, "ports": ports}
+
+
+@shared_task(bind=False)
+def wappalyzer_scan(id, discovered_ports=None):
+    """Run Wappalyzer CLI against all open ports of a device.
+
+    When called as the second stage of a Celery chain the first argument
+    (*id*) will be the dict returned by ``port_scan_task`` — in that case
+    the ``device_id`` and ``ports`` keys are extracted automatically.
+
+    Otherwise *id* must be the device's integer primary key and
+    ``_resolve_open_ports()`` will be called to find open ports.
+
+    Two-pass HTTP→HTTPS probing
+    ---------------------------
+    ``_build_target_urls()`` assigns ``http://`` to unknown ports and
+    ``https://`` to well-known TLS ports (443, 8443, …).  When Wappalyzer
+    returns an SSL/TLS error on an ``http://`` target the scan is retried
+    automatically with ``https://``.
+    """
+    # Handle being called as the second stage of a port_scan_task chain.
+    if isinstance(id, dict):
+        discovered_ports = id.get("ports", discovered_ports)
+        id = id["device_id"]
+
+    device = Device.objects.get(id=id)
+
+    try:
+        ipaddress_mod = __import__('ipaddress')
+        ipaddress_mod.ip_address(device.ip)  # basic SSRF guard
+    except ValueError:
+        return {"error": "Invalid IP address: {}".format(device.ip)}
+
+    # Rate limiting — abort if this IP is being scanned too aggressively.
+    if not _rate_limit_check(device.ip):
+        return {"error": "Rate limit exceeded for {} — try again in 60 seconds".format(device.ip)}
+
+    ports = discovered_ports if discovered_ports is not None else _resolve_open_ports(device)
+    if not ports:
+        return {"error": "No open ports discovered on {} — Naabu may not be installed "
+                "(see KAMERKA_NAABU_BIN) or the host is unreachable".format(device.ip)}
+
+    all_technologies = {}
+    for url, is_known_tls in _build_target_urls(device.ip, ports):
+        # Extract port number once for use in logging and dict keys.
+        port = int(url.rsplit(":", 1)[-1])
+
+        def _try_wappalyzer(target_url):
+            return subprocess.run(
+                ["wappalyzer", target_url, "-oJ"],
+                capture_output=True, text=True, timeout=60,
+            )
+
+        try:
+            result = _try_wappalyzer(url)
+            # Two-pass: if we used http:// and got an SSL error, retry with https://
+            if not is_known_tls and result.returncode != 0 and (
+                "ssl" in result.stderr.lower() or "tls" in result.stderr.lower()
+            ):
+                https_url = url.replace("http://", "https://", 1)
+                logger.info("wappalyzer_scan: retrying %s with HTTPS", url)
+                result = _try_wappalyzer(https_url)
+            if result.returncode == 0 and result.stdout.strip():
+                technologies = json.loads(result.stdout)
+                wap_result = WappalyzerResult(
+                    device=device,
+                    technologies=technologies,
+                    raw_output=result.stdout[:10000],
+                )
+                wap_result.save()
+                all_technologies[str(port)] = technologies
+        except FileNotFoundError:
+            return {"error": "Wappalyzer CLI not installed"}
+        except subprocess.TimeoutExpired:
+            logger.warning("wappalyzer_scan: timed out on %s:%s", device.ip, port)
+        except json.JSONDecodeError:
+            logger.warning("wappalyzer_scan: JSON parse error on %s:%s", device.ip, port)
+        except Exception as exc:
+            logger.warning("wappalyzer_scan: error on %s:%s — %s", device.ip, port, exc)
+
+    return all_technologies if all_technologies else {"error": "No output from Wappalyzer on any port"}
+
+
+@shared_task(bind=False)
+def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150, discovered_ports=None):
+    """Run Nuclei against all open ports of a device.
+
+    Chaining
+    --------
+    When called as the second stage of a ``port_scan_task`` chain the first
+    argument (*id*) will be the dict returned by that task::
+
+        from celery import chain
+        chain(port_scan_task.s(device_id), nuclei_scan.s()).delay()
+
+    Port resolution
+    ---------------
+    If ``device.port`` is already set (populated by a Shodan or Nmap scan)
+    those ports are used directly — Naabu is NOT called.  Naabu is only the
+    *fallback* for devices that arrive without any port data.
+
+    Two-pass HTTP→HTTPS
+    -------------------
+    Target URLs are built with ``_build_target_urls()``.  Well-known TLS
+    ports receive ``https://``; all others get ``http://``.  Nuclei handles
+    TLS negotiation automatically so both schemas are included.
+
+    The Nuclei binary path is read from ``settings.NUCLEI_BIN``.
+
+    ``severity`` is validated against the Nuclei allowlist before use.
+    ``rate_limit`` is clamped to [1, 500] to prevent accidental DoS.
+    """
+    import tempfile as _tmp
+
+    # Handle being called as the second stage of a port_scan_task chain.
+    if isinstance(id, dict):
+        discovered_ports = id.get("ports", discovered_ports)
+        id = id["device_id"]
+
+    # ── Input validation ────────────────────────────────────────────────────
+    _VALID_SEVERITIES = {"info", "low", "medium", "high", "critical"}
+    if severity is not None:
+        severity = str(severity).strip().lower()
+        if severity not in _VALID_SEVERITIES:
+            return {"error": "Invalid severity '{}'. Must be one of: {}".format(
+                severity, ", ".join(sorted(_VALID_SEVERITIES)))}
+
+    try:
+        rate_limit = int(rate_limit)
+        if not (1 <= rate_limit <= 500):
+            raise ValueError()
+    except (ValueError, TypeError):
+        return {"error": "rate_limit must be an integer between 1 and 500"}
+    # ────────────────────────────────────────────────────────────────────────
+
     from django.conf import settings as django_settings
     nuclei_bin = getattr(django_settings, "NUCLEI_BIN", "nuclei")
     nuclei_timeout = getattr(django_settings, "NUCLEI_DEFAULT_TIMEOUT", 300)
 
     device = Device.objects.get(id=id)
-    try:
-        ip, port = _validate_target(device.ip, device.port)
-    except ValueError as e:
-        return {"error": str(e)}
-    target_url = "http://{}:{}".format(ip, port)
-
-    cmd = [nuclei_bin, "-u", target_url, "-jsonl", "-silent"]
-
-    if templates_dir:
-        cmd.extend(["-t", templates_dir])
-    else:
-        cmd.append("-as")
-
-    if severity:
-        cmd.extend(["-severity", severity])
-
-    cmd.extend(["-rate-limit", str(rate_limit)])
 
     try:
+        ipaddress_mod = __import__('ipaddress')
+        ipaddress_mod.ip_address(device.ip)
+    except ValueError:
+        return {"error": "Invalid IP address: {}".format(device.ip)}
+
+    # Rate limiting.
+    if not _rate_limit_check(device.ip):
+        return {"error": "Rate limit exceeded for {} — try again in 60 seconds".format(device.ip)}
+
+    ports = discovered_ports if discovered_ports is not None else _resolve_open_ports(device)
+    if not ports:
+        return {"error": "No open ports discovered on {} — Naabu may not be installed "
+                "(see KAMERKA_NAABU_BIN) or the host is unreachable".format(device.ip)}
+
+    # Build target URLs — both http:// and https:// variants for non-TLS ports
+    # so Nuclei can probe both.  Well-known TLS ports get https:// directly.
+    target_urls = [url for url, _ in _build_target_urls(device.ip, ports)]
+    # Also add https:// variant for every non-TLS port so Nuclei covers both.
+    for url, is_tls in _build_target_urls(device.ip, ports):
+        if not is_tls:
+            target_urls.append(url.replace("http://", "https://", 1))
+
+    targets_file = None
+    try:
+        fd, targets_file = _tmp.mkstemp(suffix='.txt', text=True)
+        try:
+            with os.fdopen(fd, 'w') as tf:
+                tf.write('\n'.join(target_urls) + '\n')
+        except Exception:
+            os.close(fd)
+            raise
+
+        cmd = [nuclei_bin, "-l", targets_file, "-jsonl", "-silent"]
+
+        if templates_dir:
+            # Resolve relative paths (sent from the UI) to absolute so nuclei
+            # can find them regardless of the working directory.
+            if not os.path.isabs(templates_dir):
+                templates_dir = os.path.join(django_settings.BASE_DIR, templates_dir)
+            cmd.extend(["-t", templates_dir])
+        else:
+            cmd.append("-as")
+
+        if severity:
+            cmd.extend(["-severity", severity])
+
+        cmd.extend(["-rate-limit", str(rate_limit)])
+
         result = subprocess.run(
             cmd,
             capture_output=True,
@@ -965,7 +1294,7 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150):
                         severity=finding.get("info", {}).get("severity", ""),
                         matched_at=finding.get("matched-at", ""),
                         description=finding.get("info", {}).get("description", ""),
-                        raw_output=line[:10000]
+                        raw_output=line[:10000],
                     )
                     nuclei_result.save()
                     findings.append(finding)
@@ -977,8 +1306,11 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150):
         return {"error": "Nuclei binary not installed"}
     except subprocess.TimeoutExpired:
         return {"error": "Nuclei scan timed out"}
-    except Exception as e:
-        return {"error": str(e)}
+    except Exception as exc:
+        return {"error": str(exc)}
+    finally:
+        if targets_file and os.path.exists(targets_file):
+            os.unlink(targets_file)
 
 
 def paste_login(username, password, key):
@@ -1065,14 +1397,13 @@ def send_to_field_agent_task(id, notes):
             cve = af_details.vulns[1:][:-1]
         if af.indicator:
             indicator = af.indicator[2:][:-2]
-    except:
-        print("Not scanned")
-        pass
+    except Exception:
+        logger.warning("send_to_field_agent_task: ShodanScan record not found for device %s — skipping enrichment", id)
 
-    user_key = paste_login(keys['keys']['pastebin_user'], keys['keys']['pastebin_password'],
-                           keys['keys']['pastebin_dev_key'])
+    user_key = paste_login(_get_env_key('PASTEBIN_USER'), _get_env_key('PASTEBIN_PASSWORD'),
+                           _get_env_key('PASTEBIN_DEV_KEY'))
 
-    pastes = retrieve_pastes(keys['keys']['pastebin_dev_key'], user_key=user_key)
+    pastes = retrieve_pastes(_get_env_key('PASTEBIN_DEV_KEY'), user_key=user_key)
 
     ip = af.ip
     lat = af.lat
@@ -1086,16 +1417,16 @@ def send_to_field_agent_task(id, notes):
 
     print("\\xea\\x93\\x98amerka_" + af.ip)
     if "\\xea\\x93\\x98amerka_" + af.ip in pastes.keys():
-        delete_paste(keys['keys']['pastebin_dev_key'], user_key, pastes["\\xea\\x93\\x98amerka_" + af.ip])
-        create_paste(keys['keys']['pastebin_dev_key'], user_key, "ꓘamerka_" + af.ip, merge_string)
+        delete_paste(_get_env_key('PASTEBIN_DEV_KEY'), user_key, pastes["\\xea\\x93\\x98amerka_" + af.ip])
+        create_paste(_get_env_key('PASTEBIN_DEV_KEY'), user_key, "ꓘamerka_" + af.ip, merge_string)
     else:
-        create_paste(keys['keys']['pastebin_dev_key'], user_key, "ꓘamerka_" + af.ip, merge_string)
+        create_paste(_get_env_key('PASTEBIN_DEV_KEY'), user_key, "ꓘamerka_" + af.ip, merge_string)
 
 
 
 @shared_task(bind=False)
 def shodan_scan_task(id):
-    SHODAN_API_KEY = keys['keys']['shodan']
+    SHODAN_API_KEY = _get_env_key('SHODAN_API_KEY', required=True)
     device = Device.objects.get(id=id)
     api = Shodan(SHODAN_API_KEY)
     product = []
@@ -1178,7 +1509,7 @@ def scan(id):
 
 
         except Exception as e:
-            print(e)
+            logger.warning("%s", e)
             return_dict["State"] = u['nmaprun']['host']['ports']['port']['state']["@state"]
             return_dict["Reason"] = u['nmaprun']['host']['ports']['port']['state']["@reason"]
             device1.scan = return_dict
@@ -1206,7 +1537,7 @@ def scan(id):
             device1.exploited_scanned = True
             device1.save()
             return return_dict
-        except:
+        except Exception:
             pass
 
 
@@ -1248,14 +1579,9 @@ def exploit(id):
 
 @shared_task(bind=False)
 def whoisxml(id):
-    api_key = keys['keys']['whoisxmlapi']
+    """Perform a WHOIS lookup for the device IP using the FOSS ipwhois library."""
+    from ipwhois import IPWhois
     device1 = Device.objects.get(id=id)
-
-    end = "https://www.whoisxmlapi.com/whoisserver/WhoisService?apiKey=" + api_key + "&domainName=" + device1.ip + "&outputFormat=json"
-
-    req = requests.get(end)
-
-    req_json = json.loads(req.content)
 
     netrange = ""
     admin_org = ""
@@ -1267,75 +1593,61 @@ def whoisxml(id):
     name = ""
     org = ""
 
-    if 'administrativeContact' in req_json['WhoisRecord']['registryData']:
-        admin_email = req_json['WhoisRecord']['registryData']['administrativeContact']['email'],
-        admin_phone = req_json['WhoisRecord']['registryData']['administrativeContact']['telephone'],
-        admin_org = req_json['WhoisRecord']['registryData']['administrativeContact']['organization']
+    try:
+        obj = IPWhois(device1.ip)
+        result = obj.lookup_rdap(depth=1)
 
-    if 'registrant' in req_json['WhoisRecord']['registryData']:
-        if "name" in req_json['WhoisRecord']['registryData']['registrant']:
-            name = req_json['WhoisRecord']['registryData']['registrant']['name']
-        if "organization" in req_json['WhoisRecord']['registryData']['registrant']:
-            org = req_json['WhoisRecord']['registryData']['registrant']['organization']
-        if "street1" in req_json['WhoisRecord']['registryData']['registrant']:
-            street = req_json['WhoisRecord']['registryData']['registrant']['street1']
+        network = result.get('network', {})
+        netrange = network.get('cidr', "")
 
-        if req_json['WhoisRecord']['registryData']['customField1Name'] == "netRange":
-            netrange = req_json['WhoisRecord']['registryData']['customField1Value']
-        if req_json['WhoisRecord']['registryData']['customField2Name'] == "netRange":
-            netrange = req_json['WhoisRecord']['registryData']['customField2Value']
+        entities = result.get('objects', {})
+        for key, entity in entities.items():
+            roles = entity.get('roles', [])
+            contact = entity.get('contact') or {}
 
-        if 'city' in req_json['WhoisRecord']['registryData']['registrant']:
-            city = req_json['WhoisRecord']['registryData']['registrant']['city']
+            entity_name = contact.get('name', "") or ""
+            entity_org = (contact.get('org') or [{}])[0].get('value', "")
+            entity_email = (contact.get('email') or [{}])[0].get('value', "")
+            entity_phone = (contact.get('phone') or [{}])[0].get('value', "")
+            address_parts = contact.get('address') or []
+            entity_street = address_parts[0].get('value', "") if address_parts else ""
+            entity_city = ""
+            if entity_street and '\n' in entity_street:
+                lines = [l.strip() for l in entity_street.split('\n') if l.strip()]
+                entity_street = lines[0] if lines else entity_street
+                entity_city = lines[1] if len(lines) > 1 else ""
 
-        if 'email' in req_json['WhoisRecord']['registryData']['registrant']:
-            email = req_json['WhoisRecord']['registryData']['registrant']['email']
+            if 'registrant' in roles or 'abuse' in roles:
+                if not org:
+                    org = entity_org or entity_name
+                if not name:
+                    name = entity_name
+                if not email:
+                    email = entity_email
+                if not street:
+                    street = entity_street
+                if not city:
+                    city = entity_city
 
-        wh = Whois(device=device1, org=org,
-                   street=street,
-                   city=city,
-                   admin_org=admin_org,
-                   admin_email=admin_email,
-                   admin_phone=admin_phone, netrange=netrange, name=name, email=email)
+            if 'administrative' in roles or 'technical' in roles:
+                if not admin_org:
+                    admin_org = entity_org or entity_name
+                if not admin_email:
+                    admin_email = entity_email
+                if not admin_phone:
+                    admin_phone = entity_phone
 
-        wh.save()
+    except Exception as e:
+        logger.warning("ipwhois lookup failed for %s: %s", device1.ip, e)
 
+    wh = Whois(device=device1, org=org,
+               street=street,
+               city=city,
+               admin_org=admin_org,
+               admin_email=admin_email,
+               admin_phone=admin_phone, netrange=netrange, name=name, email=email)
 
-    elif 'subRecords' in req_json['WhoisRecord']:
-        try:
-            if "name" in req_json['WhoisRecord']['subRecords'][0]['registrant']:
-                name = req_json['WhoisRecord']['subRecords'][0]['registrant']['name']
-                if "street1" in req_json['WhoisRecord']['subRecords'][0]['registrant']:
-                    street = req_json['WhoisRecord']['subRecords'][0]['registrant']['street1']
-        except:
-            pass
-
-        try:
-            if req_json['WhoisRecord']['subRecords'][0]['customField1Name'] == "netRange":
-                netrange = req_json['WhoisRecord']['subRecords'][0]['customField1Value']
-            if req_json['WhoisRecord']['subRecords'][0]['customField2Name'] == "netRange":
-                netrange = req_json['WhoisRecord']['subRecords'][0]['customField2Value']
-        except:
-            pass
-
-        try:
-            org = req_json['WhoisRecord']['subRecords'][0]['registrant']['organization']
-            if 'city' in req_json['WhoisRecord']['subRecords'][0]['registrant']:
-                city = req_json['WhoisRecord']['subRecords'][0]['registrant']['city']
-
-            if 'email' in req_json['WhoisRecord']['subRecords'][0]['registrant']:
-                email = req_json['WhoisRecord']['subRecords'][0]['registrant']['email']
-        except:
-            pass
-
-        wh = Whois(device=device1, org=org,
-                   street=street,
-                   city=city,
-                   admin_org=admin_org,
-                   admin_email=admin_email,
-                   admin_phone=admin_phone, netrange=netrange, name=name, email=email)
-
-        wh.save()
+    wh.save()
 
 
 def shodan_csv_export(search_id, output_path):

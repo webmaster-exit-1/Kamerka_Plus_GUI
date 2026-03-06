@@ -15,6 +15,7 @@
         <script src="{% static 'js/d3.layout.cloud.js' %}" charset="UTF-8"></script>
         <script src="{% static 'js/d3.wordcloud.js' %}" charset="UTF-8"></script>
         <link rel="stylesheet" type="text/css" id="theme" href="{% static 'css/theme-default.css' %}"/>
+        <link rel="stylesheet" type="text/css" href="{% static 'css/cyberpunk.css' %}"/>
         <link rel="stylesheet" type="text/css" href="{% static 'css/leaflet.css' %}"/>
         <!-- EOF CSS INCLUDE -->
     </head>
@@ -296,6 +297,8 @@
 
 
         <!-- END MESSAGE BOX--><script src="{% static 'js/leaflet.js' %}"></script>
+<script src="{% static 'js/leaflet.heat.js' %}"></script>
+<script src="{% static 'js/map_themes.js' %}"></script>
 
 <script type="text/javascript">
 function initialize() {
@@ -312,25 +315,50 @@ function initialize() {
         maxZoom: 17
     }).setView([centerLat, centerLon], 4);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(map);
+    var themeRef = { layer: null, currentKey: KamerkaTiles.savedTheme() };
+    themeRef.layer = KamerkaTiles.apply(themeRef.currentKey, map);
 
     var markers = [];
+    var heatPoints = [];
     {% for device in search %}
     {% if device.lat and device.lon %}
     (function() {
+        var vulns = "{{ device.vulns|default:'' }}";
+        var intensity = Math.min(1.0, 0.2 + (vulns.match(/CVE-/g)||[]).length * 0.15);
+        heatPoints.push([{{device.lat}}, {{device.lon}}, intensity]);
         var m = L.marker([{{device.lat}}, {{device.lon}}]).addTo(map);
-        m.bindPopup('<a href="{{device.search_id}}/{{device.id}}/{{device.ip}}">{{device.type}} - {{device.ip}}</a>');
+        m.bindPopup('<a href="{{device.search_id}}/{{device.id}}/{{device.ip}}">{{device.type}} — {{device.ip}}</a>');
         markers.push(m);
     })();
     {% endif %}
     {% endfor %}
 
+    var heatLayer = L.heatLayer(heatPoints, {
+        radius: 28, blur: 22, maxZoom: 10,
+        gradient: { 0.1: '#0064d7', 0.4: '#00e1ff', 0.65: '#ff00cd', 1.0: '#ff0000' }
+    });
+    var heatVisible = false;
+
     if (markers.length > 1) {
         var group = L.featureGroup(markers);
         map.fitBounds(group.getBounds().pad(0.1));
     }
+
+    KamerkaTiles.injectPicker(map, themeRef, '.panel-heading');
+
+    var mapEl = document.getElementById('leaflet_world_map');
+    var heatBtn = document.createElement('button');
+    heatBtn.textContent = '🌡 HEAT MAP';
+    heatBtn.style.cssText = 'position:absolute;top:8px;left:60px;z-index:1000;' +
+        'background:rgba(10,13,18,0.88);border:1px solid #0064d7;color:#00e1ff;' +
+        'font-family:var(--cp-font,monospace);font-size:0.62em;letter-spacing:0.06em;' +
+        'padding:4px 8px;cursor:pointer;';
+    heatBtn.addEventListener('click', function () {
+        heatVisible = !heatVisible;
+        if (heatVisible) { heatLayer.addTo(map); heatBtn.style.color='#ff00cd'; heatBtn.style.borderColor='#ff00cd'; }
+        else { map.removeLayer(heatLayer); heatBtn.style.color='#00e1ff'; heatBtn.style.borderColor='#0064d7'; }
+    });
+    mapEl.appendChild(heatBtn);
 }
 
 document.addEventListener('DOMContentLoaded', function() {

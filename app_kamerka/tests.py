@@ -155,7 +155,12 @@ class WappalyzerTaskTests(TestCase):
         from kamerka.tasks import wappalyzer_scan
         result = wappalyzer_scan(self.device.id)
         self.assertIn("error", result)
-        self.assertIn("timed out", result["error"])
+        # Timeout per-port is now logged as warning; the task returns the
+        # "no output" summary error once all ports have been tried.
+        self.assertTrue(
+            "timed out" in result["error"] or "No output" in result["error"],
+            "Expected timeout or no-output error, got: {!r}".format(result["error"])
+        )
 
 
 class NucleiTaskTests(TestCase):
@@ -201,11 +206,14 @@ class NucleiTaskTests(TestCase):
     @patch('kamerka.tasks.subprocess.run')
     def test_nuclei_scan_with_custom_templates(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        from django.conf import settings as dj_settings
         from kamerka.tasks import nuclei_scan
         nuclei_scan(self.device.id, templates_dir="nuclei_templates/china-iot/hikvision")
         call_args = mock_run.call_args[0][0]
         self.assertIn("-t", call_args)
-        self.assertIn("nuclei_templates/china-iot/hikvision", call_args)
+        # Path must be resolved to absolute before being passed to nuclei
+        expected = os.path.join(dj_settings.BASE_DIR, "nuclei_templates", "china-iot", "hikvision")
+        self.assertIn(expected, call_args)
 
     @patch('kamerka.tasks.subprocess.run')
     def test_nuclei_scan_not_installed(self, mock_run):
@@ -1445,6 +1453,58 @@ class NucleiConfiguredBinTests(TestCase):
         called_timeout = mock_run.call_args[1].get('timeout')
         self.assertEqual(called_timeout, 42)
 
+    @patch('kamerka.tasks.subprocess.run')
+    def test_nuclei_scan_resolves_relative_templates_dir(self, mock_run):
+        """nuclei_scan must pass an absolute path to -t even when given a relative path."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        from kamerka.tasks import nuclei_scan
+        nuclei_scan(self.device.id, templates_dir="nuclei_templates/china-iot/hikvision")
+        called_cmd = mock_run.call_args[0][0]
+        t_index = called_cmd.index("-t")
+        resolved = called_cmd[t_index + 1]
+        if not os.path.isabs(resolved):
+            self.fail(
+                "Expected absolute path for -t flag, got relative: {!r}".format(resolved)
+            )
+        if not resolved.endswith(os.path.join("nuclei_templates", "china-iot", "hikvision")):
+            self.fail(
+                "Resolved path does not point to the expected directory: {!r}".format(resolved)
+            )
+
+    @patch('kamerka.tasks.subprocess.run')
+    def test_nuclei_scan_absolute_templates_dir_passed_unchanged(self, mock_run):
+        """nuclei_scan must not alter a path that is already absolute."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        abs_path = "/opt/my-nuclei-templates"
+        from kamerka.tasks import nuclei_scan
+        nuclei_scan(self.device.id, templates_dir=abs_path)
+        called_cmd = mock_run.call_args[0][0]
+        t_index = called_cmd.index("-t")
+        resolved = called_cmd[t_index + 1]
+        if resolved != abs_path:
+            self.fail(
+                "Absolute path was modified: expected {!r}, got {!r}".format(abs_path, resolved)
+            )
+
+    @patch('kamerka.tasks.subprocess.run')
+    @patch('verification.naabu_scanner.run_naabu')
+    def test_nuclei_scan_empty_port_triggers_naabu_discovery(self, mock_naabu, mock_run):
+        """nuclei_scan must call _resolve_open_ports when device.port is empty,
+        which in turn calls Naabu to discover open ports."""
+        mock_naabu.return_value = [{'ip': '192.168.1.1', 'port': 80}]
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        self.device.port = ""
+        self.device.save()
+        from kamerka.tasks import nuclei_scan
+        result = nuclei_scan(self.device.id)
+        if isinstance(result, dict) and result.get("error", "").startswith("Invalid port"):
+            self.fail(
+                "nuclei_scan should not return 'Invalid port' — it should discover ports via Naabu: {!r}".format(result)
+            )
+        # Naabu must have been invoked since port was empty
+        if not mock_naabu.called:
+            self.fail("Expected Naabu discovery to be called for empty-port device")
+
 
 class DeviceLastScannedTests(TestCase):
     """Verify the Device.last_scanned field is present and nullable."""
@@ -1926,7 +1986,8 @@ class AjaxViewTests(TestCase):
     @patch('app_kamerka.views.AsyncResult')
     def test_get_task_info_with_task_id_returns_state(self, mock_result_cls):
         mock_result_cls.return_value = MagicMock(state='SUCCESS', result={'count': 5})
-        response = self.client.get('/get-task-info/', {'task_id': 'fake-task-id-123'})
+        response = self.client.get('/get-task-info/', {'task_id': 'fake-task-id-123'},
+                                   **AJAX_HEADERS)
         if response.status_code != 200:
             self.fail("Expected HTTP 200, got {}".format(response.status_code))
         data = json.loads(response.content)
@@ -1936,7 +1997,7 @@ class AjaxViewTests(TestCase):
             )
 
     def test_get_task_info_without_task_id_returns_message(self):
-        response = self.client.get('/get-task-info/')
+        response = self.client.get('/get-task-info/', **AJAX_HEADERS)
         if response.status_code != 200:
             self.fail("Expected HTTP 200, got {}".format(response.status_code))
         if b'No job id given' not in response.content:
@@ -1945,6 +2006,13 @@ class AjaxViewTests(TestCase):
                     response.content[:200]
                 )
             )
+
+    def test_get_task_info_without_ajax_header_returns_403(self):
+        """get_task_info must reject non-AJAX requests with HTTP 403."""
+        response = self.client.get('/get-task-info/', {'task_id': 'fake-id'})
+        if response.status_code != 403:
+            self.fail("Expected HTTP 403 without AJAX header, got {}".format(response.status_code))
+
 
     # -- wappalyzer_scan_view ----------------------------------------------
     @patch('app_kamerka.views.wappalyzer_scan')
@@ -2481,3 +2549,597 @@ class ExploitTaskDispatchTests(TestCase):
             self.fail(
                 "Expected {{'admin': 'hikvision'}}, got {!r}".format(result)
             )
+
+
+# ---------------------------------------------------------------------------
+# Nuclei template matching – view builds correct match flags
+# ---------------------------------------------------------------------------
+class NucleiTemplateMatchingTests(TestCase):
+    """The device view marks the template entry whose directory name matches
+    device.type so the dropdown is pre-selected in the UI."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+
+    def _build_template_list(self, device_type, tmp_dir):
+        """Replicate the view logic that populates nuclei_template_list."""
+        from django.conf import settings as dj_settings
+        nuclei_templates_dir = tmp_dir
+        nuclei_template_list = []
+        device_type_lower = (device_type or '').lower()
+        if os.path.isdir(nuclei_templates_dir):
+            for root, dirs, files in os.walk(nuclei_templates_dir):
+                dirs.sort()
+                yaml_files = sorted(f for f in files if f.endswith(('.yaml', '.yml')))
+                if yaml_files and root != nuclei_templates_dir:
+                    dir_name = os.path.basename(root).lower()
+                    rel_dir = os.path.relpath(root, dj_settings.BASE_DIR)
+                    label_dir = os.path.relpath(root, nuclei_templates_dir)
+                    nuclei_template_list.append({
+                        'label': label_dir + ' [all]',
+                        'path': rel_dir,
+                        'is_dir': True,
+                        'match': bool(device_type_lower and device_type_lower == dir_name),
+                    })
+                for fname in yaml_files:
+                    full_path = os.path.join(root, fname)
+                    rel_path = os.path.relpath(full_path, dj_settings.BASE_DIR)
+                    label = os.path.relpath(full_path, nuclei_templates_dir)
+                    nuclei_template_list.append({
+                        'label': label,
+                        'path': rel_path,
+                        'is_dir': False,
+                        'match': False,
+                    })
+        return nuclei_template_list
+
+    def test_matching_dir_entry_gets_match_true(self):
+        """Directory whose name equals device.type must have match=True."""
+        with tempfile.TemporaryDirectory() as tmp:
+            vendor_dir = os.path.join(tmp, "hikvision")
+            os.makedirs(vendor_dir)
+            open(os.path.join(vendor_dir, "hikvision-cve-test.yaml"), 'w').close()
+
+            tpls = self._build_template_list("hikvision", tmp)
+            dir_entries = [t for t in tpls if t['is_dir']]
+            if not dir_entries:
+                self.fail("Expected at least one directory entry in template list")
+            matched = [t for t in dir_entries if t['match']]
+            if not matched:
+                self.fail(
+                    "Expected the 'hikvision' directory entry to have match=True, "
+                    "but none did: {!r}".format(dir_entries)
+                )
+
+    def test_non_matching_device_type_yields_no_match(self):
+        """No entry should have match=True when device.type does not match any template dir."""
+        with tempfile.TemporaryDirectory() as tmp:
+            vendor_dir = os.path.join(tmp, "hikvision")
+            os.makedirs(vendor_dir)
+            open(os.path.join(vendor_dir, "hikvision-cve-test.yaml"), 'w').close()
+
+            tpls = self._build_template_list("dahua", tmp)
+            matched = [t for t in tpls if t['match']]
+            if matched:
+                self.fail(
+                    "Expected no match for device type 'dahua' against 'hikvision' dir, "
+                    "but got: {!r}".format(matched)
+                )
+
+    def test_file_entries_never_have_match_true(self):
+        """Individual YAML file entries must always have match=False."""
+        with tempfile.TemporaryDirectory() as tmp:
+            vendor_dir = os.path.join(tmp, "hikvision")
+            os.makedirs(vendor_dir)
+            open(os.path.join(vendor_dir, "hikvision-cve-test.yaml"), 'w').close()
+
+            tpls = self._build_template_list("hikvision", tmp)
+            file_entries = [t for t in tpls if not t['is_dir']]
+            bad = [t for t in file_entries if t['match']]
+            if bad:
+                self.fail(
+                    "File entries must not have match=True, but found: {!r}".format(bad)
+                )
+
+    def test_empty_device_type_yields_no_match(self):
+        """An empty device.type must never produce a match."""
+        with tempfile.TemporaryDirectory() as tmp:
+            vendor_dir = os.path.join(tmp, "hikvision")
+            os.makedirs(vendor_dir)
+            open(os.path.join(vendor_dir, "hikvision-cve-test.yaml"), 'w').close()
+
+            for dt in ("", None):
+                tpls = self._build_template_list(dt, tmp)
+                matched = [t for t in tpls if t['match']]
+                if matched:
+                    self.fail(
+                        "device_type={!r} produced unexpected match: {!r}".format(dt, matched)
+                    )
+
+    def test_case_insensitive_match(self):
+        """Match must be case-insensitive (e.g. 'Hikvision' should match 'hikvision' dir)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            vendor_dir = os.path.join(tmp, "hikvision")
+            os.makedirs(vendor_dir)
+            open(os.path.join(vendor_dir, "hikvision-cve-test.yaml"), 'w').close()
+
+            tpls = self._build_template_list("Hikvision", tmp)
+            matched = [t for t in tpls if t['match']]
+            if not matched:
+                self.fail(
+                    "Expected case-insensitive match for 'Hikvision' against 'hikvision' dir"
+                )
+
+
+# ---------------------------------------------------------------------------
+# get_shodan_scan_results  –  empty queryset must not raise IndexError
+# ---------------------------------------------------------------------------
+class GetShodanScanResultsTests(TestCase):
+    """get_shodan_scan_results must return [] when no scan record exists."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+        self.device = Device.objects.create(
+            search=self.search, ip="10.0.0.1", product="TestCam",
+            port="80", type="hikvision", lat="40.0", lon="-74.0",
+            country_code="US"
+        )
+
+    def test_empty_queryset_returns_json_empty_list(self):
+        response = self.client.get(
+            '/get_shodan_scan_results/{}'.format(self.device.id),
+            **AJAX_HEADERS
+        )
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if data != []:
+            self.fail(
+                "Expected [] when no ShodanScan record exists, got: {!r}".format(data)
+            )
+
+    def test_existing_record_returns_serialized_data(self):
+        ShodanScan.objects.create(
+            device=self.device,
+            ports="[80, 443]",
+            tags="[]",
+            products="[]",
+            module="http",
+            vulns="[]",
+        )
+        response = self.client.get(
+            '/get_shodan_scan_results/{}'.format(self.device.id),
+            **AJAX_HEADERS
+        )
+        if response.status_code != 200:
+            self.fail("Expected HTTP 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if len(data) != 1:
+            self.fail("Expected 1 record, got {}".format(len(data)))
+        if data[0]['fields']['ports'] != "[80, 443]":
+            self.fail("Unexpected ports value: {!r}".format(data[0]['fields']['ports']))
+
+
+# ===========================================================================
+# Fix 1 – Device.port coercion
+# ===========================================================================
+class DevicePortCoercionTests(TestCase):
+    """Device model stores port as-is; port discovery is deferred to _resolve_open_ports()."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+
+    def test_empty_string_port_stays_empty(self):
+        """Empty port is stored as-is — _resolve_open_ports() handles discovery at scan time."""
+        device = Device.objects.create(
+            search=self.search, ip="1.2.3.4", product="Cam",
+            port="", type="hikvision", lat="0", lon="0", country_code="US"
+        )
+        device.refresh_from_db()
+        if device.port != "":
+            self.fail(
+                "Expected port='' to be stored unchanged, got {!r}".format(device.port)
+            )
+
+    def test_whitespace_port_stays_whitespace(self):
+        """Whitespace-only port is stored as-is; the model no longer coerces it."""
+        device = Device.objects.create(
+            search=self.search, ip="1.2.3.5", product="Cam",
+            port="   ", type="hikvision", lat="0", lon="0", country_code="US"
+        )
+        device.refresh_from_db()
+        # The model doesn't strip or default the port; that's _resolve_open_ports' job.
+        if device.port.strip() not in ("", "   "):
+            self.fail(
+                "Expected whitespace port to be stored unchanged, got {!r}".format(device.port)
+            )
+
+    def test_valid_port_is_unchanged(self):
+        device = Device.objects.create(
+            search=self.search, ip="1.2.3.6", product="Cam",
+            port="8080", type="hikvision", lat="0", lon="0", country_code="US"
+        )
+        device.refresh_from_db()
+        if device.port != "8080":
+            self.fail(
+                "Expected port='8080' to be unchanged, got {!r}".format(device.port)
+            )
+
+    def test_multiport_string_is_unchanged(self):
+        device = Device.objects.create(
+            search=self.search, ip="1.2.3.7", product="Cam",
+            port="22, 80, 443", type="nmap", lat="0", lon="0", country_code="US"
+        )
+        device.refresh_from_db()
+        if device.port != "22, 80, 443":
+            self.fail(
+                "Expected multi-port string unchanged, got {!r}".format(device.port)
+            )
+
+
+# ===========================================================================
+# Fix 2 – API keys from environment variables
+# ===========================================================================
+class EnvKeyTests(TestCase):
+    """_get_env_key reads from os.environ and warns when a required key is missing."""
+
+    def test_present_key_returned(self):
+        with patch.dict(os.environ, {"SHODAN_API_KEY": "test-key-123"}):
+            from kamerka.tasks import _get_env_key
+            value = _get_env_key("SHODAN_API_KEY", required=True)
+            if value != "test-key-123":
+                self.fail("Expected 'test-key-123', got {!r}".format(value))
+
+    def test_missing_optional_key_returns_empty_string(self):
+        env = {k: v for k, v in os.environ.items() if k != "SHODAN_API_KEY"}
+        with patch.dict(os.environ, env, clear=True):
+            from kamerka.tasks import _get_env_key
+            value = _get_env_key("SHODAN_API_KEY")
+            if value != "":
+                self.fail("Expected '' for missing optional key, got {!r}".format(value))
+
+    def test_missing_required_key_logs_warning(self):
+        env = {k: v for k, v in os.environ.items() if k != "SHODAN_API_KEY"}
+        with patch.dict(os.environ, env, clear=True):
+            import logging
+            with self.assertLogs("kamerka.tasks", level=logging.WARNING):
+                from kamerka.tasks import _get_env_key
+                _get_env_key("SHODAN_API_KEY", required=True)
+
+    def test_no_keys_json_dependency(self):
+        """tasks module must not open keys.json at import time."""
+        import kamerka.tasks as t
+        import inspect
+        src = inspect.getsource(t)
+        if "open('keys.json')" in src or 'open("keys.json")' in src:
+            self.fail("tasks.py still opens keys.json — should use environment variables")
+
+
+# ===========================================================================
+# Fix 3 – No bare except: clauses remain
+# ===========================================================================
+class NoBareExceptTests(TestCase):
+    """tasks.py must not contain any bare `except:` clauses."""
+
+    def test_no_bare_except_in_tasks(self):
+        import re
+        tasks_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "kamerka", "tasks.py"
+        )
+        with open(tasks_path) as f:
+            lines = f.readlines()
+        bare = [
+            (i + 1, line.rstrip())
+            for i, line in enumerate(lines)
+            if re.match(r'\s+except:\s*$', line)
+        ]
+        if bare:
+            self.fail(
+                "Found bare 'except:' clauses in tasks.py (should be "
+                "'except Exception:' or more specific):\n" +
+                "\n".join("  line {}: {}".format(ln, txt) for ln, txt in bare)
+            )
+
+
+# ===========================================================================
+# Fix 4 – Nuclei template manifest drives pre-selection
+# ===========================================================================
+class NucleiManifestTests(TestCase):
+    """manifest.yaml maps device types to template paths correctly."""
+
+    def _manifest_path(self):
+        return os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "nuclei_templates", "manifest.yaml"
+        )
+
+    def test_manifest_exists(self):
+        if not os.path.isfile(self._manifest_path()):
+            self.fail("nuclei_templates/manifest.yaml does not exist")
+
+    def test_manifest_is_valid_yaml(self):
+        import yaml
+        with open(self._manifest_path()) as f:
+            data = yaml.safe_load(f)
+        if not isinstance(data, dict):
+            self.fail("manifest.yaml did not parse to a dict")
+        if "mappings" not in data:
+            self.fail("manifest.yaml missing 'mappings' key")
+
+    def test_hikvision_maps_to_hikvision_dir(self):
+        import yaml
+        with open(self._manifest_path()) as f:
+            data = yaml.safe_load(f)
+        paths = data["mappings"].get("hikvision", [])
+        if not any("hikvision" in p for p in paths):
+            self.fail(
+                "Expected 'hikvision' in mapped paths for device type 'hikvision', got: {!r}".format(paths)
+            )
+
+    def test_amcrest_covered_by_manifest(self):
+        """amcrest shares Dahua firmware — must appear in mappings."""
+        import yaml
+        with open(self._manifest_path()) as f:
+            data = yaml.safe_load(f)
+        if "amcrest" not in data["mappings"]:
+            self.fail("manifest.yaml has no entry for 'amcrest'")
+
+    def test_manifest_paths_exist_on_disk(self):
+        import yaml
+        templates_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "nuclei_templates"
+        )
+        with open(self._manifest_path()) as f:
+            data = yaml.safe_load(f)
+        missing = []
+        for device_type, paths in (data.get("mappings") or {}).items():
+            for p in paths:
+                full = os.path.join(templates_dir, p.rstrip('/'))
+                if not os.path.exists(full):
+                    missing.append("{} -> {}".format(device_type, full))
+        if missing:
+            self.fail(
+                "manifest.yaml references paths that do not exist on disk:\n" +
+                "\n".join("  " + m for m in missing)
+            )
+
+
+# ===========================================================================
+# Fix 5 – nuclei_scan input validation
+# ===========================================================================
+class NucleiScanInputValidationTests(TestCase):
+    """nuclei_scan rejects invalid severity / rate_limit values before exec."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+        self.device = Device.objects.create(
+            search=self.search, ip="192.168.1.1", product="Cam",
+            port="80", type="hikvision", lat="40.0", lon="-74.0", country_code="US"
+        )
+
+    def _call(self, **kwargs):
+        from kamerka.tasks import nuclei_scan
+        return nuclei_scan(self.device.id, **kwargs)
+
+    @patch('kamerka.tasks.subprocess.run')
+    def test_valid_severity_accepted(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        for sev in ("info", "low", "medium", "high", "critical"):
+            result = self._call(severity=sev)
+            if isinstance(result, dict) and "error" in result:
+                self.fail("Valid severity '{}' rejected: {}".format(sev, result))
+
+    def test_invalid_severity_returns_error(self):
+        for bad in ("urgent", "CRITICAL; rm -rf /", "", "none", "1"):
+            result = self._call(severity=bad)
+            if not (isinstance(result, dict) and "error" in result):
+                self.fail(
+                    "Expected error dict for invalid severity {!r}, got: {!r}".format(bad, result)
+                )
+
+    @patch('kamerka.tasks.subprocess.run')
+    def test_severity_is_case_normalised(self, mock_run):
+        """Severity values should be accepted case-insensitively."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        result = self._call(severity="CRITICAL")
+        if isinstance(result, dict) and "error" in result:
+            self.fail("'CRITICAL' should be accepted case-insensitively, got: {}".format(result))
+        called_cmd = mock_run.call_args[0][0]
+        sev_index = called_cmd.index("-severity") + 1
+        if called_cmd[sev_index] != "critical":
+            self.fail("Expected normalised severity 'critical', got {!r}".format(called_cmd[sev_index]))
+
+    def test_rate_limit_out_of_range_returns_error(self):
+        for bad in (0, 501, -1, 9999):
+            result = self._call(rate_limit=bad)
+            if not (isinstance(result, dict) and "error" in result):
+                self.fail(
+                    "Expected error for out-of-range rate_limit={}, got: {!r}".format(bad, result)
+                )
+
+    def test_non_integer_rate_limit_returns_error(self):
+        for bad in ("fast", None, "150; rm -rf /"):
+            result = self._call(rate_limit=bad)
+            if not (isinstance(result, dict) and "error" in result):
+                self.fail(
+                    "Expected error for non-integer rate_limit={!r}, got: {!r}".format(bad, result)
+                )
+
+    @patch('kamerka.tasks.subprocess.run')
+    def test_valid_rate_limit_accepted(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        for val in (1, 100, 500):
+            result = self._call(rate_limit=val)
+            if isinstance(result, dict) and "error" in result:
+                self.fail("Valid rate_limit={} rejected: {}".format(val, result))
+
+    @patch('kamerka.tasks.subprocess.run')
+    def test_rate_limit_appears_in_command(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        self._call(rate_limit=42)
+        cmd = mock_run.call_args[0][0]
+        rl_idx = cmd.index("-rate-limit") + 1
+        if cmd[rl_idx] != "42":
+            self.fail("Expected '42' as rate-limit arg, got {!r}".format(cmd[rl_idx]))
+
+
+# ===========================================================================
+# Port discovery – _resolve_open_ports
+# ===========================================================================
+class ResolveOpenPortsTests(TestCase):
+    """_resolve_open_ports returns existing port data or runs Naabu discovery."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+
+    def _make_device(self, port):
+        return Device.objects.create(
+            search=self.search, ip="1.2.3.4", product="Cam",
+            port=port, type="hikvision", lat="0", lon="0", country_code="US"
+        )
+
+    def test_single_port_string_returned_without_naabu(self):
+        device = self._make_device("8080")
+        from kamerka.tasks import _resolve_open_ports
+        with patch('verification.naabu_scanner.run_naabu') as mock_naabu:
+            ports = _resolve_open_ports(device)
+            if mock_naabu.called:
+                self.fail("Naabu should NOT be called when port data already exists")
+        if ports != [8080]:
+            self.fail("Expected [8080], got {!r}".format(ports))
+
+    def test_multiport_string_parsed_without_naabu(self):
+        device = self._make_device("22, 80, 443")
+        from kamerka.tasks import _resolve_open_ports
+        with patch('verification.naabu_scanner.run_naabu') as mock_naabu:
+            ports = _resolve_open_ports(device)
+            if mock_naabu.called:
+                self.fail("Naabu should NOT be called when port data already exists")
+        if sorted(ports) != [22, 80, 443]:
+            self.fail("Expected [22, 80, 443], got {!r}".format(ports))
+
+    def test_empty_port_triggers_naabu_and_persists(self):
+        device = self._make_device("")
+        from kamerka.tasks import _resolve_open_ports
+        with patch('verification.naabu_scanner.run_naabu') as mock_naabu:
+            mock_naabu.return_value = [
+                {'ip': '1.2.3.4', 'port': 80},
+                {'ip': '1.2.3.4', 'port': 443},
+            ]
+            ports = _resolve_open_ports(device)
+        if not mock_naabu.called:
+            self.fail("Naabu should be called when port data is empty")
+        if sorted(ports) != [80, 443]:
+            self.fail("Expected [80, 443], got {!r}".format(ports))
+        # Ports must be persisted back to the database
+        device.refresh_from_db()
+        if "80" not in device.port or "443" not in device.port:
+            self.fail("Discovered ports not persisted to device.port: {!r}".format(device.port))
+
+    def test_naabu_unavailable_returns_empty_list(self):
+        device = self._make_device("")
+        from kamerka.tasks import _resolve_open_ports
+        with patch('verification.naabu_scanner.run_naabu', return_value=[]):
+            ports = _resolve_open_ports(device)
+        if ports != []:
+            self.fail("Expected [] when Naabu finds no ports, got {!r}".format(ports))
+
+    def test_nuclei_scan_returns_error_when_no_ports(self):
+        device = self._make_device("")
+        from kamerka.tasks import nuclei_scan
+        with patch('verification.naabu_scanner.run_naabu', return_value=[]):
+            result = nuclei_scan(device.id)
+        if not (isinstance(result, dict) and "error" in result):
+            self.fail("Expected error dict when no ports found, got: {!r}".format(result))
+
+    @patch('kamerka.tasks.subprocess.run')
+    def test_nuclei_scan_uses_targets_file_for_multiple_ports(self, mock_run):
+        """nuclei_scan must pass -l <targets_file> when multiple ports are found."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        device = self._make_device("80, 443")
+        from kamerka.tasks import nuclei_scan
+        nuclei_scan(device.id)
+        cmd = mock_run.call_args[0][0]
+        if "-l" not in cmd:
+            self.fail(
+                "Expected '-l <targets_file>' in nuclei command for multi-port device, "
+                "got: {!r}".format(cmd)
+            )
+        # -u must NOT be present when -l is used
+        if "-u" in cmd:
+            self.fail("Expected '-u' to be absent when '-l' is used, got: {!r}".format(cmd))
+
+    def test_naabu_discovery_ports_setting_exposed(self):
+        from django.conf import settings
+        self.assertTrue(hasattr(settings, 'NAABU_DISCOVERY_PORTS'))
+        self.assertTrue(len(settings.NAABU_DISCOVERY_PORTS) > 0)
+
+    def test_naabu_discovery_timeout_setting_exposed(self):
+        from django.conf import settings
+        self.assertTrue(hasattr(settings, 'NAABU_DISCOVERY_TIMEOUT'))
+        self.assertIsInstance(settings.NAABU_DISCOVERY_TIMEOUT, int)
+        self.assertGreater(settings.NAABU_DISCOVERY_TIMEOUT, 0)
+
+
+# ===========================================================================
+# Progress bar – get_task_info view
+# ===========================================================================
+class GetTaskInfoViewTests(TestCase):
+    """get_task_info returns state and result for a Celery task ID."""
+
+    def test_no_task_id_returns_plain_text(self):
+        response = self.client.get('/get-task-info/', **AJAX_HEADERS)
+        if response.status_code != 200:
+            self.fail("Expected 200, got {}".format(response.status_code))
+        if b'No job id given' not in response.content:
+            self.fail("Expected 'No job id given' in response, got: {}".format(response.content))
+
+    def test_no_ajax_header_returns_403(self):
+        """Must return 403 when request lacks X-Requested-With: XMLHttpRequest."""
+        response = self.client.get('/get-task-info/', {'task_id': 'any-id'})
+        if response.status_code != 403:
+            self.fail("Expected 403 for non-AJAX request, got {}".format(response.status_code))
+
+    @patch('app_kamerka.views.AsyncResult')
+    def test_pending_task_returns_state(self, mock_async):
+        mock_async.return_value = MagicMock(state='PENDING', result=None)
+        response = self.client.get('/get-task-info/', {'task_id': 'fake-id'}, **AJAX_HEADERS)
+        if response.status_code != 200:
+            self.fail("Expected 200, got {}".format(response.status_code))
+        data = json.loads(response.content)
+        if data.get('state') != 'PENDING':
+            self.fail("Expected state='PENDING', got: {!r}".format(data))
+
+    @patch('app_kamerka.views.AsyncResult')
+    def test_progress_task_returns_percent(self, mock_async):
+        mock_async.return_value = MagicMock(
+            state='PROGRESS',
+            result={'current': 50, 'total': 100, 'percent': 50.0}
+        )
+        response = self.client.get('/get-task-info/', {'task_id': 'fake-id'}, **AJAX_HEADERS)
+        data = json.loads(response.content)
+        if data.get('state') != 'PROGRESS':
+            self.fail("Expected state='PROGRESS', got: {!r}".format(data))
+        if data.get('result', {}).get('percent') != 50.0:
+            self.fail("Expected percent=50.0, got: {!r}".format(data))
+
+    @patch('app_kamerka.views.AsyncResult')
+    def test_success_task_returns_result(self, mock_async):
+        mock_async.return_value = MagicMock(state='SUCCESS', result={'findings_count': 3})
+        response = self.client.get('/get-task-info/', {'task_id': 'fake-id'}, **AJAX_HEADERS)
+        data = json.loads(response.content)
+        if data.get('state') != 'SUCCESS':
+            self.fail("Expected state='SUCCESS', got: {!r}".format(data))
+

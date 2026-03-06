@@ -13,28 +13,11 @@
         <!-- CSS INCLUDE -->
 
         <link rel="stylesheet" type="text/css" id="theme" href="{% static 'css/theme-default.css' %}"/>
+        <link rel="stylesheet" type="text/css" href="{% static 'css/cyberpunk.css' %}"/>
         <link rel="stylesheet" type="text/css" href="{% static 'css/leaflet.css' %}"/>
         <link rel="stylesheet" href="{% static 'css/pretty-print-json.dark-mode.css' %}">
         <!-- EOF CSS INCLUDE -->
     </head>
-<style>
-   pre {
-   background-color: #15171A;
-   border: 1px solid #0064d7;
-   padding: 10px 20px;
-   margin: 20px;
-   }
-.json-key {
-   color: #00E1FF;
-   }
-.json-value {
-   color: #ff00cd;
-   }
-.json-string {
-   color: #ff00cd;
-   }
-
-</style>
     <body>
         <!-- START PAGE CONTAINER -->
         <div class="page-container">
@@ -168,7 +151,7 @@
                                 <div class="panel-body">
                                     <input type="text" id="nearby_search" placeholder="device:webcam" style="width: 300px" /><br><br>
                                     <button type="button" id="nearby" class="btn btn-primary active">Search</button>
-
+                                    <progress id="progress-bar3" value="0" max="100" style="display:none; margin-bottom: 1em;"></progress>
 
 
                                                                     <button type="button" id="show_nearby_devices" class="btn btn-primary active">Show</button>
@@ -187,7 +170,7 @@
                                     <select id="nuclei_template_select" style="width: 300px; margin-bottom: 8px;">
                                         <option value="">-- Select Template --</option>
                                         {% for tpl in nuclei_templates %}
-                                        <option value="{{ tpl.path }}">{{ tpl.label }}</option>
+                                        <option value="{{ tpl.path }}"{% if tpl.match %} selected{% endif %}>{% if tpl.is_dir %}[dir] {% endif %}{{ tpl.label }}</option>
                                         {% endfor %}
                                     </select><br>
                                     <button type="button" id="nuclei_scan_btn" class="btn btn-primary active">Scan</button>
@@ -197,6 +180,7 @@
                                 </div>
                             </div>
                                 </div>
+
 
 
 
@@ -253,7 +237,7 @@
                             <div class="panel panel-default">
                                 <div class="panel-heading ui-draggable-handle">
                                     <div class="panel-title-box">
-                                        <h3>Whois XML API</h3>
+                                     <h3>WHOIS Lookup</h3>
                                     </div>
 
                                 </div>
@@ -392,21 +376,47 @@
 
 
 <script src="{% static 'js/leaflet.js' %}"></script>
+<script src="{% static 'js/leaflet.heat.js' %}"></script>
+<script src="{% static 'js/map_themes.js' %}"></script>
 
 <script>
 var map = L.map('leaflet_world_map').setView([{{ device.lat }}, {{ device.lon }}], 13);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-}).addTo(map);
+var themeRef = { layer: null, currentKey: KamerkaTiles.savedTheme() };
+themeRef.layer = KamerkaTiles.apply(themeRef.currentKey, map);
 
 var marker = L.marker([{{ device.lat }}, {{ device.lon }}]).addTo(map);
-marker.bindPopup('{{ device.type }} - {{ device.ip }}').openPopup();
+marker.bindPopup('{{ device.type }} — {{ device.ip }}').openPopup();
+
+var heatPoints = [[{{ device.lat }}, {{ device.lon }}, 0.8]];
 
 {% for dev in nearby %}
 var nearby_marker = L.marker([{{ dev.lat }}, {{ dev.lon }}]).addTo(map);
-nearby_marker.bindPopup('{{ dev.product }} - {{ dev.ip }}');
+nearby_marker.bindPopup('{{ dev.product }} — {{ dev.ip }}');
+heatPoints.push([{{ dev.lat }}, {{ dev.lon }}, 0.4]);
 {% endfor %}
+
+var heatLayer = L.heatLayer(heatPoints, {
+    radius: 30, blur: 25, maxZoom: 14,
+    gradient: { 0.1: '#0064d7', 0.4: '#00e1ff', 0.65: '#ff00cd', 1.0: '#ff0000' }
+});
+var heatVisible = false;
+
+KamerkaTiles.injectPicker(map, themeRef, '.panel-heading');
+
+var mapEl = document.getElementById('leaflet_world_map');
+var heatBtn = document.createElement('button');
+heatBtn.textContent = '🌡 HEAT MAP';
+heatBtn.style.cssText = 'position:absolute;top:8px;left:60px;z-index:1000;' +
+    'background:rgba(10,13,18,0.88);border:1px solid #0064d7;color:#00e1ff;' +
+    'font-family:var(--cp-font,monospace);font-size:0.62em;letter-spacing:0.06em;' +
+    'padding:4px 8px;cursor:pointer;';
+heatBtn.addEventListener('click', function () {
+    heatVisible = !heatVisible;
+    if (heatVisible) { heatLayer.addTo(map); heatBtn.style.color='#ff00cd'; heatBtn.style.borderColor='#ff00cd'; }
+    else { map.removeLayer(heatLayer); heatBtn.style.color='#00e1ff'; heatBtn.style.borderColor='#0064d7'; }
+});
+mapEl.appendChild(heatBtn);
 </script>
 
 
@@ -698,35 +708,44 @@ var frm = $('#generate-user-form');
     });
 
 var frm = $('#generate-user-form');
-function get_task_info(task_id,pgrbar) {
-        $.ajax({
-            type: 'get',
-            url: '/get-task-info/',
-            data: {'task_id': task_id},
-            success: function (data) {
-                frm.html('');
-                if (data.state == 'PENDING') {
-                    frm.html('Please wait...');
-                }
-                else if (data.state == 'PROGRESS') {
-                    pgrbar.css('display', 'block');
-                    pgrbar.val(data.result.percent);
-                }
-                else if (data.state == 'SUCCESS') {
-                                    pgrbar.css('display', 'none');
-}
-                if (data.state != 'SUCCESS') {
-                    setTimeout(function () {
-                        get_task_info(task_id, pgrbar)
-                    }, 100);
-
-                }
-            },
-            error: function (data) {
-                frm.html("Something went wrong!");
-            }
-        });
+function get_task_info(task_id, pgrbar, attempts) {
+    attempts = attempts || 0;
+    var MAX_ATTEMPTS = 600; // ~10 minutes at 1 s interval
+    if (attempts >= MAX_ATTEMPTS) {
+        pgrbar.css('display', 'none');
+        frm.html('<span class="cp-warn">[ TIMEOUT ] Task exceeded maximum wait time.</span>');
+        return;
     }
+    $.ajax({
+        type: 'get',
+        url: '/get-task-info/',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        data: {'task_id': task_id},
+        success: function (data) {
+            frm.html('');
+            if (data.state === 'PENDING') {
+                frm.html('<span class="cp-blink">[ PENDING ]</span> Waiting for task to start...');
+                setTimeout(function () { get_task_info(task_id, pgrbar, attempts + 1); }, 1000);
+            } else if (data.state === 'PROGRESS') {
+                pgrbar.css('display', 'block');
+                pgrbar.attr('value', data.result.percent);
+                var desc = (data.result && data.result.description) ? data.result.description : '';
+                frm.html('<span class="cp-cyan">[ SCANNING ]</span> ' + Math.round(data.result.percent) + '% — ' + desc);
+                setTimeout(function () { get_task_info(task_id, pgrbar, attempts + 1); }, 1000);
+            } else if (data.state === 'SUCCESS') {
+                pgrbar.attr('value', 100);
+                frm.html('<span class="cp-ok">[ DONE ]</span> Task completed successfully.');
+                setTimeout(function () { pgrbar.css('display', 'none'); frm.html(''); }, 2000);
+            } else {
+                pgrbar.css('display', 'none');
+                frm.html('<span class="cp-warn">[ ' + data.state + ' ]</span> Task ended.');
+            }
+        },
+        error: function () {
+            frm.html('<span class="cp-warn">[ ERROR ]</span> Could not reach task endpoint.');
+        }
+    });
+}
 
 $('#nuclei_scan_btn').on('click', function(){
     var tpl = $('#nuclei_template_select').val();
@@ -776,6 +795,7 @@ $('#nuclei_show_btn').on('click', function(){
         });
     }
 });
+
 
 
 $('#bosch_show').on('click', function(){

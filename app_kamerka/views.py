@@ -20,7 +20,8 @@ from app_kamerka.models import Search, Device, DeviceNearby, ShodanScan, Whois, 
     Bosch, WappalyzerResult, NucleiResult
 from kamerka.tasks import shodan_search, devices_nearby, shodan_scan_task, \
     whoisxml, check_credits, send_to_field_agent_task, nmap_scan, validate_nmap, validate_maxmind, scan, \
-    exploit, wappalyzer_scan, nuclei_scan, shodan_csv_export, shodan_kml_export, nmap_rtsp_scan
+    exploit, wappalyzer_scan, nuclei_scan, shodan_csv_export, shodan_kml_export, nmap_rtsp_scan, \
+    port_scan_task
 
 
 # Create your views here.
@@ -76,17 +77,24 @@ passwds = {"bosch_security":"""The Bosch Video Recorder 630/650 Series is an 8/1
            "lutron":"Quantum is a lighting control and energy management system that provides total light management by tying the most complete line of lighting controls, motorized window shades, digital ballasts and LED drivers, and sensors together under one software umbrella. Quantum is ideal for new construction or retrofit applications and can easily scale from a single area to a building, or to a campus with many buildings.<br>https://www.exploit-db.com/exploits/44488",
            }
 
-def get_keys():
-    try:
-        with open('keys.json') as keys:
-            keys_json = json.load(keys)
+import logging as _logging
+_views_logger = _logging.getLogger(__name__)
 
-        return keys_json
-    except Exception as e:
-        print(e)
+def _get_env_key(name, *, required=False):
+    """Return an environment-variable API key value.
 
-
-keys = get_keys()
+    Logs a warning when a required key is missing so operators know which
+    variable to set in their shell or .env file.
+    """
+    import os as _os
+    value = _os.environ.get(name, "")
+    if required and not value:
+        _views_logger.warning(
+            "Environment variable %s is not set. "
+            "Features that depend on it will fail at runtime.",
+            name,
+        )
+    return value
 
 
 def search_main(request):
@@ -413,14 +421,62 @@ def device(request, id, device_id, ip):
 
     nuclei_templates_dir = os.path.join(settings.BASE_DIR, 'nuclei_templates')
     nuclei_template_list = []
+    device_type_lower = (all_devices.type or '').lower()
+
+    # Load the manifest so we know which template paths are recommended for
+    # this device type without relying on directory-name guessing.
+    manifest_matched_paths = set()
+    manifest_path = os.path.join(nuclei_templates_dir, 'manifest.yaml')
+    if os.path.isfile(manifest_path):
+        try:
+            import yaml as _yaml
+            with open(manifest_path) as _mf:
+                _manifest = _yaml.safe_load(_mf) or {}
+            for tpl_path in (_manifest.get('mappings') or {}).get(device_type_lower, []):
+                # Normalise: strip trailing slash, resolve to absolute, then
+                # verify the result is still inside nuclei_templates_dir to
+                # prevent path-traversal attacks via a malicious manifest entry.
+                tpl_path = tpl_path.rstrip('/')
+                abs_path = os.path.realpath(os.path.join(nuclei_templates_dir, tpl_path))
+                real_templates_dir = os.path.realpath(nuclei_templates_dir)
+                if not abs_path.startswith(real_templates_dir + os.sep) and \
+                        abs_path != real_templates_dir:
+                    _views_logger.warning(
+                        "manifest.yaml path %r resolves outside nuclei_templates — skipped",
+                        tpl_path,
+                    )
+                    continue
+                manifest_matched_paths.add(os.path.relpath(abs_path, settings.BASE_DIR))
+        except Exception as exc:
+            _views_logger.debug("Failed to load nuclei_templates/manifest.yaml: %s", exc)
+
     if os.path.isdir(nuclei_templates_dir):
         for root, dirs, files in os.walk(nuclei_templates_dir):
-            for fname in sorted(files):
-                if fname.endswith('.yaml') or fname.endswith('.yml'):
-                    full_path = os.path.join(root, fname)
-                    rel_path = os.path.relpath(full_path, settings.BASE_DIR)
-                    label = os.path.relpath(full_path, nuclei_templates_dir)
-                    nuclei_template_list.append({'label': label, 'path': rel_path})
+            dirs.sort()
+            yaml_files = sorted(
+                f for f in files
+                if (f.endswith(('.yaml', '.yml')) and f != 'manifest.yaml')
+            )
+            # Directory-level entry lets the user run all templates in that folder at once.
+            if yaml_files and root != nuclei_templates_dir:
+                rel_dir = os.path.relpath(root, settings.BASE_DIR)
+                label_dir = os.path.relpath(root, nuclei_templates_dir)
+                nuclei_template_list.append({
+                    'label': label_dir + ' [all]',
+                    'path': rel_dir,
+                    'is_dir': True,
+                    'match': rel_dir in manifest_matched_paths,
+                })
+            for fname in yaml_files:
+                full_path = os.path.join(root, fname)
+                rel_path = os.path.relpath(full_path, settings.BASE_DIR)
+                label = os.path.relpath(full_path, nuclei_templates_dir)
+                nuclei_template_list.append({
+                    'label': label,
+                    'path': rel_path,
+                    'is_dir': False,
+                    'match': False,
+                })
 
     context = {'device': all_devices,
                'nearby': nearby,
@@ -497,6 +553,16 @@ def shodan_scan(request, id):
 
 
 def get_task_info(request):
+    """Return Celery task state and result as JSON.
+
+    Requires the ``X-Requested-With: XMLHttpRequest`` header so that only
+    in-page AJAX calls (not cross-origin browser navigations) can poll task
+    state.  This is consistent with all other polling views in the app and
+    prevents unauthenticated cross-origin access to task results which may
+    contain IP addresses, port lists, and vulnerability findings.
+    """
+    if request.headers.get('X-Requested-With') != 'XMLHttpRequest':
+        return HttpResponse('Forbidden', status=403)
     task_id = request.GET.get('task_id', None)
     try:
         if task_id is not None:
@@ -509,21 +575,15 @@ def get_task_info(request):
         else:
             return HttpResponse('No job id given.')
     except Exception as e:
-        print(e)
+        logger.warning("get_task_info: %s", e)
 
 
 def get_shodan_scan_results(request, id):
     if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         shodan_scan2 = ShodanScan.objects.filter(device_id=id)
 
-        print(shodan_scan2)
-
-        # shodan_scan2[0].ports = shodan_scan2[0].ports[:1][:-1]
-        # shodan_scan2[0].tags = shodan_scan2[0].tags[:1][:-1]
-        # shodan_scan2[0].vulns = shodan_scan2[0].vulns[:1][:-1]
-        # shodan_scan2[0].products = shodan_scan2[0].products[:1][:-1]
-
-        print(shodan_scan2[0].ports)
+        if not shodan_scan2.exists():
+            return HttpResponse(json.dumps([]), content_type="application/json")
 
         response_data = serializers.serialize('json', shodan_scan2)
 
@@ -553,6 +613,22 @@ def exploit_dev(request, id):
             return HttpResponse(json.dumps(res), content_type='application/json')
         else:
             return HttpResponse(json.dumps({'Error': "Connection Error"}), content_type='application/json')
+
+
+def port_scan_view(request, id):
+    """Launch a ``port_scan_task`` for a device and return the Celery task ID.
+
+    The task runs Naabu against the device and reports progress via the
+    standard ``/get-task-info/`` polling endpoint.  Once complete the caller
+    can use the returned ``task_id`` to chain a nuclei or wappalyzer scan.
+
+    GET /port_scan/<id>  →  {"task_id": "..."}
+    """
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        scan_task = port_scan_task.delay(int(id))
+        return HttpResponse(json.dumps({'task_id': scan_task.id}), content_type='application/json')
+    return HttpResponse(json.dumps({'task_id': None}), content_type='application/json')
+
 
 def export_csv(request, id):
     """Export search results as CSV for SandDance visualization."""

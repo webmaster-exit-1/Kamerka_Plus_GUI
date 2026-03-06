@@ -21,3 +21,5 @@ settings.json
 .vscode/
 # Large binary assets – download separately (see assets/README.md)
 assets/earth_surface.jpg
+# API keys – use environment variables or a .env file instead (see .env.example)
+keys.json
