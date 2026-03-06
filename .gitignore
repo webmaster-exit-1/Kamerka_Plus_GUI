@@ -23,3 +23,7 @@ settings.json
 assets/earth_surface.jpg
 # API keys – use environment variables or a .env file instead (see .env.example)
 keys.json
+
+# npm artifacts from three.js local build
+package.json
+package-lock.json
