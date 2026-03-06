@@ -30,45 +30,42 @@ jobs:
 
     - name: Install System Dependencies
       run: |
-        set -euo pipefail
-        sudo apt-get update
-        sudo apt-get install -y nmap chromium-browser
+        sudo apt-get update || exit 1
+        sudo apt-get install -y nmap chromium-browser || exit 1
 
     - name: Install ProjectDiscovery Tools (Nuclei)
       run: |
-        set -euo pipefail
-        go install -v github.com/projectdiscovery/pdtm/cmd/pdtm@latest
+        go install -v github.com/projectdiscovery/pdtm/cmd/pdtm@latest || exit 1
         echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
         echo "$HOME/.pdtm/go/bin" >> $GITHUB_PATH
         export PATH=$PATH:$(go env GOPATH)/bin:$HOME/.pdtm/go/bin
-        pdtm -i nuclei
+        pdtm -i nuclei || exit 1
 
     - name: Install Python Logic & Wappalyzer
       run: |
-        set -euo pipefail
-        pip install -r requirements.txt
-        pip install wappalyzer pytest
+        pip install -r requirements.txt || exit 1
+        pip install wappalyzer pytest || exit 1
+
+    - name: Django System Checks
+      run: |
+        python manage.py check --fail-level WARNING || exit 1
+        python manage.py migrate --run-syncdb || exit 1
+        python manage.py collectstatic --noinput || exit 1
 
     - name: Run Django Test Suite
       run: |
-        set -euo pipefail
-        python manage.py migrate --run-syncdb
-        python manage.py test app_kamerka -v2
+        python manage.py test app_kamerka -v2 || exit 1
 
     - name: Run Unit Tests (pytest)
       run: |
-        set -euo pipefail
-        pytest tests/ -v
+        pytest tests/ -v --strict-markers --tb=short || exit 1
 
     - name: Verify Security Engine Health
       run: |
-        set -euo pipefail
-        nmap --version
-        nuclei -version
-        pip show wappalyzer
+        nmap --version || exit 1
+        nuclei -version || exit 1
+        pip show wappalyzer || exit 1
 
     - name: Run China-IoT Template Validation
       run: |
-        set -euo pipefail
-        # Ensure custom templates are valid and loadable
-        nuclei -validate -t nuclei_templates/china-iot/
+        nuclei -validate -t nuclei_templates/china-iot/ || exit 1
