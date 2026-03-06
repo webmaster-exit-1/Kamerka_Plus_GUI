@@ -3,22 +3,38 @@ globe_widget.py – PyVista + PyQt6 interactive 3-D globe widget.
 
 Architecture
 ------------
-GlobeWidget  wraps a ``pyvistaqt.QtInteractor`` inside a plain
-``QWidget`` so it can be inserted into any existing PyQt6 layout.
+GlobeWidget wraps a ``pyvistaqt.QtInteractor`` inside a plain ``QWidget``
+so it can be inserted into any existing PyQt6 layout.
 
 Offline-first texture
 ---------------------
 The Earth texture is loaded from ``<project_root>/assets/earth_surface.jpg``
 when it exists.  If the file is not present the widget falls back to
 ``pyvista.examples.planets.download_earth_surface()``, which downloads the
-texture once and places it in the PyVista cache.  The downloaded file is then
-copied into ``assets/`` so future runs are fully offline.
+texture once and caches it locally.
+
+Themes
+------
+Five built-in visual themes are available (see ``globe_3d.themes``):
+cyberpunk, matrix, thermal, satellite, ghost.  Switch at runtime with::
+
+    globe_widget.set_theme("matrix")
+
+File loading — 2-D/3-D heat map pipeline
+-----------------------------------------
+Shodan CSV and KML exports produced by ``kamerka.tasks.shodan_csv_export``
+/ ``shodan_kml_export`` can be loaded directly::
+
+    globe_widget.load_file("/path/to/export.csv")   # or .kml
+    globe_widget.load_file("/path/to/export.kml")
+
+The resulting spike visualisation is a *3-D heat map*: spike height encodes
+device-cluster size, spike colour encodes Nuclei/CVE severity.
 
 Picker events
 -------------
-Clicking a spike mesh calls ``GlobeWidget.on_spike_picked(spike_data)`` which
-emits the ``spike_selected`` Qt signal.  The main window connects this signal
-to the Details panel.
+Clicking a spike mesh emits the ``spike_selected`` Qt signal with the
+spike-data dict as payload.
 
 Usage
 -----
@@ -52,6 +68,7 @@ except ImportError:
 from globe_3d.coordinate_mapper import EARTH_RADIUS, latlon_to_xyz, spike_base_xyz
 from globe_3d.lod_manager import get_render_data
 from globe_3d.spike_renderer import SPIKE_RADIUS, build_spike_data
+from globe_3d.themes import DEFAULT_THEME, THEMES, GlobeTheme
 
 # Path where the cached texture is stored for offline use.
 _ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets")
@@ -62,12 +79,8 @@ def _load_earth_texture() -> Optional[Any]:  # -> pv.Texture | None
     """Load the Earth surface texture, using the local cache when available."""
     if not _PYVISTA_AVAILABLE:
         return None
-
-    # 1. Try locally cached file first (offline-first).
     if os.path.exists(_TEXTURE_PATH):
         return pv.read_texture(_TEXTURE_PATH)
-
-    # 2. Download via PyVista and cache locally for future offline use.
     try:
         from pyvista.examples.planets import download_earth_surface
         texture_path = download_earth_surface()
@@ -93,19 +106,18 @@ class GlobeWidget(QWidget if _PYQT6_AVAILABLE else object):
 
     def __init__(self, parent=None) -> None:
         if not _PYQT6_AVAILABLE:
-            raise RuntimeError(
-                "PyQt6 is not installed.  Install it with: pip install PyQt6"
-            )
+            raise RuntimeError("PyQt6 is not installed.  pip install PyQt6")
         if not _PYVISTA_AVAILABLE:
-            raise RuntimeError(
-                "pyvista / pyvistaqt is not installed.  "
-                "Install with: pip install pyvista pyvistaqt"
-            )
+            raise RuntimeError("pyvista/pyvistaqt not installed.  pip install pyvista pyvistaqt")
         super().__init__(parent)
 
         self._spike_data: List[Dict[str, Any]] = []
         self._spike_actors: List[Any] = []
+        self._earth_actor: Optional[Any] = None
+        self._grid_actor: Optional[Any] = None
         self._current_zoom: float = 0.0
+        self._device_records: List[Dict[str, Any]] = []
+        self._theme: GlobeTheme = THEMES[DEFAULT_THEME]
 
         self._build_ui()
         self._init_globe()
@@ -126,8 +138,9 @@ class GlobeWidget(QWidget if _PYQT6_AVAILABLE else object):
     # ------------------------------------------------------------------
 
     def _init_globe(self) -> None:
-        """Create the textured Earth sphere and configure camera/lighting."""
-        self._plotter.set_background("black")
+        """Build the Earth sphere and graticule using the current theme."""
+        t = self._theme
+        self._plotter.set_background(t.background)
 
         earth_mesh = pv.Sphere(
             radius=EARTH_RADIUS,
@@ -135,26 +148,74 @@ class GlobeWidget(QWidget if _PYQT6_AVAILABLE else object):
             phi_resolution=64,
         )
 
-        texture = _load_earth_texture()
+        texture = _load_earth_texture() if t.use_texture else None
         if texture is not None:
-            self._plotter.add_mesh(earth_mesh, texture=texture, smooth_shading=True)
-        else:
-            self._plotter.add_mesh(
-                earth_mesh,
-                color="royalblue",
-                smooth_shading=True,
-                opacity=0.9,
+            self._earth_actor = self._plotter.add_mesh(
+                earth_mesh, texture=texture,
+                smooth_shading=True, opacity=t.earth_opacity,
+                ambient=t.ambient,
             )
+        else:
+            self._earth_actor = self._plotter.add_mesh(
+                earth_mesh,
+                color=t.earth_colour,
+                smooth_shading=True,
+                opacity=t.earth_opacity,
+                ambient=t.ambient,
+            )
+
+        # Lat/lon graticule wireframe
+        graticule = pv.Sphere(
+            radius=EARTH_RADIUS * 1.001,
+            theta_resolution=36,
+            phi_resolution=18,
+        )
+        self._grid_actor = self._plotter.add_mesh(
+            graticule,
+            style="wireframe",
+            color=t.grid_colour,
+            opacity=t.grid_opacity,
+            line_width=t.grid_line_width,
+        )
 
         self._plotter.camera.position = (0, 0, 3.5)
         self._plotter.camera.focal_point = (0, 0, 0)
         self._plotter.enable_trackball_style()
-
-        # Track camera zoom changes for LOD switching.
         self._plotter.iren.add_observer("InteractionEvent", self._on_camera_moved)
 
     # ------------------------------------------------------------------
-    # Public API
+    # Public API — theme
+    # ------------------------------------------------------------------
+
+    def set_theme(self, theme_key: str) -> None:
+        """Switch to a different visual theme and re-render everything.
+
+        Parameters
+        ----------
+        theme_key : str
+            One of ``"cyberpunk"``, ``"matrix"``, ``"thermal"``,
+            ``"satellite"``, ``"ghost"``.
+        """
+        theme = THEMES.get(theme_key)
+        if theme is None:
+            return
+        self._theme = theme
+
+        # Remove old earth + grid actors
+        if self._earth_actor is not None:
+            self._plotter.remove_actor(self._earth_actor)
+        if self._grid_actor is not None:
+            self._plotter.remove_actor(self._grid_actor)
+
+        self._init_globe()
+
+        # Re-render spikes with theme-aware colours
+        if self._spike_data:
+            self._clear_spikes()
+            self._render_spikes()
+
+    # ------------------------------------------------------------------
+    # Public API — device loading
     # ------------------------------------------------------------------
 
     def load_devices(
@@ -162,32 +223,75 @@ class GlobeWidget(QWidget if _PYQT6_AVAILABLE else object):
         device_records: List[Dict[str, Any]],
         zoom_level: Optional[float] = None,
     ) -> None:
-        """Render device spikes for *device_records*.
+        """Render a 3-D heat map of *device_records* on the globe.
+
+        Spike height  →  cluster size (number of co-located devices).
+        Spike colour  →  dominant Nuclei / CVE severity for the cluster.
+
+        This is the *3-D heat map*: the spatial distribution of threats
+        rises off the globe surface proportional to concentration and
+        severity — equivalent to a choropleth but in three dimensions.
 
         Parameters
         ----------
         device_records : list[dict]
-            Device dicts with at minimum ``lat``, ``lon``, ``severity``.
+            Dicts with at minimum ``lat``, ``lon``, ``severity``.
+            Also accepts dicts produced by ``kml_loader`` and ``csv_loader``.
         zoom_level : float, optional
-            Override the auto-detected zoom level (0.0 = global, 1.0 = max
-            zoom).  When omitted the current camera distance is used.
+            LOD zoom override (0.0 = global, 1.0 = street level).
         """
+        self._device_records = list(device_records)
         self._clear_spikes()
 
-        effective_zoom = (
-            zoom_level
-            if zoom_level is not None
-            else self._estimate_zoom()
-        )
+        effective_zoom = zoom_level if zoom_level is not None else self._estimate_zoom()
         self._current_zoom = effective_zoom
 
-        lod_clusters = get_render_data(device_records, effective_zoom)
+        lod_clusters = get_render_data(self._device_records, effective_zoom)
         self._spike_data = build_spike_data(lod_clusters)
         self._render_spikes()
 
-    def refresh_lod(self, device_records: List[Dict[str, Any]]) -> None:
-        """Re-render spikes at the current camera zoom level."""
-        self.load_devices(device_records)
+    def load_file(self, path: str) -> List[Dict[str, Any]]:
+        """Load a Kamerka CSV or KML export and render it as a 3-D heat map.
+
+        Detects the file format from the extension (``.csv`` / ``.kml``).
+        The loaded device list is stored internally so ``refresh_lod()``
+        can re-cluster without re-reading the file.
+
+        Parameters
+        ----------
+        path : str
+            Absolute path to a ``.csv`` or ``.kml`` file produced by the
+            Shodan export views (``/export/csv/<id>`` or ``/export/kml/<id>``).
+
+        Returns
+        -------
+        list[dict]
+            The parsed device dicts (empty list on parse failure).
+        """
+        ext = os.path.splitext(path)[1].lower()
+        if ext == ".kml":
+            from globe_3d.kml_loader import load_kml
+            devices = load_kml(path)
+        elif ext == ".csv":
+            from globe_3d.csv_loader import load_csv
+            devices = load_csv(path)
+        else:
+            import logging
+            logging.getLogger(__name__).warning(
+                "load_file: unsupported extension %r (expected .csv or .kml)", ext
+            )
+            return []
+
+        self.load_devices(devices)
+        return devices
+
+    def refresh_lod(self, device_records: Optional[List[Dict[str, Any]]] = None) -> None:
+        """Re-render spikes at the current camera zoom level.
+
+        Uses the last-loaded device list when *device_records* is omitted.
+        """
+        records = device_records if device_records is not None else self._device_records
+        self.load_devices(records)
 
     # ------------------------------------------------------------------
     # Internal rendering helpers
@@ -203,12 +307,11 @@ class GlobeWidget(QWidget if _PYQT6_AVAILABLE else object):
             lat = spike["lat"]
             lon = spike["lon"]
             height = spike["height"]
-            colour = spike["colour"]
+            # Use theme-aware colour so spikes remain readable on all backgrounds
+            colour = self._theme.spike_colour(spike["severity"])
 
             bx, by, bz = spike_base_xyz(lat, lon)
-            # Direction vector: normal to sphere surface at (lat, lon)
             nx, ny, nz = latlon_to_xyz(lat, lon)
-            # Cylinder centre is midway along the spike
             cx = bx + nx * height / 2
             cy = by + ny * height / 2
             cz = bz + nz * height / 2
@@ -228,10 +331,16 @@ class GlobeWidget(QWidget if _PYQT6_AVAILABLE else object):
             )
             self._spike_actors.append(actor)
 
+            # Glowing tip sphere
+            tip = (bx + nx * height, by + ny * height, bz + nz * height)
+            dot = pv.Sphere(radius=SPIKE_RADIUS * 2.5, center=tip)
+            self._spike_actors.append(
+                self._plotter.add_mesh(dot, color=colour, smooth_shading=True)
+            )
+
         self._plotter.enable_mesh_picking(callback=self._on_mesh_picked, show=False)
 
     def _on_mesh_picked(self, mesh: Any) -> None:
-        """Resolve the picked mesh back to a spike-data dict and emit."""
         actor_name = getattr(mesh, "name", None)
         if actor_name and actor_name.startswith("spike_"):
             try:
@@ -242,21 +351,12 @@ class GlobeWidget(QWidget if _PYQT6_AVAILABLE else object):
                 pass
 
     def _on_camera_moved(self, obj: Any, event: Any) -> None:
-        """Triggered on every camera interaction; updates the LOD zoom proxy."""
         self._current_zoom = self._estimate_zoom()
 
     def _estimate_zoom(self) -> float:
-        """Map the camera distance to a [0, 1] zoom level proxy.
-
-        Camera distance is clamped between 1.0 (max zoom in) and 5.0 (max
-        zoom out / full globe).
-        """
         try:
-            cam = self._plotter.camera
-            dist = cam.GetDistance()
+            dist = self._plotter.camera.GetDistance()
         except Exception:
             return 0.0
         min_dist, max_dist = 1.0, 5.0
-        # Invert: short distance = high zoom = close to 1.0
-        zoom = 1.0 - min(max((dist - min_dist) / (max_dist - min_dist), 0.0), 1.0)
-        return zoom
+        return 1.0 - min(max((dist - min_dist) / (max_dist - min_dist), 0.0), 1.0)

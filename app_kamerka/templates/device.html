@@ -376,21 +376,47 @@
 
 
 <script src="{% static 'js/leaflet.js' %}"></script>
+<script src="{% static 'js/leaflet.heat.js' %}"></script>
+<script src="{% static 'js/map_themes.js' %}"></script>
 
 <script>
 var map = L.map('leaflet_world_map').setView([{{ device.lat }}, {{ device.lon }}], 13);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-}).addTo(map);
+var themeRef = { layer: null, currentKey: KamerkaTiles.savedTheme() };
+themeRef.layer = KamerkaTiles.apply(themeRef.currentKey, map);
 
 var marker = L.marker([{{ device.lat }}, {{ device.lon }}]).addTo(map);
-marker.bindPopup('{{ device.type }} - {{ device.ip }}').openPopup();
+marker.bindPopup('{{ device.type }} — {{ device.ip }}').openPopup();
+
+var heatPoints = [[{{ device.lat }}, {{ device.lon }}, 0.8]];
 
 {% for dev in nearby %}
 var nearby_marker = L.marker([{{ dev.lat }}, {{ dev.lon }}]).addTo(map);
-nearby_marker.bindPopup('{{ dev.product }} - {{ dev.ip }}');
+nearby_marker.bindPopup('{{ dev.product }} — {{ dev.ip }}');
+heatPoints.push([{{ dev.lat }}, {{ dev.lon }}, 0.4]);
 {% endfor %}
+
+var heatLayer = L.heatLayer(heatPoints, {
+    radius: 30, blur: 25, maxZoom: 14,
+    gradient: { 0.1: '#0064d7', 0.4: '#00e1ff', 0.65: '#ff00cd', 1.0: '#ff0000' }
+});
+var heatVisible = false;
+
+KamerkaTiles.injectPicker(map, themeRef, '.panel-heading');
+
+var mapEl = document.getElementById('leaflet_world_map');
+var heatBtn = document.createElement('button');
+heatBtn.textContent = '🌡 HEAT MAP';
+heatBtn.style.cssText = 'position:absolute;top:8px;left:60px;z-index:1000;' +
+    'background:rgba(10,13,18,0.88);border:1px solid #0064d7;color:#00e1ff;' +
+    'font-family:var(--cp-font,monospace);font-size:0.62em;letter-spacing:0.06em;' +
+    'padding:4px 8px;cursor:pointer;';
+heatBtn.addEventListener('click', function () {
+    heatVisible = !heatVisible;
+    if (heatVisible) { heatLayer.addTo(map); heatBtn.style.color='#ff00cd'; heatBtn.style.borderColor='#ff00cd'; }
+    else { map.removeLayer(heatLayer); heatBtn.style.color='#00e1ff'; heatBtn.style.borderColor='#0064d7'; }
+});
+mapEl.appendChild(heatBtn);
 </script>
 
 
