@@ -5,7 +5,7 @@ import tempfile
 from unittest.mock import patch, MagicMock
 
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase, RequestFactory
+from django.test import TestCase, RequestFactory, override_settings
 from django.urls import reverse
 from libnmap.parser import NmapParserException
 
@@ -113,6 +113,10 @@ class TaskImportTests(TestCase):
         self.assertTrue(callable(nmap_rtsp_scan))
 
 
+_DUMMY_CACHE = {"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}
+
+
+@override_settings(CACHES=_DUMMY_CACHE)
 class WappalyzerTaskTests(TestCase):
     """Test Wappalyzer CLI integration uses subprocess.run safely."""
 
@@ -163,6 +167,7 @@ class WappalyzerTaskTests(TestCase):
         )
 
 
+@override_settings(CACHES=_DUMMY_CACHE)
 class NucleiTaskTests(TestCase):
     """Test Nuclei vulnerability engine integration."""
 
@@ -1416,6 +1421,7 @@ class ToolSettingsTests(TestCase):
             importlib.reload(ts)
 
 
+@override_settings(CACHES=_DUMMY_CACHE)
 class NucleiConfiguredBinTests(TestCase):
     """Verify nuclei_scan task uses the configured NUCLEI_BIN path."""
 
@@ -1706,6 +1712,7 @@ class WappalyzerJSONDecodeTests(TestCase):
 # ---------------------------------------------------------------------------
 # nuclei_scan  –  malformed JSON line is skipped, valid line is saved
 # ---------------------------------------------------------------------------
+@override_settings(CACHES=_DUMMY_CACHE)
 class NucleiMalformedLineTests(TestCase):
     """nuclei_scan skips unparseable lines and still saves valid findings."""
 
@@ -2915,6 +2922,7 @@ class NucleiManifestTests(TestCase):
 # ===========================================================================
 # Fix 5 – nuclei_scan input validation
 # ===========================================================================
+@override_settings(CACHES=_DUMMY_CACHE)
 class NucleiScanInputValidationTests(TestCase):
     """nuclei_scan rejects invalid severity / rate_limit values before exec."""
 

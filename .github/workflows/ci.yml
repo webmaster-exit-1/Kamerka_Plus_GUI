@@ -30,11 +30,13 @@ jobs:
 
     - name: Install System Dependencies
       run: |
+        set -euo pipefail
         sudo apt-get update
         sudo apt-get install -y nmap chromium-browser
 
     - name: Install ProjectDiscovery Tools (Nuclei)
       run: |
+        set -euo pipefail
         go install -v github.com/projectdiscovery/pdtm/cmd/pdtm@latest
         echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
         echo "$HOME/.pdtm/go/bin" >> $GITHUB_PATH
@@ -43,21 +45,30 @@ jobs:
 
     - name: Install Python Logic & Wappalyzer
       run: |
+        set -euo pipefail
         pip install -r requirements.txt
-        pip install wappalyzer
+        pip install wappalyzer pytest
 
     - name: Run Django Test Suite
       run: |
+        set -euo pipefail
         python manage.py migrate --run-syncdb
         python manage.py test app_kamerka -v2
 
+    - name: Run Unit Tests (pytest)
+      run: |
+        set -euo pipefail
+        pytest tests/ -v
+
     - name: Verify Security Engine Health
       run: |
+        set -euo pipefail
         nmap --version
         nuclei -version
         pip show wappalyzer
 
     - name: Run China-IoT Template Validation
       run: |
+        set -euo pipefail
         # Ensure custom templates are valid and loadable
         nuclei -validate -t nuclei_templates/china-iot/
