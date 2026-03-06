@@ -457,22 +457,29 @@ attackers_infra_queries = {"cobaltstrike": 'product:"Cobalt Strike Beacon"',
                            }
 
 
-def get_keys():
-    try:
-        with open('keys.json') as keys:
-            keys_json = json.load(keys)
 
-        return keys_json
-    except Exception as e:
-        print(e)
+def _get_env_key(name, *, required=False):
+    """Return an environment variable value.
 
+    Logs a warning when a key that is marked *required* is missing so that
+    operators know immediately which variable to set, without crashing the
+    whole worker on startup.
+    """
+    value = os.environ.get(name, "")
+    if required and not value:
+        logger.warning(
+            "Environment variable %s is not set. "
+            "Features that depend on it will fail at runtime. "
+            "Set it in your shell or in a .env file.",
+            name,
+        )
+    return value
 
-keys = get_keys()
 
 
 @shared_task(bind=False)
 def devices_nearby(lat, lon, id, query):
-    SHODAN_API_KEY = keys['keys']['shodan']
+    SHODAN_API_KEY = _get_env_key('SHODAN_API_KEY', required=True)
 
     device = Device.objects.get(id=id)
 
@@ -482,15 +489,15 @@ def devices_nearby(lat, lon, id, query):
     try:
         # Search Shodan
         results = api.search("geo:" + lat + "," + lon + ",15 " + query)
-    except:
+    except Exception as exc:
         fail = 1
-        print('fail1')
+        logger.warning("devices_nearby: Shodan search failed (attempt 1): %s", exc)
 
     if fail == 1:
         try:
             results = api.search("geo:" + lat + "," + lon + ",15 " + query)
         except Exception as e:
-            print(e)
+            logger.warning("devices_nearby: Shodan search failed (attempt 2): %s", e)
 
     try:  # Show the results
         total = len(results['matches'])
@@ -509,7 +516,7 @@ def devices_nearby(lat, lon, id, query):
 
         return {'current': total, 'total': total, 'percent': 100}
     except Exception as e:
-        print(e)
+        logger.warning("%s", e)
 
 
 @shared_task(bind=True)
@@ -529,7 +536,7 @@ def shodan_search(self, fk, country=None, coordinates=None, ics=None, healthcare
                                              category="healthcare",
                                              all_results=all_results)
                         progress_recorder.set_progress(c + 1, total=total)
-                    except:
+                    except Exception:
                         pass
             else:
 
@@ -540,7 +547,7 @@ def shodan_search(self, fk, country=None, coordinates=None, ics=None, healthcare
                                              category="ics",
                                              all_results=all_results)
                         progress_recorder.set_progress(c + 1, total=total)
-                    except:
+                    except Exception:
                         pass
 
                 if i in attackers_infra_queries:
@@ -551,7 +558,7 @@ def shodan_search(self, fk, country=None, coordinates=None, ics=None, healthcare
                                              all_results=all_results)
                         progress_recorder.set_progress(c + 1, total=total)
                     except Exception as e:
-                        print(e)
+                        logger.warning("%s", e)
 
     if coordinates:
         total = len(coordinates_search)
@@ -563,7 +570,7 @@ def shodan_search(self, fk, country=None, coordinates=None, ics=None, healthcare
                     shodan_search_worker(fk=fk, query=coordinates_queries[i], search_type=i, category="coordinates",
                                          coordinates=coordinates, all_results=all_results)
                     progress_recorder.set_progress(c + 1, total=total)
-                except:
+                except Exception:
                     pass
     return result
 
@@ -571,13 +578,13 @@ def shodan_search(self, fk, country=None, coordinates=None, ics=None, healthcare
 def check_credits():
     keys_list = []
     try:
-        SHODAN_API_KEY = keys['keys']['shodan']
+        SHODAN_API_KEY = _get_env_key('SHODAN_API_KEY', required=True)
 
         api = Shodan(SHODAN_API_KEY)
         a = api.info()
         keys_list.append(a['query_credits'])
     except Exception as e:
-        print(e)
+        logger.warning("%s", e)
 
     return keys_list
 
@@ -585,7 +592,7 @@ def check_credits():
 def shodan_search_worker(fk, query, search_type, category, country=None, coordinates=None, all_results=False):
     results = True
     page = 1
-    SHODAN_API_KEY = keys['keys']['shodan']
+    SHODAN_API_KEY = _get_env_key('SHODAN_API_KEY', required=True)
     pages = 0
     screenshot = ""
     print(query)
@@ -616,9 +623,11 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                 else:
                     results = api.search("country:" + country + " " + query, page)
                     fail = True
-            except:
+            except Exception as exc:
                 fail = False
-                print('fail1, sleeping...')
+                logger.warning("shodan_search_worker: Shodan API call failed, will retry: %s", exc)
+                # Brief back-off before retrying to respect Shodan's rate limit.
+                sleep(2)
 
         try:
             total = results['total']
@@ -627,7 +636,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                 print("no results")
                 break
         except Exception as e:
-            print(e)
+            logger.warning("%s", e)
             break
 
         # print(results)
@@ -641,7 +650,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
 
             try:
                 product = result['product']
-            except:
+            except Exception:
                 product = ""
 
             if 'vulns' in result:
@@ -656,7 +665,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
             try:
                 if 'hostnames' in result:
                     hostnames = result['hostnames'][0]
-            except:
+            except Exception:
                 pass
 
             try:
@@ -691,7 +700,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                     soup = BeautifulSoup(result['http']['html'], features="html.parser")
                     nws = soup.find("div", {"class": "top"})
                     indicator.append(nws.contents[0])
-                except:
+                except Exception:
                     pass
 
             if "SOURCETABLE" in query:
@@ -714,7 +723,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                         if "station.name" in i:
                             splitted = i.split(":")
                             indicator.append(splitted[1])
-                except:
+                except Exception:
                     pass
 
             # get indicator from tank
@@ -722,7 +731,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                 try:
                     tank_info = result['data'].split("\r\n\r\n")
                     indicator.append(tank_info[1])
-                except:
+                except Exception:
                     pass
 
             if result['port'] == 2000:
@@ -737,7 +746,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                     sch_el = result['data'].split('\n')
                     if sch_el[4].startswith("-- Project"):
                         indicator.append(sch_el[4].split(": ")[1])
-                except:
+                except Exception:
                     pass
 
             if "GPGGA" in result['data']:
@@ -762,7 +771,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                             indicator.append(i.split(":")[1])
                         if i.startswith("Module name"):
                             indicator.append(i.split(":")[1])
-                except:
+                except Exception:
                     pass
             # get indicator from bacnet
             if result['port'] == 47808:
@@ -779,7 +788,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                         if "Location" in i:
                             splitted3 = i.split(":")
                             indicator.append(splitted3[1])
-                except:
+                except Exception:
                     pass
 
             device = Device(search=search, ip=result['ip_str'], product=product, org=result['org'],
@@ -927,7 +936,26 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150):
     system ``$PATH`` is used, but can be overridden with the
     ``KAMERKA_NUCLEI_BIN`` environment variable or by editing
     ``kamerka/tool_settings.py`` directly.
+
+    ``severity`` is validated against the Nuclei allowlist before use.
+    ``rate_limit`` is clamped to [1, 500] to prevent accidental DoS.
     """
+    # ── Input validation ────────────────────────────────────────────────────
+    _VALID_SEVERITIES = {"info", "low", "medium", "high", "critical"}
+    if severity is not None:
+        severity = str(severity).strip().lower()
+        if severity not in _VALID_SEVERITIES:
+            return {"error": "Invalid severity '{}'. Must be one of: {}".format(
+                severity, ", ".join(sorted(_VALID_SEVERITIES)))}
+
+    try:
+        rate_limit = int(rate_limit)
+        if not (1 <= rate_limit <= 500):
+            raise ValueError()
+    except (ValueError, TypeError):
+        return {"error": "rate_limit must be an integer between 1 and 500"}
+    # ────────────────────────────────────────────────────────────────────────
+
     from django.conf import settings as django_settings
     nuclei_bin = getattr(django_settings, "NUCLEI_BIN", "nuclei")
     nuclei_timeout = getattr(django_settings, "NUCLEI_DEFAULT_TIMEOUT", 300)
@@ -945,8 +973,7 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150):
         # Resolve relative paths (sent from the UI) to absolute so nuclei
         # can find them regardless of the working directory.
         if not os.path.isabs(templates_dir):
-            from django.conf import settings as _s
-            templates_dir = os.path.join(_s.BASE_DIR, templates_dir)
+            templates_dir = os.path.join(django_settings.BASE_DIR, templates_dir)
         cmd.extend(["-t", templates_dir])
     else:
         cmd.append("-as")
@@ -1075,14 +1102,13 @@ def send_to_field_agent_task(id, notes):
             cve = af_details.vulns[1:][:-1]
         if af.indicator:
             indicator = af.indicator[2:][:-2]
-    except:
-        print("Not scanned")
-        pass
+    except Exception:
+        logger.warning("send_to_field_agent_task: ShodanScan record not found for device %s — skipping enrichment", id)
 
-    user_key = paste_login(keys['keys']['pastebin_user'], keys['keys']['pastebin_password'],
-                           keys['keys']['pastebin_dev_key'])
+    user_key = paste_login(_get_env_key('PASTEBIN_USER'), _get_env_key('PASTEBIN_PASSWORD'),
+                           _get_env_key('PASTEBIN_DEV_KEY'))
 
-    pastes = retrieve_pastes(keys['keys']['pastebin_dev_key'], user_key=user_key)
+    pastes = retrieve_pastes(_get_env_key('PASTEBIN_DEV_KEY'), user_key=user_key)
 
     ip = af.ip
     lat = af.lat
@@ -1096,16 +1122,16 @@ def send_to_field_agent_task(id, notes):
 
     print("\\xea\\x93\\x98amerka_" + af.ip)
     if "\\xea\\x93\\x98amerka_" + af.ip in pastes.keys():
-        delete_paste(keys['keys']['pastebin_dev_key'], user_key, pastes["\\xea\\x93\\x98amerka_" + af.ip])
-        create_paste(keys['keys']['pastebin_dev_key'], user_key, "ꓘamerka_" + af.ip, merge_string)
+        delete_paste(_get_env_key('PASTEBIN_DEV_KEY'), user_key, pastes["\\xea\\x93\\x98amerka_" + af.ip])
+        create_paste(_get_env_key('PASTEBIN_DEV_KEY'), user_key, "ꓘamerka_" + af.ip, merge_string)
     else:
-        create_paste(keys['keys']['pastebin_dev_key'], user_key, "ꓘamerka_" + af.ip, merge_string)
+        create_paste(_get_env_key('PASTEBIN_DEV_KEY'), user_key, "ꓘamerka_" + af.ip, merge_string)
 
 
 
 @shared_task(bind=False)
 def shodan_scan_task(id):
-    SHODAN_API_KEY = keys['keys']['shodan']
+    SHODAN_API_KEY = _get_env_key('SHODAN_API_KEY', required=True)
     device = Device.objects.get(id=id)
     api = Shodan(SHODAN_API_KEY)
     product = []
@@ -1188,7 +1214,7 @@ def scan(id):
 
 
         except Exception as e:
-            print(e)
+            logger.warning("%s", e)
             return_dict["State"] = u['nmaprun']['host']['ports']['port']['state']["@state"]
             return_dict["Reason"] = u['nmaprun']['host']['ports']['port']['state']["@reason"]
             device1.scan = return_dict
@@ -1216,7 +1242,7 @@ def scan(id):
             device1.exploited_scanned = True
             device1.save()
             return return_dict
-        except:
+        except Exception:
             pass
 
 

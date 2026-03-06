@@ -76,17 +76,24 @@ passwds = {"bosch_security":"""The Bosch Video Recorder 630/650 Series is an 8/1
            "lutron":"Quantum is a lighting control and energy management system that provides total light management by tying the most complete line of lighting controls, motorized window shades, digital ballasts and LED drivers, and sensors together under one software umbrella. Quantum is ideal for new construction or retrofit applications and can easily scale from a single area to a building, or to a campus with many buildings.<br>https://www.exploit-db.com/exploits/44488",
            }
 
-def get_keys():
-    try:
-        with open('keys.json') as keys:
-            keys_json = json.load(keys)
+import logging as _logging
+_views_logger = _logging.getLogger(__name__)
 
-        return keys_json
-    except Exception as e:
-        print(e)
+def _get_env_key(name, *, required=False):
+    """Return an environment-variable API key value.
 
-
-keys = get_keys()
+    Logs a warning when a required key is missing so operators know which
+    variable to set in their shell or .env file.
+    """
+    import os as _os
+    value = _os.environ.get(name, "")
+    if required and not value:
+        _views_logger.warning(
+            "Environment variable %s is not set. "
+            "Features that depend on it will fail at runtime.",
+            name,
+        )
+    return value
 
 
 def search_main(request):
@@ -414,20 +421,41 @@ def device(request, id, device_id, ip):
     nuclei_templates_dir = os.path.join(settings.BASE_DIR, 'nuclei_templates')
     nuclei_template_list = []
     device_type_lower = (all_devices.type or '').lower()
+
+    # Load the manifest so we know which template paths are recommended for
+    # this device type without relying on directory-name guessing.
+    manifest_matched_paths = set()
+    manifest_path = os.path.join(nuclei_templates_dir, 'manifest.yaml')
+    if os.path.isfile(manifest_path):
+        try:
+            import yaml as _yaml
+            with open(manifest_path) as _mf:
+                _manifest = _yaml.safe_load(_mf) or {}
+            for _tpl_rel in (_manifest.get('mappings') or {}).get(device_type_lower, []):
+                # Normalise: strip trailing slash, convert to the path form
+                # stored in each template entry (relative to BASE_DIR).
+                _tpl_rel = _tpl_rel.rstrip('/')
+                _abs = os.path.join(nuclei_templates_dir, _tpl_rel)
+                manifest_matched_paths.add(os.path.relpath(_abs, settings.BASE_DIR))
+        except Exception:
+            pass  # manifest is optional; fall back gracefully
+
     if os.path.isdir(nuclei_templates_dir):
         for root, dirs, files in os.walk(nuclei_templates_dir):
             dirs.sort()
-            yaml_files = sorted(f for f in files if f.endswith(('.yaml', '.yml')))
+            yaml_files = sorted(
+                f for f in files
+                if (f.endswith(('.yaml', '.yml')) and f != 'manifest.yaml')
+            )
             # Directory-level entry lets the user run all templates in that folder at once.
             if yaml_files and root != nuclei_templates_dir:
                 rel_dir = os.path.relpath(root, settings.BASE_DIR)
                 label_dir = os.path.relpath(root, nuclei_templates_dir)
-                dir_name = os.path.basename(root).lower()
                 nuclei_template_list.append({
                     'label': label_dir + ' [all]',
                     'path': rel_dir,
                     'is_dir': True,
-                    'match': bool(device_type_lower and device_type_lower == dir_name),
+                    'match': rel_dir in manifest_matched_paths,
                 })
             for fname in yaml_files:
                 full_path = os.path.join(root, fname)

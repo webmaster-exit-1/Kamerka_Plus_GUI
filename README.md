@@ -20,8 +20,10 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 - **CSV and KML export** for search results
 - **Celery progress tracking** with real-time task status in the UI
 - **Comprehensive test suite** covering models, views, URL patterns, exports, and scanning tasks
-- **Removed** Twitter and Flickr integrations (deprecated)
-- **Removed** Google Maps API dependency
+- **API keys via environment variables** — no more `keys.json`; copy `.env.example` → `.env` and export `SHODAN_API_KEY` (and optional Pastebin keys). `keys.json` is now `.gitignore`d.
+- **Nuclei template manifest** — `nuclei_templates/manifest.yaml` maps device types to template paths; adding a new vendor requires only a YAML entry, no code change
+- **Hardened input validation** — `nuclei_scan` validates `severity` against the Nuclei allowlist and clamps `rate_limit` to [1, 500]
+- **`Device.port` coercion** — `Device.save()` defaults an empty port to `"80"` so downstream scans never receive an invalid target
 
 ### 3D Globe (local-first rendering engine)
 
@@ -117,7 +119,25 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 
 > **Note:** Google Maps API is no longer required. Maps are rendered with Leaflet.js and OpenStreetMap tiles.
 
-**Make sure your API keys are correct and put them in `keys.json` in the main directory.**
+**API keys are read from environment variables — never from a file committed to git.**
+
+Copy `.env.example` to `.env` and fill in your values:
+
+```bash
+cp .env.example .env
+# then edit .env and set SHODAN_API_KEY (required) and any optional keys
+```
+
+| Variable | Required | Description |
+|---|---|---|
+| `SHODAN_API_KEY` | ✅ | Shodan paid-account API key |
+| `PASTEBIN_USER` | optional | Pastebin username (field-agent sync) |
+| `PASTEBIN_PASSWORD` | optional | Pastebin password |
+| `PASTEBIN_DEV_KEY` | optional | Pastebin developer key |
+| `DJANGO_SECRET_KEY` | optional | Override the auto-generated Django secret key |
+
+> `.env` is listed in `.gitignore` and will never be committed.
+> In CI or Docker, export the variables directly in your shell instead of using a file.
 
 ### GeoLite2 Database (Required for NMAP scan)
 

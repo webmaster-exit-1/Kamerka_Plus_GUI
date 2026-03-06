@@ -1,0 +1,33 @@
+# nuclei_templates/manifest.yaml
+#
+# Maps Kamerka device types (the `type` field set by the Shodan search worker)
+# to one or more Nuclei template paths relative to this file's directory.
+#
+# Rules:
+#   - A path ending with '/' (or pointing to a directory) tells Nuclei to run
+#     every template inside that directory (-t <dir>).
+#   - A path ending with '.yaml' / '.yml' runs a single template.
+#   - A device type may list multiple entries; Nuclei is invoked once per entry.
+#   - If a device type has no mapping here the UI falls back to showing all
+#     available templates; the user must select manually.
+#
+# To add a new vendor:
+#   1. Drop your .yaml templates into nuclei_templates/<vendor>/
+#   2. Add an entry below — no code changes required.
+
+mappings:
+  hikvision:
+    - china-iot/hikvision/
+
+  dahua:
+    - china-iot/dahua/
+
+  amcrest:
+    # Amcrest cameras share the Dahua codebase and are covered by the same templates.
+    - china-iot/dahua/
+
+  huawei:
+    - china-iot/huawei/
+
+  zte:
+    - china-iot/zte/

@@ -14,6 +14,15 @@ import os
 from pathlib import Path
 from django.core.management.utils import get_random_secret_key
 
+# Load environment variables from a .env file when present.
+# Operators set their API keys (SHODAN_API_KEY, PASTEBIN_DEV_KEY, …) there.
+# In production / CI, set the variables directly in the shell — no .env needed.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env'))
+except ImportError:
+    pass  # python-dotenv is optional; fall back to whatever is already in the environment
+
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
