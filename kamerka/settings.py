@@ -14,15 +14,6 @@ import os
 from pathlib import Path
 from django.core.management.utils import get_random_secret_key
 
-# Load environment variables from a .env file when present.
-# Operators set their API keys (SHODAN_API_KEY, PASTEBIN_DEV_KEY, …) there.
-# In production / CI, set the variables directly in the shell — no .env needed.
-try:
-    from dotenv import load_dotenv
-    load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env'))
-except ImportError:
-    pass  # python-dotenv is optional; fall back to whatever is already in the environment
-
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -33,17 +24,18 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', get_random_secret_key())
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'True').lower() in ('true', '1', 'yes')
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h.strip()]
 
 # CELERY STUFF (Celery 5.x configuration)
-CELERY_BROKER_URL = 'redis://localhost:6379'
-CELERY_RESULT_BACKEND = 'redis://localhost:6379'
+_redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379')
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', _redis_url)
+CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', _redis_url)
 CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = 'Africa/Nairobi'
+CELERY_TIMEZONE = os.environ.get('CELERY_TIMEZONE', 'Africa/Nairobi')
 CELERY_IMPORTS = ('kamerka.tasks',)
 
 # ---------------------------------------------------------------------------

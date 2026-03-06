@@ -21,7 +21,7 @@ settings.json
 .vscode/
 # Large binary assets – download separately (see assets/README.md)
 assets/earth_surface.jpg
-# API keys – use environment variables or a .env file instead (see .env.example)
+# API keys – use environment variables instead
 keys.json
 
 # npm artifacts from three.js local build

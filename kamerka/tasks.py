@@ -470,8 +470,8 @@ def _get_env_key(name, *, required=False):
         logger.warning(
             "Environment variable %s is not set. "
             "Features that depend on it will fail at runtime. "
-            "Set it in your shell or in a .env file.",
-            name,
+            "Set it in your shell (e.g. 'export %s=...').",
+            name, name,
         )
     return value
 
@@ -582,8 +582,7 @@ def check_credits():
         if not SHODAN_API_KEY:
             logger.warning(
                 "check_credits: SHODAN_API_KEY is empty — cannot check credits. "
-                "Set it in your shell (e.g. 'export SHODAN_API_KEY=...'), "
-                "in a .env file, or in Django settings."
+                "Set it in your shell (e.g. 'export SHODAN_API_KEY=...')."
             )
             return keys_list
 
