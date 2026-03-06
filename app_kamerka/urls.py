@@ -40,4 +40,7 @@ urlpatterns = [
 
     path('export/csv/<id>', views.export_csv, name="export_csv"),
     path('export/kml/<id>', views.export_kml, name="export_kml"),
+
+    path('globe', views.globe, name='globe'),
+    path('globe/devices.json', views.globe_devices_json, name='globe_devices_json'),
 ]

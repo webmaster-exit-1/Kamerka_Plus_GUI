@@ -1651,7 +1651,7 @@ def whoisxml(id):
 
 
 def shodan_csv_export(search_id, output_path):
-    """Export Shodan device data to CSV for SandDance 3D visualization."""
+    """Export Shodan device data to CSV for FOSS geospatial tools (QGIS, Kepler.gl, the built-in globe)."""
     import pandas as pd
 
     devices = Device.objects.filter(search_id=search_id)
@@ -1689,7 +1689,7 @@ def shodan_csv_export(search_id, output_path):
 
 
 def shodan_kml_export(search_id, output_path):
-    """Export Shodan device data to KML for Mapbox geospatial intelligence."""
+    """Export Shodan device data to KML for FOSS geospatial tools (QGIS, Leaflet, uMap)."""
     import simplekml
 
     devices = Device.objects.filter(search_id=search_id)

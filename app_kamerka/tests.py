@@ -3143,3 +3143,342 @@ class GetTaskInfoViewTests(TestCase):
         if data.get('state') != 'SUCCESS':
             self.fail("Expected state='SUCCESS', got: {!r}".format(data))
 
+
+# =============================================================================
+#  Globe view tests
+# =============================================================================
+
+class GlobeViewTests(TestCase):
+    """Tests for the /globe page and /globe/devices.json API."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="40.7128,-74.0060", country="US",
+            ics="['hikvision']", coordinates_search="['40.7128,-74.0060']"
+        )
+        self.device = Device.objects.create(
+            search=self.search,
+            ip="10.0.0.1",
+            product="Hikvision Camera",
+            port="80",
+            type="hikvision",
+            lat="40.7128",
+            lon="-74.0060",
+            country_code="US",
+            org="TestOrg",
+            city="New York",
+            vulns="",
+        )
+        self.device_with_vulns = Device.objects.create(
+            search=self.search,
+            ip="10.0.0.2",
+            product="Siemens S7",
+            port="102",
+            type="siemens",
+            lat="51.5074",
+            lon="-0.1278",
+            country_code="GB",
+            org="TestOrg2",
+            city="London",
+            vulns="['CVE-2021-0001', 'CVE-2021-0002', 'CVE-2021-0003', 'CVE-2021-0004']",
+        )
+
+    # ── /globe page ──────────────────────────────────────────────────
+
+    def test_globe_page_returns_200(self):
+        response = self.client.get('/globe')
+        self.assertEqual(response.status_code, 200,
+            "GET /globe should return 200, got {}".format(response.status_code))
+
+    def test_globe_page_contains_three_js(self):
+        response = self.client.get('/globe')
+        self.assertContains(response, 'three.min.js',
+            msg_prefix="Globe page must load Three.js")
+
+    def test_globe_page_contains_canvas(self):
+        response = self.client.get('/globe')
+        self.assertContains(response, 'globe-canvas',
+            msg_prefix="Globe page must contain the WebGL canvas element")
+
+    def test_globe_page_contains_theme_buttons(self):
+        response = self.client.get('/globe')
+        content = response.content.decode()
+        for theme in ('cyberpunk', 'matrix', 'thermal', 'satellite', 'ghost'):
+            self.assertIn(
+                'data-theme="{}"'.format(theme), content,
+                msg="Globe page must have theme button for '{}'".format(theme)
+            )
+
+    def test_globe_page_contains_mode_buttons(self):
+        response = self.client.get('/globe')
+        content = response.content.decode()
+        for mode in ('spikes', 'heatmap', 'both'):
+            self.assertIn(
+                'data-mode="{}"'.format(mode), content,
+                msg="Globe page must have mode button for '{}'".format(mode)
+            )
+
+    def test_globe_page_sidebar_has_globe_link(self):
+        response = self.client.get('/globe')
+        self.assertContains(response, 'fa-globe',
+            msg_prefix="Globe page sidebar must contain Globe nav link")
+
+    def test_globe_page_contains_devices_json_fetch(self):
+        """JS on the globe page must fetch /globe/devices.json."""
+        response = self.client.get('/globe')
+        self.assertContains(response, '/globe/devices.json',
+            msg_prefix="Globe page JS must fetch /globe/devices.json")
+
+    # ── /globe/devices.json API ───────────────────────────────────────
+
+    def test_devices_json_returns_200(self):
+        response = self.client.get('/globe/devices.json')
+        self.assertEqual(response.status_code, 200,
+            "GET /globe/devices.json should return 200, got {}".format(response.status_code))
+
+    def test_devices_json_content_type(self):
+        response = self.client.get('/globe/devices.json')
+        self.assertIn('application/json', response['Content-Type'],
+            msg="devices.json must return application/json")
+
+    def test_devices_json_is_list(self):
+        response = self.client.get('/globe/devices.json')
+        data = json.loads(response.content)
+        self.assertIsInstance(data, list,
+            "devices.json response must be a JSON array")
+
+    def test_devices_json_contains_all_valid_devices(self):
+        response = self.client.get('/globe/devices.json')
+        data = json.loads(response.content)
+        # Both devices have valid lat/lon so both should appear
+        self.assertEqual(len(data), 2,
+            "devices.json must include all devices with valid lat/lon; got {}".format(len(data)))
+
+    def test_devices_json_required_fields(self):
+        response = self.client.get('/globe/devices.json')
+        data = json.loads(response.content)
+        required = ('ip', 'lat', 'lon', 'product', 'type', 'port',
+                    'city', 'org', 'country', 'vuln_count', 'severity')
+        for field in required:
+            for record in data:
+                self.assertIn(field, record,
+                    msg="devices.json record missing field '{}'".format(field))
+
+    def test_devices_json_lat_lon_are_floats(self):
+        response = self.client.get('/globe/devices.json')
+        data = json.loads(response.content)
+        for record in data:
+            self.assertIsInstance(record['lat'], float,
+                "lat must be a float, got {!r}".format(type(record['lat'])))
+            self.assertIsInstance(record['lon'], float,
+                "lon must be a float, got {!r}".format(type(record['lon'])))
+
+    def test_devices_json_no_vulns_gives_info_severity(self):
+        response = self.client.get('/globe/devices.json')
+        data = json.loads(response.content)
+        record = next(r for r in data if r['ip'] == '10.0.0.1')
+        self.assertEqual(record['severity'], 'info',
+            "Device with no vulns must get severity='info', got '{}'".format(record['severity']))
+        self.assertEqual(record['vuln_count'], 0)
+
+    def test_devices_json_four_vulns_gives_medium_severity(self):
+        response = self.client.get('/globe/devices.json')
+        data = json.loads(response.content)
+        record = next(r for r in data if r['ip'] == '10.0.0.2')
+        self.assertEqual(record['severity'], 'medium',
+            "Device with 4 vulns must get severity='medium', got '{}'".format(record['severity']))
+        self.assertEqual(record['vuln_count'], 4)
+
+    def test_devices_json_excludes_invalid_lat_lon(self):
+        """Devices with non-numeric lat/lon must be silently excluded."""
+        bad = Device.objects.create(
+            search=self.search, ip="10.0.0.99", product="Bad",
+            port="80", type="other", lat="N/A", lon="N/A",
+            country_code="XX",
+        )
+        response = self.client.get('/globe/devices.json')
+        data = json.loads(response.content)
+        ips = [r['ip'] for r in data]
+        self.assertNotIn('10.0.0.99', ips,
+            "Devices with invalid lat/lon must be excluded from globe JSON")
+        bad.delete()
+
+    def test_devices_json_correct_ip_values(self):
+        response = self.client.get('/globe/devices.json')
+        data = json.loads(response.content)
+        ips = {r['ip'] for r in data}
+        self.assertIn('10.0.0.1', ips)
+        self.assertIn('10.0.0.2', ips)
+
+
+class GlobeSeverityBandsTests(TestCase):
+    """Unit-test every severity band boundary used by globe_devices_json."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+
+    def _make_device(self, ip, vulns_list):
+        return Device.objects.create(
+            search=self.search, ip=ip, product="Test",
+            port="80", type="test", lat="0.0", lon="0.0",
+            country_code="US",
+            vulns=str(vulns_list) if vulns_list else "",
+        )
+
+    def _get_severity(self, ip):
+        response = self.client.get('/globe/devices.json')
+        data = json.loads(response.content)
+        record = next((r for r in data if r['ip'] == ip), None)
+        self.assertIsNotNone(record, "Device {} not found in globe JSON".format(ip))
+        return record['severity'], record['vuln_count']
+
+    def test_zero_vulns_is_info(self):
+        self._make_device('1.0.0.1', [])
+        sev, count = self._get_severity('1.0.0.1')
+        self.assertEqual(sev, 'info')
+        self.assertEqual(count, 0)
+
+    def test_one_vuln_is_low(self):
+        self._make_device('1.0.0.2', ['CVE-2021-0001'])
+        sev, count = self._get_severity('1.0.0.2')
+        self.assertEqual(sev, 'low')
+        self.assertEqual(count, 1)
+
+    def test_two_vulns_is_low(self):
+        self._make_device('1.0.0.3', ['CVE-2021-0001', 'CVE-2021-0002'])
+        sev, count = self._get_severity('1.0.0.3')
+        self.assertEqual(sev, 'low')
+        self.assertEqual(count, 2)
+
+    def test_three_vulns_is_medium(self):
+        self._make_device('1.0.0.4', ['CVE-2021-0001', 'CVE-2021-0002', 'CVE-2021-0003'])
+        sev, count = self._get_severity('1.0.0.4')
+        self.assertEqual(sev, 'medium')
+        self.assertEqual(count, 3)
+
+    def test_six_vulns_is_high(self):
+        vulns = ['CVE-2021-{:04d}'.format(i) for i in range(6)]
+        self._make_device('1.0.0.5', vulns)
+        sev, count = self._get_severity('1.0.0.5')
+        self.assertEqual(sev, 'high')
+        self.assertEqual(count, 6)
+
+    def test_eleven_vulns_is_critical(self):
+        vulns = ['CVE-2021-{:04d}'.format(i) for i in range(11)]
+        self._make_device('1.0.0.6', vulns)
+        sev, count = self._get_severity('1.0.0.6')
+        self.assertEqual(sev, 'critical')
+        self.assertEqual(count, 11)
+
+
+class GlobeURLTests(TestCase):
+    """Test that globe URLs are registered and resolve correctly."""
+
+    def test_globe_url_resolves(self):
+        url = reverse('globe')
+        self.assertEqual(url, '/globe')
+
+    def test_globe_devices_json_url_resolves(self):
+        url = reverse('globe_devices_json')
+        self.assertEqual(url, '/globe/devices.json')
+
+    def test_globe_page_get(self):
+        response = self.client.get(reverse('globe'))
+        self.assertEqual(response.status_code, 200)
+
+    def test_globe_devices_json_get(self):
+        response = self.client.get(reverse('globe_devices_json'))
+        self.assertEqual(response.status_code, 200)
+
+
+class GlobeSidebarTests(TestCase):
+    """Every page must show the Globe link in the sidebar."""
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US", ics="test", coordinates_search="test"
+        )
+        self.device = Device.objects.create(
+            search=self.search, ip="1.2.3.4", product="Test",
+            port="80", type="hikvision", lat="10.0", lon="20.0",
+            country_code="US"
+        )
+
+    def _assert_has_globe_link(self, url, label=None):
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200,
+            "Page {} returned {}".format(url, response.status_code))
+        self.assertContains(response, 'fa-globe',
+            msg_prefix="Sidebar on {} must contain Globe nav link".format(url))
+
+    def test_globe_link_on_index(self):
+        with patch('app_kamerka.views.check_credits', return_value=[]):
+            self._assert_has_globe_link('/index')
+
+    def test_globe_link_on_history(self):
+        self._assert_has_globe_link('/history')
+
+    def test_globe_link_on_map(self):
+        self._assert_has_globe_link('/map')
+
+    def test_globe_link_on_devices(self):
+        self._assert_has_globe_link('/devices')
+
+    def test_globe_link_on_gallery(self):
+        self._assert_has_globe_link('/gallery')
+
+    def test_globe_link_on_sources(self):
+        self._assert_has_globe_link('/sources')
+
+    def test_globe_link_on_results(self):
+        self._assert_has_globe_link('/results/{}'.format(self.search.id))
+
+    def test_globe_link_on_globe_itself(self):
+        self._assert_has_globe_link('/globe')
+
+
+class FOSSDocstringTests(TestCase):
+    """Verify SandDance and Mapbox references are gone from docstrings."""
+
+    def test_csv_export_task_no_sanddance(self):
+        from kamerka.tasks import shodan_csv_export
+        doc = shodan_csv_export.__doc__ or ''
+        self.assertNotIn('SandDance', doc,
+            "shodan_csv_export docstring must not reference SandDance")
+
+    def test_kml_export_task_no_mapbox(self):
+        from kamerka.tasks import shodan_kml_export
+        doc = shodan_kml_export.__doc__ or ''
+        self.assertNotIn('Mapbox', doc,
+            "shodan_kml_export docstring must not reference Mapbox")
+
+    def test_csv_view_no_sanddance(self):
+        from app_kamerka.views import export_csv
+        doc = export_csv.__doc__ or ''
+        self.assertNotIn('SandDance', doc,
+            "export_csv view docstring must not reference SandDance")
+
+    def test_kml_view_no_mapbox(self):
+        from app_kamerka.views import export_kml
+        doc = export_kml.__doc__ or ''
+        self.assertNotIn('Mapbox', doc,
+            "export_kml view docstring must not reference Mapbox")
+
+    def test_csv_export_references_foss_tools(self):
+        from kamerka.tasks import shodan_csv_export
+        doc = (shodan_csv_export.__doc__ or '').lower()
+        self.assertTrue(
+            any(t in doc for t in ('qgis', 'kepler', 'globe', 'foss')),
+            "shodan_csv_export docstring must reference FOSS tools"
+        )
+
+    def test_kml_export_references_foss_tools(self):
+        from kamerka.tasks import shodan_kml_export
+        doc = (shodan_kml_export.__doc__ or '').lower()
+        self.assertTrue(
+            any(t in doc for t in ('qgis', 'leaflet', 'umap', 'foss')),
+            "shodan_kml_export docstring must reference FOSS tools"
+        )
+

@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+{% load static %}
+{% block page_content %}
+    <head>
+        <!-- META SECTION -->
+        <title>Globe - ꓘamerka</title>
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <!-- END META SECTION -->
+
+        <!-- CSS INCLUDE -->
+        <link rel="stylesheet" type="text/css" id="theme" href="{% static 'css/theme-default.css' %}"/>
+        <link rel="stylesheet" type="text/css" href="{% static 'css/cyberpunk.css' %}"/>
+        <!-- EOF CSS INCLUDE -->
+
+        <style>
+            #globe-wrap {
+                position: relative;
+                width: 100%;
+                height: calc(100vh - 56px);
+                background: #000;
+                overflow: hidden;
+            }
+            #globe-canvas {
+                display: block;
+                width: 100%;
+                height: 100%;
+            }
+            /* ── Controls overlay ── */
+            #globe-controls {
+                position: absolute;
+                top: 12px;
+                left: 12px;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                z-index: 10;
+            }
+            .ctrl-group {
+                background: rgba(10,13,18,0.82);
+                border: 1px solid var(--cp-border);
+                padding: 8px 10px;
+                font-family: var(--cp-font);
+                font-size: 0.72em;
+                color: var(--cp-dim);
+                letter-spacing: 0.1em;
+            }
+            .ctrl-group label {
+                color: var(--cp-magenta);
+                display: block;
+                margin-bottom: 4px;
+                font-size: 0.85em;
+                letter-spacing: 0.15em;
+            }
+            .ctrl-group .btn-row {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 4px;
+            }
+            .theme-btn, .mode-btn {
+                background: transparent;
+                border: 1px solid var(--cp-border);
+                color: var(--cp-cyan);
+                font-family: var(--cp-font);
+                font-size: 0.78em;
+                padding: 3px 8px;
+                cursor: pointer;
+                letter-spacing: 0.08em;
+                transition: background 0.15s, color 0.15s;
+            }
+            .theme-btn:hover, .mode-btn:hover,
+            .theme-btn.active, .mode-btn.active {
+                background: var(--cp-border);
+                color: #fff;
+            }
+            /* ── Device info panel ── */
+            #device-panel {
+                position: absolute;
+                top: 12px;
+                right: 12px;
+                width: 280px;
+                background: rgba(10,13,18,0.92);
+                border: 1px solid var(--cp-magenta);
+                padding: 14px;
+                font-family: var(--cp-font);
+                font-size: 0.75em;
+                color: var(--cp-cyan);
+                letter-spacing: 0.07em;
+                z-index: 10;
+                display: none;
+            }
+            #device-panel h4 {
+                color: var(--cp-magenta);
+                margin: 0 0 10px;
+                font-size: 1em;
+                letter-spacing: 0.2em;
+                text-transform: uppercase;
+            }
+            #device-panel .dp-row {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 4px;
+                border-bottom: 1px solid rgba(0,100,215,0.18);
+                padding-bottom: 4px;
+            }
+            #device-panel .dp-label { color: var(--cp-dim); }
+            #device-panel .dp-val   { color: var(--cp-cyan); text-align: right; word-break: break-all; max-width: 160px; }
+            #device-panel .sev-critical { color: #ff2050; }
+            #device-panel .sev-high     { color: #ff6030; }
+            #device-panel .sev-medium   { color: #ffe600; }
+            #device-panel .sev-low      { color: #00ff88; }
+            #device-panel .sev-info, #device-panel .sev-unknown { color: #00e1ff; }
+            #panel-close {
+                float: right;
+                cursor: pointer;
+                color: var(--cp-dim);
+                font-size: 1.1em;
+                margin-top: -4px;
+            }
+            #panel-close:hover { color: var(--cp-magenta); }
+            /* ── Stats bar ── */
+            #globe-stats {
+                position: absolute;
+                bottom: 10px;
+                left: 12px;
+                font-family: var(--cp-font);
+                font-size: 0.68em;
+                color: var(--cp-dim);
+                letter-spacing: 0.1em;
+                z-index: 10;
+            }
+            #globe-stats span { color: var(--cp-cyan); margin-right: 16px; }
+            /* ── Legend ── */
+            #globe-legend {
+                position: absolute;
+                bottom: 10px;
+                right: 12px;
+                background: rgba(10,13,18,0.82);
+                border: 1px solid var(--cp-border);
+                padding: 8px 12px;
+                font-family: var(--cp-font);
+                font-size: 0.68em;
+                color: var(--cp-dim);
+                letter-spacing: 0.1em;
+                z-index: 10;
+            }
+            #globe-legend .leg-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+            #globe-legend .leg-dot {
+                width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0;
+            }
+            /* ── Loading overlay ── */
+            #globe-loading {
+                position: absolute;
+                inset: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: #000;
+                font-family: var(--cp-font);
+                color: var(--cp-cyan);
+                font-size: 1.1em;
+                letter-spacing: 0.3em;
+                z-index: 20;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="page-container">
+
+            <!-- START PAGE SIDEBAR -->
+            <div class="page-sidebar">
+                <ul class="x-navigation">
+                    <li class="xn-logo">
+                        <a href="/">ꓘamerka</a>
+                        <a href="#" class="x-navigation-control"></a>
+                    </li>
+                    <li class="xn-profile">
+                        <div class="profile">
+                            <div class="profile-image"></div>
+                            <div class="profile-data">
+                                <img width=200px height=200px src="{% static 'images/OffensiveOsint-logo-RGB-2.svg' %}">
+                            </div>
+                        </div>
+                    </li>
+                    <li class="xn-title">Navigation</li>
+                    <li class=""><a href="index"><span class="fa fa-desktop"></span> <span class="xn-text">Dashboard</span></a></li>
+                    <li class=""><a href="history"><span class="fa fa-files-o"></span> <span class="xn-text">History</span></a></li>
+                    <li class=""><a href="map"><span class="fa fa-map-marker"></span> <span class="xn-text">Map</span></a></li>
+                    <li class="xn-active"><a href="globe"><span class="fa fa-globe"></span> <span class="xn-text">Globe</span></a></li>
+                    <li class=""><a href="devices"><span class="fa fa-search"></span> <span class="xn-text">Search</span></a></li>
+                    <li class=""><a href="gallery"><span class="fa fa-camera"></span> <span class="xn-text">Gallery</span></a></li>
+                    <li class="xn-title">Components</li>
+                    <li><a href="sources"><span class="fa fa-book"></span> <span class="xn-text">Useful links</span></a></li>
+                </ul>
+            </div>
+            <!-- END PAGE SIDEBAR -->
+
+            <!-- PAGE CONTENT -->
+            <div class="page-content" style="padding:0; overflow:hidden;">
+
+                <ul class="x-navigation x-navigation-horizontal x-navigation-panel">
+                </ul>
+
+                <!-- Globe container fills remaining space -->
+                <div id="globe-wrap">
+
+                    <div id="globe-loading">INITIALISING GLOBE…</div>
+
+                    <canvas id="globe-canvas"></canvas>
+
+                    <!-- Controls -->
+                    <div id="globe-controls">
+                        <div class="ctrl-group">
+                            <label>THEME</label>
+                            <div class="btn-row">
+                                <button class="theme-btn active" data-theme="cyberpunk">🌐 Cyberpunk</button>
+                                <button class="theme-btn" data-theme="matrix">💚 Matrix</button>
+                                <button class="theme-btn" data-theme="thermal">🔥 Thermal</button>
+                                <button class="theme-btn" data-theme="satellite">🛰 Satellite</button>
+                                <button class="theme-btn" data-theme="ghost">👻 Ghost</button>
+                            </div>
+                        </div>
+                        <div class="ctrl-group">
+                            <label>VIEW MODE</label>
+                            <div class="btn-row">
+                                <button class="mode-btn active" data-mode="spikes">⚡ SPIKES</button>
+                                <button class="mode-btn" data-mode="heatmap">🌡 HEAT MAP</button>
+                                <button class="mode-btn" data-mode="both">⚡🌡 BOTH</button>
+                            </div>
+                        </div>
+                        <div class="ctrl-group">
+                            <label>ROTATION</label>
+                            <div class="btn-row">
+                                <button class="mode-btn active" id="btn-rotate">⏸ PAUSE</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Device info panel -->
+                    <div id="device-panel">
+                        <span id="panel-close" title="Close">✕</span>
+                        <h4>› Device Info</h4>
+                        <div id="panel-body"></div>
+                    </div>
+
+                    <!-- Stats bar -->
+                    <div id="globe-stats">
+                        DEVICES: <span id="stat-total">—</span>
+                        UNIQUE IPs: <span id="stat-ips">—</span>
+                        CRITICAL: <span id="stat-crit" style="color:#ff2050">—</span>
+                        HIGH: <span id="stat-high" style="color:#ff6030">—</span>
+                    </div>
+
+                    <!-- Legend -->
+                    <div id="globe-legend">
+                        <div class="leg-row"><span class="leg-dot" style="background:#ff2050"></span> Critical</div>
+                        <div class="leg-row"><span class="leg-dot" style="background:#ff6030"></span> High</div>
+                        <div class="leg-row"><span class="leg-dot" style="background:#ffe600"></span> Medium</div>
+                        <div class="leg-row"><span class="leg-dot" style="background:#00ff88"></span> Low</div>
+                        <div class="leg-row"><span class="leg-dot" style="background:#00e1ff"></span> Info/Unknown</div>
+                    </div>
+                </div>
+            </div>
+            <!-- END PAGE CONTENT -->
+
+        </div><!-- end page-container -->
+
+        <!-- Three.js -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+        <script>
+        // ─────────────────────────────────────────────────────────────
+        //  Kamerka Globe  –  Three.js WebGL 3-D globe with device spikes
+        //  and heat-map overlay.  Data sourced from /globe/devices.json
+        //  which mirrors the CSV/KML export pipeline.
+        // ─────────────────────────────────────────────────────────────
+
+        const EARTH_RADIUS = 1.0;
+        const SPIKE_BASE   = 0.012;
+
+        // ── Theme definitions (mirror globe_3d/themes.py) ────────────
+        const THEMES = {
+            cyberpunk: {
+                bg: '#000000', earth: '#0a1428', grid: '#0064d7',
+                gridOpacity: 0.25, ambient: 0.3,
+                sevColours: {},   // use default
+            },
+            matrix: {
+                bg: '#000800', earth: '#001a00', grid: '#00ff44',
+                gridOpacity: 0.30, ambient: 0.4,
+                sevColours: {
+                    critical: '#00ff33', high: '#00e61a',
+                    medium: '#00bf00', low: '#009900',
+                    info: '#006600', unknown: '#004d00',
+                },
+            },
+            thermal: {
+                bg: '#05000a', earth: '#1a0025', grid: '#ff6600',
+                gridOpacity: 0.25, ambient: 0.25,
+                sevColours: {
+                    critical: '#ff0d00', high: '#ff5900',
+                    medium: '#ffbf00', low: '#9900cc',
+                    info: '#3300aa', unknown: '#260080',
+                },
+            },
+            satellite: {
+                bg: '#000010', earth: '#1a3a5c', grid: '#ffffff',
+                gridOpacity: 0.12, ambient: 0.35,
+                sevColours: {},
+            },
+            ghost: {
+                bg: '#080808', earth: '#b0c8d0', grid: '#00e1ff',
+                gridOpacity: 0.50, ambient: 0.6,
+                sevColours: {
+                    critical: '#ffffff', high: '#d9d9d9',
+                    medium: '#a6a6a6', low: '#737373',
+                    info: '#4d4d4d', unknown: '#333333',
+                },
+            },
+        };
+
+        // ── Default severity colours ──────────────────────────────────
+        const SEV_COLOURS_DEFAULT = {
+            critical: '#ff2050', high: '#ff6030',
+            medium: '#ffe600', low: '#00ff88',
+            info: '#00e1ff', unknown: '#00e1ff',
+        };
+
+        function sevColour(severity, theme) {
+            const key = (severity || 'unknown').toLowerCase().trim();
+            const override = (THEMES[theme] || THEMES.cyberpunk).sevColours[key];
+            return override || SEV_COLOURS_DEFAULT[key] || SEV_COLOURS_DEFAULT.unknown;
+        }
+
+        // ── Severity from vuln count (mirrors CSV export logic) ───────
+        function severityFromVulnCount(n) {
+            if (n > 10) return 'critical';
+            if (n > 5)  return 'high';
+            if (n > 2)  return 'medium';
+            if (n > 0)  return 'low';
+            return 'info';
+        }
+
+        // ── Lat/lon → 3-D point on sphere ─────────────────────────────
+        function latLonToVec3(lat, lon, r) {
+            const phi   = (90 - lat) * Math.PI / 180;
+            const theta = (lon + 180) * Math.PI / 180;
+            return new THREE.Vector3(
+                -r * Math.sin(phi) * Math.cos(theta),
+                 r * Math.cos(phi),
+                 r * Math.sin(phi) * Math.sin(theta)
+            );
+        }
+
+        // ── Build graticule (lat/lon grid lines) ─────────────────────
+        function buildGraticule(colour, opacity) {
+            const mat = new THREE.LineBasicMaterial({
+                color: colour, transparent: true, opacity: opacity,
+            });
+            const group = new THREE.Group();
+            const R = EARTH_RADIUS + 0.002;
+
+            // Parallels (latitude)
+            for (let lat = -60; lat <= 60; lat += 30) {
+                const pts = [];
+                for (let lon = -180; lon <= 180; lon += 3) {
+                    pts.push(latLonToVec3(lat, lon, R));
+                }
+                group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat.clone()));
+            }
+            // Meridians (longitude)
+            for (let lon = -180; lon < 180; lon += 30) {
+                const pts = [];
+                for (let lat = -90; lat <= 90; lat += 3) {
+                    pts.push(latLonToVec3(lat, lon, R));
+                }
+                group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat.clone()));
+            }
+            return group;
+        }
+
+        // ── Build device spike (cylinder tapered to point) ────────────
+        function buildSpike(lat, lon, height, colour) {
+            const geo = new THREE.CylinderGeometry(0, SPIKE_BASE, height, 5);
+            const mat = new THREE.MeshBasicMaterial({ color: colour });
+            const mesh = new THREE.Mesh(geo, mat);
+
+            const origin = latLonToVec3(lat, lon, EARTH_RADIUS);
+            const tip    = latLonToVec3(lat, lon, EARTH_RADIUS + height);
+            const mid    = origin.clone().add(tip).multiplyScalar(0.5);
+
+            mesh.position.copy(mid);
+
+            // Orient spike radially outward from sphere centre
+            const up = new THREE.Vector3(0, 1, 0);
+            const dir = tip.clone().sub(origin).normalize();
+            const quat = new THREE.Quaternion().setFromUnitVectors(up, dir);
+            mesh.setRotationFromQuaternion(quat);
+
+            return mesh;
+        }
+
+        // ── Heat-map sprite (additive blended gaussian blob) ──────────
+        function buildHeatSprite(lat, lon, colour, intensity) {
+            const size  = 128;
+            const canvas = document.createElement('canvas');
+            canvas.width = canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            const cx = size / 2, cy = size / 2;
+            const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, size / 2);
+            const rgb = hexToRgb(colour);
+            grad.addColorStop(0,   `rgba(${rgb},${Math.min(1, intensity * 0.85)})`);
+            grad.addColorStop(0.4, `rgba(${rgb},${Math.min(1, intensity * 0.4)})`);
+            grad.addColorStop(1,   `rgba(${rgb},0)`);
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, size, size);
+
+            const tex = new THREE.CanvasTexture(canvas);
+            const mat = new THREE.SpriteMaterial({
+                map: tex, blending: THREE.AdditiveBlending,
+                depthWrite: false, transparent: true,
+            });
+            const sprite = new THREE.Sprite(mat);
+            const r = EARTH_RADIUS + 0.005;
+            sprite.position.copy(latLonToVec3(lat, lon, r));
+            const scale = 0.18 + intensity * 0.22;
+            sprite.scale.set(scale, scale, 1);
+            return sprite;
+        }
+
+        function hexToRgb(hex) {
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            return `${r},${g},${b}`;
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        //  Scene setup
+        // ─────────────────────────────────────────────────────────────
+        const wrap   = document.getElementById('globe-wrap');
+        const canvas = document.getElementById('globe-canvas');
+
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+
+        const scene  = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, wrap.clientWidth / wrap.clientHeight, 0.01, 100);
+        camera.position.z = 2.8;
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight('#ffffff', 0.3);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight('#ffffff', 0.8);
+        dirLight.position.set(5, 3, 5);
+        scene.add(dirLight);
+
+        // Earth sphere
+        const earthGeo = new THREE.SphereGeometry(EARTH_RADIUS, 64, 64);
+        const earthMat = new THREE.MeshPhongMaterial({ color: '#0a1428', shininess: 20 });
+        const earthMesh = new THREE.Mesh(earthGeo, earthMat);
+        scene.add(earthMesh);
+
+        // Atmosphere glow
+        const atmGeo = new THREE.SphereGeometry(EARTH_RADIUS * 1.015, 64, 64);
+        const atmMat = new THREE.MeshBasicMaterial({
+            color: '#0064d7', side: THREE.BackSide, transparent: true, opacity: 0.04,
+        });
+        scene.add(new THREE.Mesh(atmGeo, atmMat));
+
+        // Graticule
+        let graticule = buildGraticule('#0064d7', 0.25);
+        scene.add(graticule);
+
+        // Groups for spikes and heat-map
+        const spikesGroup   = new THREE.Group();
+        const heatmapGroup  = new THREE.Group();
+        scene.add(spikesGroup);
+        scene.add(heatmapGroup);
+
+        // State
+        let currentTheme = 'cyberpunk';
+        let currentMode  = 'spikes';
+        let rotating     = true;
+        let allDevices   = [];
+        let spikeObjects = [];  // { mesh, device } for raycasting
+
+        // Raycaster for click-to-inspect
+        const raycaster = new THREE.Raycaster();
+        const mouse     = new THREE.Vector2();
+
+        // ─────────────────────────────────────────────────────────────
+        //  Data loading
+        // ─────────────────────────────────────────────────────────────
+        async function loadDevices() {
+            try {
+                const resp = await fetch('/globe/devices.json');
+                allDevices = await resp.json();
+            } catch (e) {
+                allDevices = [];
+            }
+            updateStats();
+            rebuildScene();
+            document.getElementById('globe-loading').style.display = 'none';
+        }
+
+        function updateStats() {
+            const total = allDevices.length;
+            const ips   = new Set(allDevices.map(d => d.ip)).size;
+            const crit  = allDevices.filter(d => d.severity === 'critical').length;
+            const high  = allDevices.filter(d => d.severity === 'high').length;
+            document.getElementById('stat-total').textContent = total;
+            document.getElementById('stat-ips').textContent   = ips;
+            document.getElementById('stat-crit').textContent  = crit;
+            document.getElementById('stat-high').textContent  = high;
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        //  Scene rebuild (called on theme / mode change)
+        // ─────────────────────────────────────────────────────────────
+        function rebuildScene() {
+            // Clear previous spikes and heat blobs
+            while (spikesGroup.children.length)  spikesGroup.remove(spikesGroup.children[0]);
+            while (heatmapGroup.children.length) heatmapGroup.remove(heatmapGroup.children[0]);
+            spikeObjects = [];
+
+            const theme = THEMES[currentTheme] || THEMES.cyberpunk;
+
+            allDevices.forEach(dev => {
+                const lat = parseFloat(dev.lat);
+                const lon = parseFloat(dev.lon);
+                if (isNaN(lat) || isNaN(lon)) return;
+
+                const colour    = sevColour(dev.severity, currentTheme);
+                const vulnCount = dev.vuln_count || 0;
+                const normH     = Math.min(1.0, 0.04 + vulnCount * 0.04);
+
+                // Spikes
+                if (currentMode === 'spikes' || currentMode === 'both') {
+                    const spike = buildSpike(lat, lon, normH, colour);
+                    spike.userData.device = dev;
+                    spikesGroup.add(spike);
+                    spikeObjects.push(spike);
+                }
+
+                // Heat-map sprites
+                if (currentMode === 'heatmap' || currentMode === 'both') {
+                    const intensity = Math.min(1.0, 0.3 + vulnCount * 0.07);
+                    heatmapGroup.add(buildHeatSprite(lat, lon, colour, intensity));
+                }
+            });
+
+            // Apply theme to earth
+            earthMat.color.set(theme.earth);
+
+            // Rebuild graticule with new colour
+            scene.remove(graticule);
+            graticule = buildGraticule(theme.grid, theme.gridOpacity);
+            scene.add(graticule);
+
+            // Ambient light
+            ambientLight.intensity = theme.ambient;
+
+            // Background
+            renderer.setClearColor(theme.bg, 1);
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        //  Mouse / touch drag orbit
+        // ─────────────────────────────────────────────────────────────
+        let isDragging = false, prevX = 0, prevY = 0;
+
+        canvas.addEventListener('mousedown', e => {
+            isDragging = true;
+            prevX = e.clientX; prevY = e.clientY;
+        });
+        canvas.addEventListener('mouseup',   () => { isDragging = false; });
+        canvas.addEventListener('mouseleave',() => { isDragging = false; });
+        canvas.addEventListener('mousemove', e => {
+            if (!isDragging) return;
+            const dx = e.clientX - prevX;
+            const dy = e.clientY - prevY;
+            earthMesh.rotation.y += dx * 0.005;
+            earthMesh.rotation.x += dy * 0.005;
+            spikesGroup.rotation.y  = earthMesh.rotation.y;
+            spikesGroup.rotation.x  = earthMesh.rotation.x;
+            heatmapGroup.rotation.y = earthMesh.rotation.y;
+            heatmapGroup.rotation.x = earthMesh.rotation.x;
+            graticule.rotation.y    = earthMesh.rotation.y;
+            graticule.rotation.x    = earthMesh.rotation.x;
+            prevX = e.clientX; prevY = e.clientY;
+        });
+
+        // Zoom with scroll
+        canvas.addEventListener('wheel', e => {
+            camera.position.z = Math.max(1.4, Math.min(6.0,
+                camera.position.z + e.deltaY * 0.002));
+        });
+
+        // Touch support
+        let lastTouchX = 0, lastTouchY = 0;
+        canvas.addEventListener('touchstart', e => {
+            lastTouchX = e.touches[0].clientX;
+            lastTouchY = e.touches[0].clientY;
+        });
+        canvas.addEventListener('touchmove', e => {
+            const dx = e.touches[0].clientX - lastTouchX;
+            const dy = e.touches[0].clientY - lastTouchY;
+            earthMesh.rotation.y += dx * 0.005;
+            earthMesh.rotation.x += dy * 0.005;
+            spikesGroup.rotation.y  = earthMesh.rotation.y;
+            spikesGroup.rotation.x  = earthMesh.rotation.x;
+            heatmapGroup.rotation.y = earthMesh.rotation.y;
+            heatmapGroup.rotation.x = earthMesh.rotation.x;
+            graticule.rotation.y    = earthMesh.rotation.y;
+            graticule.rotation.x    = earthMesh.rotation.x;
+            lastTouchX = e.touches[0].clientX;
+            lastTouchY = e.touches[0].clientY;
+        });
+
+        // ─────────────────────────────────────────────────────────────
+        //  Click-to-inspect
+        // ─────────────────────────────────────────────────────────────
+        canvas.addEventListener('click', e => {
+            if (isDragging) return;
+            const rect = canvas.getBoundingClientRect();
+            mouse.x = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+            mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            const hits = raycaster.intersectObjects(spikeObjects);
+            if (hits.length > 0) {
+                showDevicePanel(hits[0].object.userData.device);
+            }
+        });
+
+        function showDevicePanel(dev) {
+            const sev = (dev.severity || 'unknown').toLowerCase();
+            const sevClass = 'sev-' + sev;
+            document.getElementById('panel-body').innerHTML = `
+                <div class="dp-row"><span class="dp-label">IP</span><span class="dp-val">${dev.ip || '—'}</span></div>
+                <div class="dp-row"><span class="dp-label">PRODUCT</span><span class="dp-val">${dev.product || '—'}</span></div>
+                <div class="dp-row"><span class="dp-label">TYPE</span><span class="dp-val">${dev.type || '—'}</span></div>
+                <div class="dp-row"><span class="dp-label">PORT</span><span class="dp-val">${dev.port || '—'}</span></div>
+                <div class="dp-row"><span class="dp-label">CITY</span><span class="dp-val">${dev.city || '—'}</span></div>
+                <div class="dp-row"><span class="dp-label">ORG</span><span class="dp-val">${dev.org || '—'}</span></div>
+                <div class="dp-row"><span class="dp-label">SEVERITY</span><span class="dp-val ${sevClass}">${sev.toUpperCase()}</span></div>
+                <div class="dp-row"><span class="dp-label">VULNS</span><span class="dp-val">${dev.vuln_count ?? '—'}</span></div>
+            `;
+            document.getElementById('device-panel').style.display = 'block';
+        }
+
+        document.getElementById('panel-close').addEventListener('click', () => {
+            document.getElementById('device-panel').style.display = 'none';
+        });
+
+        // ─────────────────────────────────────────────────────────────
+        //  UI controls
+        // ─────────────────────────────────────────────────────────────
+        document.querySelectorAll('.theme-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentTheme = btn.dataset.theme;
+                rebuildScene();
+            });
+        });
+
+        document.querySelectorAll('.mode-btn[data-mode]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.mode-btn[data-mode]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentMode = btn.dataset.mode;
+                rebuildScene();
+            });
+        });
+
+        const rotBtn = document.getElementById('btn-rotate');
+        rotBtn.addEventListener('click', () => {
+            rotating = !rotating;
+            rotBtn.textContent = rotating ? '⏸ PAUSE' : '▶ ROTATE';
+            rotBtn.classList.toggle('active', rotating);
+        });
+
+        // ─────────────────────────────────────────────────────────────
+        //  Resize handler
+        // ─────────────────────────────────────────────────────────────
+        window.addEventListener('resize', () => {
+            const w = wrap.clientWidth, h = wrap.clientHeight;
+            renderer.setSize(w, h);
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+        });
+
+        // ─────────────────────────────────────────────────────────────
+        //  Render loop
+        // ─────────────────────────────────────────────────────────────
+        function animate() {
+            requestAnimationFrame(animate);
+            if (rotating) {
+                const delta = 0.0015;
+                earthMesh.rotation.y    += delta;
+                spikesGroup.rotation.y  += delta;
+                heatmapGroup.rotation.y += delta;
+                graticule.rotation.y    += delta;
+            }
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Bootstrap
+        loadDevices();
+        </script>
+    </body>
+{% endblock %}
+</html>
