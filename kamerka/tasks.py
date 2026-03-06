@@ -579,12 +579,19 @@ def check_credits():
     keys_list = []
     try:
         SHODAN_API_KEY = _get_env_key('SHODAN_API_KEY', required=True)
+        if not SHODAN_API_KEY:
+            logger.warning(
+                "check_credits: SHODAN_API_KEY is empty — cannot check credits. "
+                "Set it in your shell (e.g. 'export SHODAN_API_KEY=...'), "
+                "in a .env file, or in Django settings."
+            )
+            return keys_list
 
         api = Shodan(SHODAN_API_KEY)
         a = api.info()
         keys_list.append(a['query_credits'])
     except Exception as e:
-        logger.warning("%s", e)
+        logger.warning("check_credits: Shodan API call failed: %s", e)
 
     return keys_list
 
@@ -865,6 +872,12 @@ def nmap_scan(self, file, fk):
         result += c
         nmap_host_worker(host_arg=i, max_reader=max_reader, search=search)
         progress_recorder.set_progress(c + 1, total=total)
+
+    # Chain Shodan enrichment for each device discovered by the NMAP scan
+    if _get_env_key('SHODAN_API_KEY'):
+        for device in Device.objects.filter(search=search):
+            shodan_scan_task.delay(device.id)
+
     return result
 
 
