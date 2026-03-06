@@ -1,18 +1,23 @@
 """
-globe_3d/csv_loader.py – Parse ``shodan convert`` CSV exports into globe device dicts.
+globe_3d/csv_loader.py – Parse CSV exports into globe device dicts.
 
-``shodan convert <file.json.gz> csv`` writes one row per banner with these columns::
+Two CSV schemas are supported transparently:
+
+**App export** (``kamerka.tasks.shodan_csv_export`` → ``/export/csv/<id>``)::
+
+    IP_Address, Latitude, Longitude, Severity_Count,
+    Vendor_Name, Network_Port, Organization, City,
+    Country_Code, Device_Type
+
+**Shodan-CLI** (``shodan convert <file.json.gz> csv``)::
 
     data, hostnames, ip, ip_str, ipv6, org, isp,
     location.country_code, location.city, location.country_name,
     location.latitude, location.longitude,
-    os, asn, port, tags, timestamp, transport, product, version, vulns,
-    ssl.cipher.version, ssl.cipher.bits, ssl.cipher.name, ssl.alpn,
-    ssl.versions, ssl.cert.serial, ssl.cert.fingerprint.sha1,
-    ssl.cert.fingerprint.sha256, html, title
+    os, asn, port, tags, timestamp, transport, product, version, vulns, ...
 
-The ``vulns`` column is a comma-separated list of CVE IDs produced by
-``list(banner['vulns'].keys())``.
+The schema is detected automatically from the column headers present in the
+first row of the file.
 
 Usage
 -----
@@ -47,13 +52,22 @@ def _severity_from_cve_list(vulns_str: str) -> str:
     if not vulns_str or not vulns_str.strip():
         return "unknown"
     cve_count = len([c for c in vulns_str.split(",") if c.strip()])
-    if cve_count <= 0:
+    return _severity_from_count(cve_count)
+
+
+def _severity_from_count(count: int) -> str:
+    """Derive a severity label from a numeric vulnerability count.
+
+    Used when the CSV was exported via ``shodan_csv_export``
+    (``Severity_Count`` column).
+    """
+    if count <= 0:
         return "unknown"
-    if cve_count <= 2:
+    if count <= 2:
         return "low"
-    if cve_count <= 5:
+    if count <= 5:
         return "medium"
-    if cve_count <= 10:
+    if count <= 10:
         return "high"
     return "critical"
 
@@ -91,25 +105,60 @@ def load_csv(path: str) -> List[Dict[str, Any]]:
 
 
 def _row_to_device(row: Dict[str, str]) -> Optional[Dict[str, Any]]:
-    """Convert one CSV row from ``shodan convert csv`` output to a device dict.
+    """Convert one CSV row to a device dict.
 
-    Returns ``None`` when the row lacks valid coordinates.
+    Supports two schemas automatically:
+
+    * **App export** (``shodan_csv_export``): column names include
+      ``Latitude``, ``Longitude``, ``IP_Address``, ``Network_Port``,
+      ``Vendor_Name``, ``Organization``, ``City``, ``Country_Code``,
+      ``Device_Type``, ``Severity_Count``.
+    * **Shodan-CLI** (``shodan convert csv``): column names include
+      ``location.latitude``, ``location.longitude``, ``ip_str``, ``port``,
+      ``product``, ``org``, ``location.city``, ``location.country_code``,
+      ``os``, ``vulns``.
+
+    For each field the app-export column is tried first; the Shodan-CLI
+    column name is used as a fallback.  Returns ``None`` when the row lacks
+    valid coordinates.
     """
+    # Coordinates — app export uses "Latitude"/"Longitude";
+    # Shodan-CLI uses "location.latitude"/"location.longitude"
+    lat_raw = row.get("Latitude") or row.get("location.latitude") or ""
+    lon_raw = row.get("Longitude") or row.get("location.longitude") or ""
     try:
-        lat = float(row.get("location.latitude") or "")
-        lon = float(row.get("location.longitude") or "")
+        lat = float(lat_raw)
+        lon = float(lon_raw)
     except ValueError:
         return None
 
-    ip = (row.get("ip_str") or row.get("ip") or row.get("ipv6") or "").strip()
-    port = (row.get("port") or "").strip()
-    product = (row.get("product") or "").strip()
-    org = (row.get("org") or "").strip()
-    city = (row.get("location.city") or "").strip()
-    country_code = (row.get("location.country_code") or "").strip()
+    ip = (
+        row.get("IP_Address")
+        or row.get("ip_str")
+        or row.get("ip")
+        or row.get("ipv6")
+        or ""
+    ).strip()
+    port = (row.get("Network_Port") or row.get("port") or "").strip()
+    product = (row.get("Vendor_Name") or row.get("product") or "").strip()
+    org = (row.get("Organization") or row.get("org") or "").strip()
+    city = (row.get("City") or row.get("location.city") or "").strip()
+    country_code = (
+        row.get("Country_Code") or row.get("location.country_code") or ""
+    ).strip()
+    device_type = (row.get("Device_Type") or row.get("os") or product).strip()
     vulns_str = (row.get("vulns") or "").strip()
     data = (row.get("data") or "").strip()
-    device_type = (row.get("os") or product).strip()
+
+    # Severity — prefer Severity_Count integer (app export) over CVE list
+    severity_count_raw = row.get("Severity_Count", "").strip()
+    if severity_count_raw:
+        try:
+            severity = _severity_from_count(int(severity_count_raw))
+        except ValueError:
+            severity = _severity_from_cve_list(vulns_str)
+    else:
+        severity = _severity_from_cve_list(vulns_str)
 
     return {
         "ip": ip,
@@ -122,7 +171,7 @@ def _row_to_device(row: Dict[str, str]) -> Optional[Dict[str, Any]]:
         "country_code": country_code,
         "type": device_type,
         "vulns": vulns_str,
-        "severity": _severity_from_cve_list(vulns_str),
+        "severity": severity,
         "nuclei_results": [],
         "data": data,
         "notes": "",

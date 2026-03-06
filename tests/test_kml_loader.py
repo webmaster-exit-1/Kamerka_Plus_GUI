@@ -1,11 +1,16 @@
 """Tests for globe_3d/kml_loader.py
 
-KML files are produced by ``shodan convert <file.json.gz> kml``.
-Format per Placemark:
+Two KML schemas are supported:
+
+**App export** (``shodan_kml_export`` → ``/export/kml/<id>``):
+  <ExtendedData> with <Data name="ip">, "port", "product", "org",
+  "country_code", "vulns".  <name> is "<product> - <ip>".
+
+**Shodan-CLI** (``shodan convert <file.json.gz> kml``):
   <name><![CDATA[<h1 ...>IP_ADDRESS</h1>]]></name>
   <description><![CDATA[...HTML with <span>PORT</span> elements...]]></description>
   <Point><coordinates>lon,lat</coordinates></Point>
-No <ExtendedData> is written by shodan convert.
+  No <ExtendedData>.
 """
 
 import os
@@ -17,6 +22,7 @@ from globe_3d.kml_loader import (
     load_kml,
     _extract_ip_from_name,
     _extract_ports_from_description,
+    _severity_from_vulns_str,
 )
 
 
@@ -237,6 +243,131 @@ class TestLoadKml:
 
     def test_nuclei_results_always_empty(self):
         path = _write_kml(SHODAN_KML_ONE_HOST)
+        try:
+            devices = load_kml(path)
+        finally:
+            os.unlink(path)
+        assert devices[0]["nuclei_results"] == []
+
+
+# ── App export format (shodan_kml_export / /export/kml/<id>) ─────────────────
+# simplekml writes <ExtendedData> with named fields and <name> as
+# "<product> - <ip>".  There are no <span> port elements.
+
+_APP_KML_ONE_HOST = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+  <Placemark>
+    <name>Apache httpd - 1.2.3.4</name>
+    <description>IP: 1.2.3.4
+Port: 80
+Org: SomeOrg
+City: New York
+Vulns: ['CVE-2021-1234', 'CVE-2021-5678']</description>
+    <Point><coordinates>-74.0060,40.7128,0</coordinates></Point>
+    <ExtendedData>
+      <Data name="ip"><value>1.2.3.4</value></Data>
+      <Data name="port"><value>80</value></Data>
+      <Data name="product"><value>Apache httpd</value></Data>
+      <Data name="org"><value>SomeOrg</value></Data>
+      <Data name="country_code"><value>US</value></Data>
+      <Data name="vulns"><value>['CVE-2021-1234', 'CVE-2021-5678']</value></Data>
+    </ExtendedData>
+  </Placemark>
+</Document>
+</kml>
+"""
+
+_APP_KML_MISSING_COORDS = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+  <Placemark>
+    <name>SomeProduct - 9.9.9.9</name>
+    <description>No coords</description>
+    <ExtendedData>
+      <Data name="ip"><value>9.9.9.9</value></Data>
+      <Data name="port"><value>443</value></Data>
+    </ExtendedData>
+  </Placemark>
+</Document>
+</kml>
+"""
+
+
+class TestSeverityFromVulnsStr:
+    def test_empty_is_unknown(self):
+        assert _severity_from_vulns_str("") == "unknown"
+
+    def test_none_literal_is_unknown(self):
+        assert _severity_from_vulns_str("None") == "unknown"
+
+    def test_empty_list_literal_is_unknown(self):
+        assert _severity_from_vulns_str("[]") == "unknown"
+
+    def test_one_cve_is_low(self):
+        assert _severity_from_vulns_str("['CVE-2021-1234']") == "low"
+
+    def test_two_cves_is_low(self):
+        assert _severity_from_vulns_str("['CVE-2021-1234', 'CVE-2021-5678']") == "low"
+
+    def test_three_cves_is_medium(self):
+        cves = "['CVE-2021-1001', 'CVE-2021-1002', 'CVE-2021-1003']"
+        assert _severity_from_vulns_str(cves) == "medium"
+
+    def test_comma_separated_cves(self):
+        assert _severity_from_vulns_str("CVE-2021-1,CVE-2021-2") == "low"
+
+
+class TestLoadKmlAppExport:
+    def test_app_export_row_parsed_correctly(self):
+        path = _write_kml(_APP_KML_ONE_HOST)
+        try:
+            devices = load_kml(path)
+        finally:
+            os.unlink(path)
+        assert len(devices) == 1
+        d = devices[0]
+        assert d["ip"] == "1.2.3.4"
+        assert d["lat"] == pytest.approx(40.7128)
+        assert d["lon"] == pytest.approx(-74.0060)
+        assert d["port"] == "80"
+        assert d["product"] == "Apache httpd"
+        assert d["org"] == "SomeOrg"
+        assert d["country_code"] == "US"
+        assert d["severity"] == "low"   # 2 CVEs → low
+        assert d["_source"] == "kml"
+
+    def test_app_export_vulns_stored(self):
+        path = _write_kml(_APP_KML_ONE_HOST)
+        try:
+            devices = load_kml(path)
+        finally:
+            os.unlink(path)
+        assert "CVE-2021-1234" in devices[0]["vulns"]
+
+    def test_app_export_missing_coords_skipped(self):
+        path = _write_kml(_APP_KML_MISSING_COORDS)
+        try:
+            devices = load_kml(path)
+        finally:
+            os.unlink(path)
+        assert devices == []
+
+    def test_app_export_required_keys_present(self):
+        path = _write_kml(_APP_KML_ONE_HOST)
+        try:
+            devices = load_kml(path)
+        finally:
+            os.unlink(path)
+        required = {"ip", "lat", "lon", "port", "product", "org",
+                    "country_code", "city", "type", "vulns", "severity",
+                    "nuclei_results", "data", "notes", "_source"}
+        assert required.issubset(devices[0].keys())
+
+    def test_app_export_nuclei_results_empty(self):
+        path = _write_kml(_APP_KML_ONE_HOST)
         try:
             devices = load_kml(path)
         finally:
