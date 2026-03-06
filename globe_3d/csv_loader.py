@@ -1,13 +1,18 @@
 """
-globe_3d/csv_loader.py – Parse Kamerka CSV exports into globe device dicts.
+globe_3d/csv_loader.py – Parse ``shodan convert`` CSV exports into globe device dicts.
 
-The CSV files produced by ``shodan_csv_export`` have these columns::
+``shodan convert <file.json.gz> csv`` writes one row per banner with these columns::
 
-    IP_Address, Latitude, Longitude, Severity_Count, Vendor_Name,
-    Network_Port, Organization, City, Country_Code, Device_Type
+    data, hostnames, ip, ip_str, ipv6, org, isp,
+    location.country_code, location.city, location.country_name,
+    location.latitude, location.longitude,
+    os, asn, port, tags, timestamp, transport, product, version, vulns,
+    ssl.cipher.version, ssl.cipher.bits, ssl.cipher.name, ssl.alpn,
+    ssl.versions, ssl.cert.serial, ssl.cert.fingerprint.sha1,
+    ssl.cert.fingerprint.sha256, html, title
 
-This module converts each row into the dict schema expected by
-``GlobeWidget.load_devices()``.
+The ``vulns`` column is a comma-separated list of CVE IDs produced by
+``list(banner['vulns'].keys())``.
 
 Usage
 -----
@@ -25,38 +30,45 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Severity mapping from the numeric ``Severity_Count`` column
-# ---------------------------------------------------------------------------
 
-def _severity_from_count(count: int) -> str:
-    """Map a CVE count to a severity label used by the spike renderer."""
-    if count <= 0:
+def _severity_from_cve_list(vulns_str: str) -> str:
+    """Derive a severity label from the ``vulns`` column value.
+
+    The ``vulns`` column produced by ``shodan convert csv`` is a
+    comma-separated string of CVE IDs, e.g. ``"CVE-2021-1234,CVE-2021-5678"``.
+    An empty string means no known vulnerabilities.
+
+    Returns
+    -------
+    str
+        ``"unknown"`` / ``"low"`` / ``"medium"`` / ``"high"`` / ``"critical"``
+        based on CVE count.
+    """
+    if not vulns_str or not vulns_str.strip():
         return "unknown"
-    if count <= 2:
+    cve_count = len([c for c in vulns_str.split(",") if c.strip()])
+    if cve_count <= 0:
+        return "unknown"
+    if cve_count <= 2:
         return "low"
-    if count <= 5:
+    if cve_count <= 5:
         return "medium"
-    if count <= 10:
+    if cve_count <= 10:
         return "high"
     return "critical"
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
 def load_csv(path: str) -> List[Dict[str, Any]]:
-    """Parse a Kamerka CSV export file and return a list of device dicts.
+    """Parse a ``shodan convert`` CSV file and return a list of device dicts.
 
-    The function is tolerant of missing or extra columns and skips rows
-    whose ``Latitude`` / ``Longitude`` values cannot be parsed as floats.
+    Tolerant of missing columns and skips rows whose latitude/longitude
+    cannot be parsed as floats.
 
     Parameters
     ----------
     path : str
         Absolute path to the ``.csv`` file produced by
-        ``kamerka.tasks.shodan_csv_export``.
+        ``shodan convert <export.json.gz> csv``.
 
     Returns
     -------
@@ -66,7 +78,6 @@ def load_csv(path: str) -> List[Dict[str, Any]]:
         are invalid.
     """
     devices: List[Dict[str, Any]] = []
-
     try:
         with open(path, newline="", encoding="utf-8-sig") as fh:
             reader = csv.DictReader(fh)
@@ -76,36 +87,29 @@ def load_csv(path: str) -> List[Dict[str, Any]]:
                     devices.append(device)
     except OSError as exc:
         logger.warning("csv_loader: could not open %s — %s", path, exc)
-
     return devices
 
 
 def _row_to_device(row: Dict[str, str]) -> Optional[Dict[str, Any]]:
-    """Convert one CSV row dict to a device dict.
+    """Convert one CSV row from ``shodan convert csv`` output to a device dict.
 
     Returns ``None`` when the row lacks valid coordinates.
     """
     try:
-        lat = float(row.get("Latitude") or row.get("lat") or "")
-        lon = float(row.get("Longitude") or row.get("lon") or "")
+        lat = float(row.get("location.latitude") or "")
+        lon = float(row.get("location.longitude") or "")
     except ValueError:
         return None
 
-    severity_count_raw = row.get("Severity_Count", "0") or "0"
-    try:
-        severity_count = int(float(severity_count_raw))
-    except ValueError:
-        severity_count = 0
-
-    severity = _severity_from_count(severity_count)
-
-    ip = (row.get("IP_Address") or row.get("ip") or "").strip()
-    port = (row.get("Network_Port") or row.get("port") or "").strip()
-    product = (row.get("Vendor_Name") or row.get("product") or "").strip()
-    org = (row.get("Organization") or row.get("org") or "").strip()
-    city = (row.get("City") or row.get("city") or "").strip()
-    country_code = (row.get("Country_Code") or row.get("country_code") or "").strip()
-    device_type = (row.get("Device_Type") or row.get("type") or product).strip()
+    ip = (row.get("ip_str") or row.get("ip") or row.get("ipv6") or "").strip()
+    port = (row.get("port") or "").strip()
+    product = (row.get("product") or "").strip()
+    org = (row.get("org") or "").strip()
+    city = (row.get("location.city") or "").strip()
+    country_code = (row.get("location.country_code") or "").strip()
+    vulns_str = (row.get("vulns") or "").strip()
+    data = (row.get("data") or "").strip()
+    device_type = (row.get("os") or product).strip()
 
     return {
         "ip": ip,
@@ -117,11 +121,10 @@ def _row_to_device(row: Dict[str, str]) -> Optional[Dict[str, Any]]:
         "city": city,
         "country_code": country_code,
         "type": device_type,
-        "vulns": "",
-        "severity": severity,
+        "vulns": vulns_str,
+        "severity": _severity_from_cve_list(vulns_str),
         "nuclei_results": [],
-        "data": "",
+        "data": data,
         "notes": "",
-        # Source tag so the UI can show where the record came from.
         "_source": "csv",
     }
