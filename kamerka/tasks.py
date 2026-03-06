@@ -891,6 +891,89 @@ def _validate_target(ip, port):
     return ip, str(port_int)
 
 
+# ---------------------------------------------------------------------------
+# Ports in this set are assumed to run TLS.  Any port NOT in this set is
+# tried with http:// first; if a TLS handshake error is detected the caller
+# retries with https://.  Well-known TLS ports are given https:// directly
+# without the first-pass overhead.
+# ---------------------------------------------------------------------------
+_HTTPS_PORTS = frozenset({443, 8443, 4443, 9443})
+
+
+def _build_target_urls(ip, ports):
+    """Return a list of (url, is_tls) tuples for every open port.
+
+    For well-known TLS ports (443, 8443 …) ``https://`` is used directly.
+    For all other ports an HTTP URL is returned; callers should retry with
+    ``https://`` if they receive a TLS/SSL connection error (two-pass probing).
+
+    Parameters
+    ----------
+    ip : str
+        Validated IPv4/IPv6 address.
+    ports : list[int]
+        Open port numbers from ``_resolve_open_ports()``.
+
+    Returns
+    -------
+    list[tuple[str, bool]]
+        Each element is ``(url, is_known_tls)``.
+    """
+    result = []
+    for p in ports:
+        if p in _HTTPS_PORTS:
+            result.append(("https://{}:{}".format(ip, p), True))
+        else:
+            result.append(("http://{}:{}".format(ip, p), False))
+    return result
+
+
+def _rate_limit_check(ip, window_seconds=60, max_scans=10):
+    """Enforce a per-IP scan rate limit using the Django cache (Redis).
+
+    Uses a simple counter with a sliding TTL window.  If the number of scans
+    initiated against *ip* in the last *window_seconds* seconds exceeds
+    *max_scans* this function returns ``False`` and the caller should abort
+    the scan to avoid inadvertent DoS.
+
+    Falls back to ``True`` (allow) when the cache is unavailable so that a
+    Redis outage never silently blocks legitimate scans.
+
+    Parameters
+    ----------
+    ip : str             Target IP address (used as the cache key).
+    window_seconds : int Sliding window size in seconds (default 60).
+    max_scans : int      Maximum allowed scans per window (default 10).
+
+    Returns
+    -------
+    bool  ``True`` if the scan is within the rate limit, ``False`` if it
+          should be rejected.
+    """
+    from django.core.cache import cache
+    cache_key = "ratelimit:scan:{}".format(ip)
+    try:
+        count = cache.get(cache_key, 0)
+        if count >= max_scans:
+            logger.warning(
+                "_rate_limit_check: IP %s has exceeded %d scans in %ds — scan rejected",
+                ip, max_scans, window_seconds,
+            )
+            return False
+        # Increment; set TTL only on first write so the window resets naturally.
+        if count == 0:
+            cache.set(cache_key, 1, timeout=window_seconds)
+        else:
+            cache.incr(cache_key)
+        return True
+    except Exception as exc:
+        logger.warning(
+            "_rate_limit_check: cache unavailable (%s) — allowing scan for %s",
+            exc, ip,
+        )
+        return True  # fail open to avoid blocking legitimate scans
+
+
 def _resolve_open_ports(device):
     """Return a sorted list of open TCP port numbers for *device*.
 
@@ -960,13 +1043,74 @@ def _resolve_open_ports(device):
     return []
 
 
+@shared_task(bind=True)
+def port_scan_task(self, device_id):
+    """Discover open TCP ports for a device using Naabu.
+
+    This task is intended as the *first stage* of a two-stage Celery chain::
+
+        chain(port_scan_task.s(device_id), nuclei_scan.s()).delay()
+        chain(port_scan_task.s(device_id), wappalyzer_scan.s()).delay()
+
+    Port resolution
+    ---------------
+    * If ``device.port`` is already populated (set by Shodan or Nmap) those
+      ports are returned immediately — no Naabu call is made.  Shodan's port
+      data is the *primary* source; Naabu is only the *fallback* for devices
+      that arrive with an empty port field.
+    * When Naabu runs the discovered ports are persisted to ``device.port``
+      so subsequent tasks (nuclei_scan, wappalyzer_scan) can reuse them
+      without running Naabu again.
+
+    Progress
+    --------
+    Uses ``ProgressRecorder`` so the dashboard progress bar tracks the
+    discovery phase before the scan phase begins.
+
+    Returns
+    -------
+    dict
+        ``{"device_id": int, "ports": list[int]}``
+        The returned dict is passed as the first positional argument to the
+        next task in the chain.  ``nuclei_scan`` / ``wappalyzer_scan``
+        accept an optional ``discovered_ports`` kwarg and skip
+        ``_resolve_open_ports`` when it is set.
+    """
+    progress_recorder = ProgressRecorder(self)
+    progress_recorder.set_progress(0, 3, description="Resolving device…")
+
+    device = Device.objects.get(id=device_id)
+    progress_recorder.set_progress(1, 3, description="Running port scan…")
+
+    ports = _resolve_open_ports(device)
+    progress_recorder.set_progress(3, 3, description="Port scan complete")
+
+    return {"device_id": device_id, "ports": ports}
+
+
 @shared_task(bind=False)
-def wappalyzer_scan(id):
+def wappalyzer_scan(id, discovered_ports=None):
     """Run Wappalyzer CLI against all open ports of a device.
 
-    Calls ``_resolve_open_ports()`` to discover (or reuse) open ports before
-    running Wappalyzer against each one so no port data is required up-front.
+    When called as the second stage of a Celery chain the first argument
+    (*id*) will be the dict returned by ``port_scan_task`` — in that case
+    the ``device_id`` and ``ports`` keys are extracted automatically.
+
+    Otherwise *id* must be the device's integer primary key and
+    ``_resolve_open_ports()`` will be called to find open ports.
+
+    Two-pass HTTP→HTTPS probing
+    ---------------------------
+    ``_build_target_urls()`` assigns ``http://`` to unknown ports and
+    ``https://`` to well-known TLS ports (443, 8443, …).  When Wappalyzer
+    returns an SSL/TLS error on an ``http://`` target the scan is retried
+    automatically with ``https://``.
     """
+    # Handle being called as the second stage of a port_scan_task chain.
+    if isinstance(id, dict):
+        discovered_ports = id.get("ports", discovered_ports)
+        id = id["device_id"]
+
     device = Device.objects.get(id=id)
 
     try:
@@ -975,23 +1119,35 @@ def wappalyzer_scan(id):
     except ValueError:
         return {"error": "Invalid IP address: {}".format(device.ip)}
 
-    ports = _resolve_open_ports(device)
+    # Rate limiting — abort if this IP is being scanned too aggressively.
+    if not _rate_limit_check(device.ip):
+        return {"error": "Rate limit exceeded for {} — try again in 60 seconds".format(device.ip)}
+
+    ports = discovered_ports if discovered_ports is not None else _resolve_open_ports(device)
     if not ports:
         return {"error": "No open ports discovered on {} — Naabu may not be installed "
                 "(see KAMERKA_NAABU_BIN) or the host is unreachable".format(device.ip)}
 
-    _HTTPS_PORTS = {443, 8443, 4443, 9443}
     all_technologies = {}
-    for port in ports:
-        scheme = "https" if port in _HTTPS_PORTS else "http"
-        target_url = "{}://{}:{}".format(scheme, device.ip, port)
-        try:
-            result = subprocess.run(
+    for url, is_known_tls in _build_target_urls(device.ip, ports):
+        # Extract port number once for use in logging and dict keys.
+        port = int(url.rsplit(":", 1)[-1])
+
+        def _try_wappalyzer(target_url):
+            return subprocess.run(
                 ["wappalyzer", target_url, "-oJ"],
-                capture_output=True,
-                text=True,
-                timeout=60,
+                capture_output=True, text=True, timeout=60,
             )
+
+        try:
+            result = _try_wappalyzer(url)
+            # Two-pass: if we used http:// and got an SSL error, retry with https://
+            if not is_known_tls and result.returncode != 0 and (
+                "ssl" in result.stderr.lower() or "tls" in result.stderr.lower()
+            ):
+                https_url = url.replace("http://", "https://", 1)
+                logger.info("wappalyzer_scan: retrying %s with HTTPS", url)
+                result = _try_wappalyzer(https_url)
             if result.returncode == 0 and result.stdout.strip():
                 technologies = json.loads(result.stdout)
                 wap_result = WappalyzerResult(
@@ -1014,17 +1170,28 @@ def wappalyzer_scan(id):
 
 
 @shared_task(bind=False)
-def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150):
+def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150, discovered_ports=None):
     """Run Nuclei against all open ports of a device.
+
+    Chaining
+    --------
+    When called as the second stage of a ``port_scan_task`` chain the first
+    argument (*id*) will be the dict returned by that task::
+
+        from celery import chain
+        chain(port_scan_task.s(device_id), nuclei_scan.s()).delay()
 
     Port resolution
     ---------------
-    ``_resolve_open_ports()`` is called first.  If ``device.port`` is already
-    set (from a prior Shodan or Nmap scan) those ports are used directly.
-    Otherwise a full Naabu scan discovers open ports and persists them.
+    If ``device.port`` is already set (populated by a Shodan or Nmap scan)
+    those ports are used directly — Naabu is NOT called.  Naabu is only the
+    *fallback* for devices that arrive without any port data.
 
-    All discovered ports are written to a temporary target-list file and
-    passed to Nuclei via ``-l`` so a single Nuclei process covers every port.
+    Two-pass HTTP→HTTPS
+    -------------------
+    Target URLs are built with ``_build_target_urls()``.  Well-known TLS
+    ports receive ``https://``; all others get ``http://``.  Nuclei handles
+    TLS negotiation automatically so both schemas are included.
 
     The Nuclei binary path is read from ``settings.NUCLEI_BIN``.
 
@@ -1032,6 +1199,11 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150):
     ``rate_limit`` is clamped to [1, 500] to prevent accidental DoS.
     """
     import tempfile as _tmp
+
+    # Handle being called as the second stage of a port_scan_task chain.
+    if isinstance(id, dict):
+        discovered_ports = id.get("ports", discovered_ports)
+        id = id["device_id"]
 
     # ── Input validation ────────────────────────────────────────────────────
     _VALID_SEVERITIES = {"info", "low", "medium", "high", "critical"}
@@ -1061,23 +1233,25 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150):
     except ValueError:
         return {"error": "Invalid IP address: {}".format(device.ip)}
 
-    ports = _resolve_open_ports(device)
+    # Rate limiting.
+    if not _rate_limit_check(device.ip):
+        return {"error": "Rate limit exceeded for {} — try again in 60 seconds".format(device.ip)}
+
+    ports = discovered_ports if discovered_ports is not None else _resolve_open_ports(device)
     if not ports:
         return {"error": "No open ports discovered on {} — Naabu may not be installed "
                 "(see KAMERKA_NAABU_BIN) or the host is unreachable".format(device.ip)}
 
-    # Build one target URL per open port and write to a temp file for -l flag.
-    # Use https:// for well-known TLS ports so Nuclei negotiates TLS correctly.
-    _HTTPS_PORTS = {443, 8443, 4443, 9443}
-    target_urls = [
-        "{}://{}:{}".format("https" if p in _HTTPS_PORTS else "http", device.ip, p)
-        for p in ports
-    ]
+    # Build target URLs — both http:// and https:// variants for non-TLS ports
+    # so Nuclei can probe both.  Well-known TLS ports get https:// directly.
+    target_urls = [url for url, _ in _build_target_urls(device.ip, ports)]
+    # Also add https:// variant for every non-TLS port so Nuclei covers both.
+    for url, is_tls in _build_target_urls(device.ip, ports):
+        if not is_tls:
+            target_urls.append(url.replace("http://", "https://", 1))
+
     targets_file = None
     try:
-        # Create the targets file inside the try block so the finally block
-        # always runs after the file exists (avoids orphaned files on SIGKILL).
-        import tempfile as _tmp
         fd, targets_file = _tmp.mkstemp(suffix='.txt', text=True)
         try:
             with os.fdopen(fd, 'w') as tf:

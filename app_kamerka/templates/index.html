@@ -15,6 +15,7 @@
         <script src="{% static 'js/d3.layout.cloud.js' %}" charset="UTF-8"></script>
         <script src="{% static 'js/d3.wordcloud.js' %}" charset="UTF-8"></script>
         <link rel="stylesheet" type="text/css" id="theme" href="{% static 'css/theme-default.css' %}"/>
+        <link rel="stylesheet" type="text/css" href="{% static 'css/cyberpunk.css' %}"/>
         <!-- EOF CSS INCLUDE -->
     </head>
     <body>
@@ -74,7 +75,15 @@
                 
                 <!-- START X-NAVIGATION VERTICAL -->
                 <ul class="x-navigation x-navigation-horizontal x-navigation-panel">
-<center><h1 style="color:#ff00cd; text-align:center">Industrial Control Systems & Internet of Things reconnaissance</h1></center>
+<center>
+  <h1 class="cp-page-title" style="text-align:center; padding:12px 0 6px;">
+    {# data-text must match element text — both are required by the CSS glitch ::before/::after pseudo-elements #}
+    <span class="cp-glitch" data-text="ICS &amp; IoT Reconnaissance">ICS &amp; IoT Reconnaissance</span>
+  </h1>
+  <div style="font-family:var(--cp-font);font-size:0.62em;letter-spacing:0.18em;color:var(--cp-dim);padding-bottom:6px;">
+    INDUSTRIAL CONTROL SYSTEMS · INTERNET OF THINGS · OSINT
+  </div>
+</center>
                 </ul>
                 <!-- END X-NAVIGATION VERTICAL -->                     
 
@@ -163,6 +172,101 @@
                         </div>
                     </div>
                     <!-- END WIDGETS -->
+
+                    <!-- ── CYBERPUNK STATUS ROW ───────────────────────────── -->
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="panel panel-default">
+                                <div class="panel-heading">
+                                    <div class="panel-title-box"><h3>Threat Level</h3></div>
+                                </div>
+                                <div class="panel-body cp-threat-widget">
+                                    <div class="cp-threat-label">AGGREGATE RISK</div>
+                                    {% with vuln_count=vulns|length %}
+                                    {% if vuln_count == 0 %}
+                                    <div class="cp-threat-value cp-threat-none">NOMINAL</div>
+                                    <div class="cp-threat-bar"><div class="cp-threat-bar-fill" style="width:4%;background:var(--cp-green);"></div></div>
+                                    {% elif vuln_count < 5 %}
+                                    <div class="cp-threat-value cp-threat-low">LOW</div>
+                                    <div class="cp-threat-bar"><div class="cp-threat-bar-fill" style="width:25%;background:#88cc00;"></div></div>
+                                    {% elif vuln_count < 15 %}
+                                    <div class="cp-threat-value cp-threat-medium">MEDIUM</div>
+                                    <div class="cp-threat-bar"><div class="cp-threat-bar-fill" style="width:55%;background:var(--cp-yellow);"></div></div>
+                                    {% elif vuln_count < 30 %}
+                                    <div class="cp-threat-value cp-threat-high">HIGH</div>
+                                    <div class="cp-threat-bar"><div class="cp-threat-bar-fill" style="width:78%;background:#ff6030;"></div></div>
+                                    {% else %}
+                                    <div class="cp-threat-value cp-threat-critical">CRITICAL</div>
+                                    <div class="cp-threat-bar"><div class="cp-threat-bar-fill" style="width:100%;background:var(--cp-red);"></div></div>
+                                    {% endif %}
+                                    <div class="cp-dim" style="margin-top:8px;">{{ vuln_count }} unique CVE{{ vuln_count|pluralize }} tracked</div>
+                                    {% endwith %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="panel panel-default">
+                                <div class="panel-heading">
+                                    <div class="panel-title-box"><h3>System Status</h3></div>
+                                </div>
+                                <div class="panel-body">
+                                    <div class="cp-sysstat">
+                                        <div class="cp-sysstat-row">
+                                            <span class="cp-sysstat-key">SHODAN API</span>
+                                            <span class="cp-sysstat-val {% if credits.0 %}cp-sysstat-ok{% else %}cp-warn{% endif %}">
+                                                {% if credits.0 %}<span class="cp-blink">●</span> ONLINE{% else %}○ OFFLINE{% endif %}
+                                            </span>
+                                        </div>
+                                        <div class="cp-sysstat-row">
+                                            <span class="cp-sysstat-key">DEVICES INDEXED</span>
+                                            <span class="cp-sysstat-val">{{ device.count }}</span>
+                                        </div>
+                                        <div class="cp-sysstat-row">
+                                            <span class="cp-sysstat-key">SCAN SESSIONS</span>
+                                            <span class="cp-sysstat-val">{{ search_len.count }}</span>
+                                        </div>
+                                        <div class="cp-sysstat-row">
+                                            <span class="cp-sysstat-key">SHODAN CREDITS</span>
+                                            <span class="cp-sysstat-val">{{ credits.0|default:"—" }}</span>
+                                        </div>
+                                        <div class="cp-sysstat-row">
+                                            <span class="cp-sysstat-key">LOCAL TIME</span>
+                                            <span class="cp-sysstat-val" id="cp-clock">--:--:--</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="panel panel-default">
+                                <div class="panel-heading">
+                                    <div class="panel-title-box"><h3>Port Scan Task</h3></div>
+                                </div>
+                                <div class="panel-body">
+                                    <div style="font-family:var(--cp-font);font-size:0.72em;color:var(--cp-dim);margin-bottom:10px;">
+                                        Use this widget to run a full Naabu all-port discovery then chain Nuclei automatically.<br>
+                                        Enter a device ID from your database below.
+                                    </div>
+                                    <div style="display:flex;gap:8px;align-items:center;">
+                                        <input type="number" id="cp-port-scan-id" placeholder="Device ID" min="1"
+                                               style="width:110px;"/>
+                                        <button class="btn btn-primary active" id="cp-port-scan-btn">
+                                            ⚡ SCAN PORTS
+                                        </button>
+                                    </div>
+                                    <div id="cp-port-scan-status" style="margin-top:8px;font-family:var(--cp-font);font-size:0.72em;"></div>
+                                    <div class="progress" style="margin-top:8px;display:none;" id="cp-port-scan-bar-wrap">
+                                        <div id="cp-port-scan-bar" class="progress-bar" role="progressbar"
+                                             style="width:0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">&nbsp;</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- ── END CYBERPUNK STATUS ROW ───────────────────────── -->
+
                     <div class="row">
                             <div class="col-md-4">
 
@@ -321,7 +425,75 @@
         .start();
     </script>
 
+<script>
+/* Cyberpunk live clock */
+function cpClock() {
+    var n = new Date();
+    var s = n.getHours().toString().padStart(2,'0') + ':' +
+            n.getMinutes().toString().padStart(2,'0') + ':' +
+            n.getSeconds().toString().padStart(2,'0');
+    var el = document.getElementById('cp-clock');
+    if (el) el.textContent = s;
+}
+setInterval(cpClock, 1000);
+cpClock();
 
+/* Port scan widget on dashboard */
+$(document).ready(function(){
+    $('#cp-port-scan-btn').on('click', function(){
+        var devId = $('#cp-port-scan-id').val();
+        if (!devId) { $('#cp-port-scan-status').html('<span class="cp-warn">Enter a device ID first.</span>'); return; }
+        $('#cp-port-scan-status').html('<span class="cp-blink">[ SCANNING ]</span> Launching port discovery…');
+        $('#cp-port-scan-bar-wrap').show();
+        $.ajax({
+            type: 'GET',
+            url: '/port_scan/' + devId,
+            headers: {'X-Requested-With': 'XMLHttpRequest'},
+            success: function(data) {
+                if (data.task_id) {
+                    pollPortScan(data.task_id, 0);
+                } else {
+                    $('#cp-port-scan-status').html('<span class="cp-warn">[ ERROR ]</span> ' + (data.Error || 'Failed to start task.'));
+                }
+            },
+            error: function() { $('#cp-port-scan-status').html('<span class="cp-warn">[ ERROR ]</span> Request failed.'); }
+        });
+    });
+
+    function pollPortScan(taskId, attempts) {
+        if (attempts > 300) {
+            $('#cp-port-scan-status').html('<span class="cp-warn">[ TIMEOUT ]</span>');
+            $('#cp-port-scan-bar-wrap').hide();
+            return;
+        }
+        $.ajax({
+            type: 'GET',
+            url: '/get-task-info/',
+            headers: {'X-Requested-With': 'XMLHttpRequest'},
+            data: {task_id: taskId},
+            success: function(data) {
+                if (data.state === 'PROGRESS') {
+                    var pct = (data.result && data.result.percent) ? Math.round(data.result.percent) : 0;
+                    var desc = (data.result && data.result.description) ? data.result.description : 'Scanning…';
+                    $('#cp-port-scan-bar').css('width', pct + '%').attr('aria-valuenow', pct);
+                    $('#cp-port-scan-status').html('<span class="cp-cyan">[ ' + pct + '% ]</span> ' + desc);
+                    setTimeout(function(){ pollPortScan(taskId, attempts+1); }, 1000);
+                } else if (data.state === 'SUCCESS') {
+                    $('#cp-port-scan-bar').css('width','100%');
+                    $('#cp-port-scan-status').html('<span class="cp-ok">[ COMPLETE ]</span> Port scan done. Check device page for results.');
+                    setTimeout(function(){ $('#cp-port-scan-bar-wrap').hide(); }, 2000);
+                } else if (data.state === 'PENDING') {
+                    setTimeout(function(){ pollPortScan(taskId, attempts+1); }, 1000);
+                } else {
+                    $('#cp-port-scan-status').html('<span class="cp-warn">[ ' + data.state + ' ]</span>');
+                    $('#cp-port-scan-bar-wrap').hide();
+                }
+            },
+            error: function() { setTimeout(function(){ pollPortScan(taskId, attempts+1); }, 2000); }
+        });
+    }
+});
+</script>
 
         <!-- END TEMPLATE -->
     <!-- END SCRIPTS -->         

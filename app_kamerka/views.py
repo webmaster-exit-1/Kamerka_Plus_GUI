@@ -20,7 +20,8 @@ from app_kamerka.models import Search, Device, DeviceNearby, ShodanScan, Whois, 
     Bosch, WappalyzerResult, NucleiResult
 from kamerka.tasks import shodan_search, devices_nearby, shodan_scan_task, \
     whoisxml, check_credits, send_to_field_agent_task, nmap_scan, validate_nmap, validate_maxmind, scan, \
-    exploit, wappalyzer_scan, nuclei_scan, shodan_csv_export, shodan_kml_export, nmap_rtsp_scan
+    exploit, wappalyzer_scan, nuclei_scan, shodan_csv_export, shodan_kml_export, nmap_rtsp_scan, \
+    port_scan_task
 
 
 # Create your views here.
@@ -552,6 +553,16 @@ def shodan_scan(request, id):
 
 
 def get_task_info(request):
+    """Return Celery task state and result as JSON.
+
+    Requires the ``X-Requested-With: XMLHttpRequest`` header so that only
+    in-page AJAX calls (not cross-origin browser navigations) can poll task
+    state.  This is consistent with all other polling views in the app and
+    prevents unauthenticated cross-origin access to task results which may
+    contain IP addresses, port lists, and vulnerability findings.
+    """
+    if request.headers.get('X-Requested-With') != 'XMLHttpRequest':
+        return HttpResponse('Forbidden', status=403)
     task_id = request.GET.get('task_id', None)
     try:
         if task_id is not None:
@@ -564,7 +575,7 @@ def get_task_info(request):
         else:
             return HttpResponse('No job id given.')
     except Exception as e:
-        print(e)
+        logger.warning("get_task_info: %s", e)
 
 
 def get_shodan_scan_results(request, id):
@@ -602,6 +613,22 @@ def exploit_dev(request, id):
             return HttpResponse(json.dumps(res), content_type='application/json')
         else:
             return HttpResponse(json.dumps({'Error': "Connection Error"}), content_type='application/json')
+
+
+def port_scan_view(request, id):
+    """Launch a ``port_scan_task`` for a device and return the Celery task ID.
+
+    The task runs Naabu against the device and reports progress via the
+    standard ``/get-task-info/`` polling endpoint.  Once complete the caller
+    can use the returned ``task_id`` to chain a nuclei or wappalyzer scan.
+
+    GET /port_scan/<id>  →  {"task_id": "..."}
+    """
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        scan_task = port_scan_task.delay(int(id))
+        return HttpResponse(json.dumps({'task_id': scan_task.id}), content_type='application/json')
+    return HttpResponse(json.dumps({'task_id': None}), content_type='application/json')
+
 
 def export_csv(request, id):
     """Export search results as CSV for SandDance visualization."""

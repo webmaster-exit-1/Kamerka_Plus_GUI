@@ -1986,7 +1986,8 @@ class AjaxViewTests(TestCase):
     @patch('app_kamerka.views.AsyncResult')
     def test_get_task_info_with_task_id_returns_state(self, mock_result_cls):
         mock_result_cls.return_value = MagicMock(state='SUCCESS', result={'count': 5})
-        response = self.client.get('/get-task-info/', {'task_id': 'fake-task-id-123'})
+        response = self.client.get('/get-task-info/', {'task_id': 'fake-task-id-123'},
+                                   **AJAX_HEADERS)
         if response.status_code != 200:
             self.fail("Expected HTTP 200, got {}".format(response.status_code))
         data = json.loads(response.content)
@@ -1996,7 +1997,7 @@ class AjaxViewTests(TestCase):
             )
 
     def test_get_task_info_without_task_id_returns_message(self):
-        response = self.client.get('/get-task-info/')
+        response = self.client.get('/get-task-info/', **AJAX_HEADERS)
         if response.status_code != 200:
             self.fail("Expected HTTP 200, got {}".format(response.status_code))
         if b'No job id given' not in response.content:
@@ -2005,6 +2006,13 @@ class AjaxViewTests(TestCase):
                     response.content[:200]
                 )
             )
+
+    def test_get_task_info_without_ajax_header_returns_403(self):
+        """get_task_info must reject non-AJAX requests with HTTP 403."""
+        response = self.client.get('/get-task-info/', {'task_id': 'fake-id'})
+        if response.status_code != 403:
+            self.fail("Expected HTTP 403 without AJAX header, got {}".format(response.status_code))
+
 
     # -- wappalyzer_scan_view ----------------------------------------------
     @patch('app_kamerka.views.wappalyzer_scan')
@@ -3092,16 +3100,22 @@ class GetTaskInfoViewTests(TestCase):
     """get_task_info returns state and result for a Celery task ID."""
 
     def test_no_task_id_returns_plain_text(self):
-        response = self.client.get('/get-task-info/')
+        response = self.client.get('/get-task-info/', **AJAX_HEADERS)
         if response.status_code != 200:
             self.fail("Expected 200, got {}".format(response.status_code))
         if b'No job id given' not in response.content:
             self.fail("Expected 'No job id given' in response, got: {}".format(response.content))
 
+    def test_no_ajax_header_returns_403(self):
+        """Must return 403 when request lacks X-Requested-With: XMLHttpRequest."""
+        response = self.client.get('/get-task-info/', {'task_id': 'any-id'})
+        if response.status_code != 403:
+            self.fail("Expected 403 for non-AJAX request, got {}".format(response.status_code))
+
     @patch('app_kamerka.views.AsyncResult')
     def test_pending_task_returns_state(self, mock_async):
         mock_async.return_value = MagicMock(state='PENDING', result=None)
-        response = self.client.get('/get-task-info/', {'task_id': 'fake-id'})
+        response = self.client.get('/get-task-info/', {'task_id': 'fake-id'}, **AJAX_HEADERS)
         if response.status_code != 200:
             self.fail("Expected 200, got {}".format(response.status_code))
         data = json.loads(response.content)
@@ -3114,7 +3128,7 @@ class GetTaskInfoViewTests(TestCase):
             state='PROGRESS',
             result={'current': 50, 'total': 100, 'percent': 50.0}
         )
-        response = self.client.get('/get-task-info/', {'task_id': 'fake-id'})
+        response = self.client.get('/get-task-info/', {'task_id': 'fake-id'}, **AJAX_HEADERS)
         data = json.loads(response.content)
         if data.get('state') != 'PROGRESS':
             self.fail("Expected state='PROGRESS', got: {!r}".format(data))
@@ -3124,7 +3138,8 @@ class GetTaskInfoViewTests(TestCase):
     @patch('app_kamerka.views.AsyncResult')
     def test_success_task_returns_result(self, mock_async):
         mock_async.return_value = MagicMock(state='SUCCESS', result={'findings_count': 3})
-        response = self.client.get('/get-task-info/', {'task_id': 'fake-id'})
+        response = self.client.get('/get-task-info/', {'task_id': 'fake-id'}, **AJAX_HEADERS)
         data = json.loads(response.content)
         if data.get('state') != 'SUCCESS':
             self.fail("Expected state='SUCCESS', got: {!r}".format(data))
+

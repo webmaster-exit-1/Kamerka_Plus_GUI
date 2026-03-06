@@ -45,6 +45,20 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Africa/Nairobi'
 CELERY_IMPORTS = ('kamerka.tasks',)
+
+# ---------------------------------------------------------------------------
+# Cache – backed by the same Redis instance used by Celery.
+# Used by the per-IP scan rate limiter (_rate_limit_check in kamerka/tasks.py)
+# and any other short-lived shared state.
+# ---------------------------------------------------------------------------
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": os.environ.get("REDIS_URL", "redis://localhost:6379"),
+        "KEY_PREFIX": "kamerka",
+        "TIMEOUT": 60,  # default TTL; individual keys override as needed
+    }
+}
 # Application definition
 STATIC_URL = '/static/'
 MEDIA_URL = '/scans/'
