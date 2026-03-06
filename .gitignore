@@ -27,3 +27,6 @@ keys.json
 # npm artifacts from three.js local build
 package.json
 package-lock.json
+
+# collectstatic output
+staticfiles/
