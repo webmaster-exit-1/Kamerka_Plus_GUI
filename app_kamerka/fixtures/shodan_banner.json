@@ -1,27 +1,87 @@
 {
-  "ip_str": "1.2.3.4",
+  "_shodan": {
+    "crawler": "shodan-01",
+    "id": "a1b2c3d4-1111-2222-3333-444455556666",
+    "module": "http",
+    "options": {},
+    "ptr": true
+  },
+  "asn": "AS4134",
+  "data": "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nServer: Hikvision-Webs\r\nX-Frame-Options: SAMEORIGIN\r\n\r\n",
+  "domains": [
+    "dvr.example.com"
+  ],
+  "hash": 812345678,
+  "hostnames": [
+    "dvr.example.com"
+  ],
+  "http": {
+    "components": {},
+    "html": "<html><head><title>DVR Login</title></head><body>Hikvision DVR</body></html>",
+    "html_hash": -123456789,
+    "redirects": [],
+    "robots": null,
+    "robots_hash": null,
+    "securitytxt": null,
+    "securitytxt_hash": null,
+    "server": "Hikvision-Webs",
+    "sitemap": null,
+    "sitemap_hash": null,
+    "title": "DVR Login"
+  },
   "ip": 16909060,
-  "port": 80,
-  "org": "TestOrg",
-  "data": "HTTP/1.1 200 OK\r\nServer: hikvision\r\n",
-  "product": "Hikvision DVR",
+  "ip_str": "1.2.3.4",
+  "isp": "China Telecom",
   "location": {
+    "area_code": null,
     "city": "Beijing",
     "country_code": "CN",
+    "country_code3": "CHN",
+    "country_name": "China",
+    "dma_code": null,
     "latitude": 39.9042,
-    "longitude": 116.4074
+    "longitude": 116.4074,
+    "postal_code": null,
+    "region_code": "BJ"
   },
+  "opts": {
+    "screenshot": {
+      "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      "labels": [
+        "camera",
+        "login-page"
+      ],
+      "mime": "image/png"
+    }
+  },
+  "org": "China Telecom",
+  "os": null,
+  "port": 80,
+  "product": "Hikvision DVR",
+  "tags": [
+    "camera",
+    "iot"
+  ],
+  "timestamp": "2024-01-15T08:22:33.000000",
+  "transport": "tcp",
+  "type": "banner",
+  "version": "V5.3.0",
   "vulns": {
     "CVE-2021-36260": {
       "cvss": 9.8,
-      "summary": "RCE vuln"
+      "references": [
+        "https://www.exploit-db.com/exploits/50441"
+      ],
+      "summary": "A command injection vulnerability in the web server of some Hikvision products. Due to insufficient input validation, an attacker can launch a command injection attack by sending messages with malicious commands.",
+      "verified": true
+    },
+    "CVE-2017-7921": {
+      "cvss": 8.8,
+      "references": [
+        "https://ics-cert.us-cert.gov/advisories/ICSA-17-124-01"
+      ],
+      "summary": "An Improper Authentication issue in Hikvision DS-2CD2xx2F-I Series. An attacker can bypass authentication by appending ?auth=YWRtaW46MTEM to any URI.",
+      "verified": true
     }
-  },
-  "hostnames": [
-    "cam.example.com"
-  ],
-  "opts": {},
-  "timestamp": "2024-01-01T00:00:00.000000",
-  "transport": "tcp",
-  "asn": "AS12345"
+  }
 }

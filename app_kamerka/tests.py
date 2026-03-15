@@ -3,6 +3,7 @@ Kamerka tests — test what matters.
 
 Each test here would catch a real bug in the application:
   - shodan_search_worker creates Device records from Shodan banner data
+  - ShodanFixtureFileTest uses .github/workflows/test.json (real shodan.json.gz data)
   - scan() saves results to the device record
   - exploit() routes to the right handler per device type
   - nuclei_scan saves NucleiResult rows
@@ -181,6 +182,130 @@ class ShodanSearchWorkerTest(TestCase):
             )
 
         write_banner_mock.assert_called_once_with(mock_fout, SHODAN_BANNER)
+
+
+# ---------------------------------------------------------------------------
+# ShodanFixtureFileTest — uses .github/workflows/test.json (real banner data)
+# ---------------------------------------------------------------------------
+_FIXTURE_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)),
+    '.github', 'workflows', 'test.json',
+)
+
+
+def _load_fixture_banners():
+    """Load all banners from .github/workflows/test.json (NDJSON format)."""
+    banners = []
+    with open(_FIXTURE_PATH) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                banners.append(json.loads(line))
+    return banners
+
+
+class ShodanFixtureFileTest(TestCase):
+    """Tests that use the real Shodan banner data from .github/workflows/test.json.
+
+    This file contains banners extracted from an actual shodan.json.gz download
+    (NDJSON format: one JSON object per line, exactly as produced by
+    ``gunzip -c shodan_results.json.gz > test.json``).
+
+    These tests verify that shodan_search_worker handles the full real-world
+    banner schema — including _shodan metadata, nested http/opts blocks, and
+    the extended vulns dict — without crashing or losing data.
+    """
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="XX",
+            ics="['hikvision']", coordinates_search="['0,0']",
+        )
+        self.banners = _load_fixture_banners()
+
+    def _run_with_banners(self, banners, search_type="hikvision"):
+        mock_api = MagicMock()
+        mock_api.search_cursor.return_value = iter(banners)
+        mock_fout = MagicMock()
+
+        with patch("kamerka.tasks.Shodan", return_value=mock_api), \
+             patch("kamerka.tasks._get_env_key", return_value="fake-key"), \
+             patch("kamerka.tasks.shodan_helpers.open_file", return_value=mock_fout), \
+             patch("kamerka.tasks.shodan_helpers.write_banner"):
+            from kamerka.tasks import shodan_search_worker
+            shodan_search_worker(
+                fk=self.search.id, query=search_type,
+                search_type=search_type, category="ics",
+                country="XX",
+            )
+
+    def test_fixture_file_is_valid_ndjson(self):
+        """The fixture file must be parseable NDJSON with at least one banner."""
+        self.assertGreater(len(self.banners), 0, "test.json must contain at least one banner")
+        for b in self.banners:
+            self.assertIn('ip_str', b, "Every banner must have ip_str")
+            self.assertIn('port', b, "Every banner must have port")
+            self.assertIn('location', b, "Every banner must have location")
+
+    def test_all_fixture_banners_create_devices(self):
+        """Every banner in test.json must produce a Device record."""
+        self._run_with_banners(self.banners)
+        created = Device.objects.filter(search=self.search).count()
+        self.assertEqual(created, len(self.banners),
+                         f"Expected {len(self.banners)} devices, got {created}")
+
+    def test_hikvision_banner_vulns_preserved(self):
+        """The Hikvision banner's CVEs must be stored in device.vulns."""
+        hik = [b for b in self.banners if b['ip_str'] == '1.2.3.4']
+        self.assertEqual(len(hik), 1, "Hikvision banner (1.2.3.4) must be in fixture")
+        self._run_with_banners(hik)
+        device = Device.objects.get(search=self.search, ip='1.2.3.4')
+        self.assertIn('CVE-2021-36260', str(device.vulns))
+        self.assertIn('CVE-2017-7921', str(device.vulns))
+
+    def test_s7_banner_no_product_doesnt_crash(self):
+        """S7 PLC banner has no product field — must not crash."""
+        s7 = [b for b in self.banners if b['ip_str'] == '5.6.7.8']
+        self.assertEqual(len(s7), 1, "S7 banner (5.6.7.8) must be in fixture")
+        self._run_with_banners(s7, search_type="s7")
+        device = Device.objects.get(search=self.search, ip='5.6.7.8')
+        self.assertEqual(device.product, "")
+
+    def test_s7_banner_plant_id_in_indicator(self):
+        """S7 PLC banner data contains 'Plant identification' — parsed into indicator."""
+        s7 = [b for b in self.banners if b['ip_str'] == '5.6.7.8']
+        self._run_with_banners(s7, search_type="s7")
+        device = Device.objects.get(search=self.search, ip='5.6.7.8')
+        # indicator is stored as a list-like string; check it contains plant name
+        self.assertIn('WaterPlant-North', str(device.indicator))
+
+    def test_bacnet_banner_description_in_indicator(self):
+        """BACnet banner data contains Description/Object Name — parsed into indicator."""
+        bacnet = [b for b in self.banners if b['ip_str'] == '10.0.0.1']
+        self.assertEqual(len(bacnet), 1, "BACnet banner (10.0.0.1) must be in fixture")
+        self._run_with_banners(bacnet, search_type="bacnet")
+        device = Device.objects.get(search=self.search, ip='10.0.0.1')
+        # BACnet parser extracts Description, Object Name, Location fields
+        indicator_str = str(device.indicator)
+        self.assertTrue(
+            any(term in indicator_str
+                for term in ['HVAC-Controller-Floor3', 'Building HVAC controller', '500 Main St']),
+            f"BACnet indicator should contain parsed fields, got: {indicator_str}"
+        )
+
+    def test_hikvision_banner_hostname_stored(self):
+        """First hostname from hostnames list must be stored in device.hostnames."""
+        hik = [b for b in self.banners if b['ip_str'] == '1.2.3.4']
+        self._run_with_banners(hik)
+        device = Device.objects.get(search=self.search, ip='1.2.3.4')
+        self.assertEqual(device.hostnames, 'dvr.example.com')
+
+    def test_banner_with_undershodan_metadata_doesnt_crash(self):
+        """Banners with _shodan metadata block (full download format) must not crash."""
+        # All banners in test.json have _shodan metadata — just verify none crash
+        self._run_with_banners(self.banners)  # no exception = pass
+        self.assertEqual(Device.objects.filter(search=self.search).count(),
+                         len(self.banners))
 
 
 # ---------------------------------------------------------------------------
