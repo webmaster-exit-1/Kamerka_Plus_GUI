@@ -371,7 +371,19 @@
 
                                 </div>
                                 <div class="panel-body padding-0">
-                                    <div id="wordcloud" class="chart-holder" id="dashboard-line-1" style="height:200px;overflow:hidden; background-color:#0a141d"></div>
+                                    <div style="overflow-y:auto;max-height:200px;padding:10px;background:#0a141d;">
+                                        {% for vuln, count in vulns %}
+                                        <div style="margin-bottom:5px;">
+                                            <a href="https://nvd.nist.gov/vuln/detail/{{ vuln }}" target="_blank" rel="noopener noreferrer"
+                                               style="font-family:var(--cp-font,monospace);color:#00e1ff;text-decoration:none;border:1px solid #0064d7;padding:2px 8px;font-size:0.85em;letter-spacing:0.04em;display:inline-block;">
+                                                {{ vuln }}
+                                            </a>
+                                            <span style="color:#3a4555;font-size:0.78em;margin-left:5px;">×{{ count }}</span>
+                                        </div>
+                                        {% empty %}
+                                        <span style="color:#3a4555;font-family:monospace;font-size:0.9em;">No CVEs tracked</span>
+                                        {% endfor %}
+                                    </div>
                                 </div>
                             </div>
 
@@ -421,12 +433,6 @@
         {% endif %}
 </script>
 <script type="text/javascript">
-      d3v3.wordcloud()
-        .size([400, 200])
-        .selector('#wordcloud')
-        .words([{% for vuln, link in vulns %} {text: "{{  vuln }}", size: "12"}, {% endfor %}])
-        .start();
-    </script>
 
 <script>
 /* Cyberpunk live clock */

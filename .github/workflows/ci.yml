@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main, master ]
 
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -30,42 +34,39 @@ jobs:
 
     - name: Install System Dependencies
       run: |
-        sudo apt-get update || exit 1
-        sudo apt-get install -y nmap chromium-browser || exit 1
+        sudo apt-get update
+        sudo apt-get install -y nmap chromium-browser
 
     - name: Install ProjectDiscovery Tools (Nuclei)
       run: |
-        go install -v github.com/projectdiscovery/pdtm/cmd/pdtm@latest || exit 1
+        go install -v github.com/projectdiscovery/pdtm/cmd/pdtm@latest
         echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
         echo "$HOME/.pdtm/go/bin" >> $GITHUB_PATH
         export PATH=$PATH:$(go env GOPATH)/bin:$HOME/.pdtm/go/bin
-        pdtm -i nuclei || exit 1
+        pdtm -i nuclei
 
     - name: Install Python Logic & Wappalyzer
       run: |
-        pip install -r requirements.txt || exit 1
-        pip install wappalyzer pytest || exit 1
+        pip install -r requirements.txt
+        pip install wappalyzer pytest
 
     - name: Django System Checks
       run: |
-        python manage.py check --fail-level WARNING || exit 1
-        python manage.py migrate --run-syncdb || exit 1
-        python manage.py collectstatic --noinput || exit 1
+        python manage.py check --fail-level WARNING
+        python manage.py migrate --run-syncdb
+        python manage.py collectstatic --noinput
 
     - name: Run Django Test Suite
-      run: |
-        python manage.py test app_kamerka -v2 || exit 1
+      run: python manage.py test app_kamerka -v2
 
     - name: Run Unit Tests (pytest)
-      run: |
-        pytest tests/ -v --strict-markers --tb=short || exit 1
+      run: pytest tests/ -v --strict-markers --tb=short
 
     - name: Verify Security Engine Health
       run: |
-        nmap --version || exit 1
-        nuclei -version || exit 1
-        pip show wappalyzer || exit 1
+        nmap --version
+        nuclei -version
+        pip show wappalyzer
 
     - name: Run China-IoT Template Validation
-      run: |
-        nuclei -validate -t nuclei_templates/china-iot/ || exit 1
+      run: nuclei -validate -t nuclei_templates/china-iot/

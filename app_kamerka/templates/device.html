@@ -198,7 +198,7 @@
                                         {{ device.product }}<br>
                                         {{ device.type }}<br>
                                         {{ device.org }}<br>
-                                        {{ device.vulns|slice:"1:-1" }}<br>
+                                        {% for cve in cve_list %}<a href="https://nvd.nist.gov/vuln/detail/{{ cve }}" target="_blank" rel="noopener noreferrer" style="font-family:monospace;color:#00e1ff;font-size:0.82em;text-decoration:none;border:1px solid #0064d7;padding:1px 6px;display:inline-block;margin:1px;">{{ cve }}</a>{% empty %}<span class="cp-dim">No CVEs</span>{% endfor %}<br>
                                             {{ device.city }}</b><br><br>
                                      {{ device.data }}<br>
                                         {{ device.ssl }}
