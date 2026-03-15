@@ -385,6 +385,16 @@ class GUIVisualTests(TestCase):
         response = self.client.get('/index')
         self.assertEqual(response.status_code, 200)
 
+    @patch('app_kamerka.views.check_credits', return_value=[])
+    def test_index_port_scan_device_dropdown(self, _):
+        """Verify the Port Scan Task widget has a device dropdown with devices."""
+        response = self.client.get('/index')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('port_scan_devices', response.context)
+        content = response.content.decode()
+        self.assertIn('cp-port-scan-select', content)
+        self.assertIn(self.device.ip, content)
+
     def test_history_page_loads(self):
         """Verify the history page renders with the data table."""
         response = self.client.get('/history')

@@ -250,8 +250,18 @@
                                 <div class="panel-body">
                                     <div style="font-family:var(--cp-font);font-size:0.95em;color:var(--cp-dim);margin-bottom:10px;">
                                         Use this widget to run a full Naabu all-port discovery then chain Nuclei automatically.<br>
-                                        Enter a device ID from your database below.
+                                        Select a device or enter an ID manually below.
                                     </div>
+                                    {% if port_scan_devices %}
+                                    <div style="margin-bottom:8px;">
+                                        <select id="cp-port-scan-select" style="width:100%;font-family:var(--cp-font);">
+                                            <option value="">— Select device —</option>
+                                            {% for d in port_scan_devices %}
+                                            <option value="{{ d.id }}">{{ d.port_scan_label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    {% endif %}
                                     <div style="display:flex;gap:8px;align-items:center;">
                                         <input type="number" id="cp-port-scan-id" placeholder="Device ID" min="1"
                                                style="width:110px;"/>
@@ -443,6 +453,14 @@ cpClock();
 
 /* Port scan widget on dashboard */
 $(document).ready(function(){
+    /* Sync device dropdown → numeric ID input */
+    $('#cp-port-scan-select').on('change', function(){
+        var val = $(this).val();
+        if (val) {
+            $('#cp-port-scan-id').val(val);
+        }
+    });
+
     $('#cp-port-scan-btn').on('click', function(){
         var devId = $('#cp-port-scan-id').val();
         if (!devId) { $('#cp-port-scan-status').html('<span class="cp-warn">Enter a device ID first.</span>'); return; }
