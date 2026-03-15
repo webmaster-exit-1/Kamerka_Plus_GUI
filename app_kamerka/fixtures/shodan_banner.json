@@ -1,87 +1,71 @@
 {
-  "_shodan": {
-    "crawler": "shodan-01",
-    "id": "a1b2c3d4-1111-2222-3333-444455556666",
-    "module": "http",
-    "options": {},
-    "ptr": true
-  },
-  "asn": "AS4134",
-  "data": "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nServer: Hikvision-Webs\r\nX-Frame-Options: SAMEORIGIN\r\n\r\n",
-  "domains": [
-    "dvr.example.com"
-  ],
-  "hash": 812345678,
-  "hostnames": [
-    "dvr.example.com"
-  ],
+  "hash": -1622739553,
+  "asn": "AS37963",
   "http": {
-    "components": {},
-    "html": "<html><head><title>DVR Login</title></head><body>Hikvision DVR</body></html>",
-    "html_hash": -123456789,
-    "redirects": [],
-    "robots": null,
+    "status": 401,
     "robots_hash": null,
+    "redirects": [],
+    "title_hash": 583004930,
     "securitytxt": null,
-    "securitytxt_hash": null,
-    "server": "Hikvision-Webs",
-    "sitemap": null,
+    "title": "Document Error: Unauthorized",
     "sitemap_hash": null,
-    "title": "DVR Login"
-  },
-  "ip": 16909060,
-  "ip_str": "1.2.3.4",
-  "isp": "China Telecom",
-  "location": {
-    "area_code": null,
-    "city": "Beijing",
-    "country_code": "CN",
-    "country_code3": "CHN",
-    "country_name": "China",
-    "dma_code": null,
-    "latitude": 39.9042,
-    "longitude": 116.4074,
-    "postal_code": null,
-    "region_code": "BJ"
-  },
-  "opts": {
-    "screenshot": {
-      "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-      "labels": [
-        "camera",
-        "login-page"
-      ],
-      "mime": "image/png"
-    }
-  },
-  "org": "China Telecom",
-  "os": null,
-  "port": 80,
-  "product": "Hikvision DVR",
-  "tags": [
-    "camera",
-    "iot"
-  ],
-  "timestamp": "2024-01-15T08:22:33.000000",
-  "transport": "tcp",
-  "type": "banner",
-  "version": "V5.3.0",
-  "vulns": {
-    "CVE-2021-36260": {
-      "cvss": 9.8,
-      "references": [
-        "https://www.exploit-db.com/exploits/50441"
-      ],
-      "summary": "A command injection vulnerability in the web server of some Hikvision products. Due to insufficient input validation, an attacker can launch a command injection attack by sending messages with malicious commands.",
-      "verified": true
+    "robots": null,
+    "dom_hash": 882611456,
+    "headers_hash": -1368984299,
+    "host": "119.23.253.64",
+    "html": "<html><head><title>Document Error: Unauthorized</title></head>\r\n<body><h2>Access Error: Unauthorized</h2>\r\n<p>Access to this document requires a User ID</p></body></html>",
+    "server_hash": -2133363224,
+    "location": "/",
+    "components": {
+      "Digest": {
+        "categories": [
+          "Security"
+        ]
+      },
+      "GoAhead": {
+        "categories": [
+          "Web servers"
+        ]
+      }
     },
-    "CVE-2017-7921": {
-      "cvss": 8.8,
-      "references": [
-        "https://ics-cert.us-cert.gov/advisories/ICSA-17-124-01"
-      ],
-      "summary": "An Improper Authentication issue in Hikvision DS-2CD2xx2F-I Series. An attacker can bypass authentication by appending ?auth=YWRtaW46MTEM to any URI.",
-      "verified": true
-    }
-  }
+    "securitytxt_hash": null,
+    "server": "GoAhead-Webs",
+    "sitemap": null,
+    "html_hash": -98713449
+  },
+  "os": null,
+  "transport": "tcp",
+  "timestamp": "2026-03-15T22:57:45.950793",
+  "isp": "Hangzhou Alibaba Advertising Co.,Ltd.",
+  "cpe23": [
+    "cpe:2.3:a:embedthis:goahead"
+  ],
+  "cpe": [
+    "cpe:/a:embedthis:goahead"
+  ],
+  "_shodan": {
+    "region": "na",
+    "module": "auto",
+    "ptr": true,
+    "options": {},
+    "id": "5fb7c1bc-d4cf-4935-b7e8-efd5bbd1c978",
+    "crawler": "6d3ed9d6b8f837a126ee7cc6b0653be94de51626"
+  },
+  "hostnames": [],
+  "location": {
+    "city": "Shenzhen",
+    "region_code": "GD",
+    "area_code": null,
+    "longitude": 114.0683,
+    "latitude": 22.54554,
+    "country_code": "CN",
+    "country_name": "China"
+  },
+  "ip": 1998060864,
+  "domains": [],
+  "org": "Aliyun Computing Co., LTD",
+  "data": "HTTP/1.1 401 Unauthorized\r\nServer: GoAhead-Webs\r\nDate: Thu Aug 17 01:46:14 2017\r\nWWW-Authenticate: Digest realm=\"GoAhead\", domain=\":81\",qop=\"auth\", nonce=\"0226f7e42caa61d16d835f1717f7a475\", opaque=\"5ccc069c403ebaf9f0171e9517f40e41\",algorithm=\"MD5\", stale=\"FALSE\"\r\nPragma: no-cache\r\nCache-Control: no-cache\r\nContent-Type: text/html\r\n\r\n",
+  "port": 2067,
+  "opts": {},
+  "ip_str": "119.23.253.64"
 }

@@ -64,6 +64,85 @@ SHODAN_BANNER_NO_PRODUCT = {
     "transport": "tcp",
 }
 
+# Real-format banner: no product, no vulns — matches the GoAhead-Webs schema
+# seen in the actual shodan.json.gz output (test.json).
+SHODAN_BANNER_GOAHEAD = {
+    "hash": -1622739553,
+    "asn": "AS37963",
+    "http": {
+        "status": 401,
+        "title": "Document Error: Unauthorized",
+        "server": "GoAhead-Webs",
+        "host": "119.23.253.64",
+        "html": "<html><head><title>Document Error: Unauthorized</title></head>\r\n"
+                "<body><h2>Access Error: Unauthorized</h2></body></html>",
+        "components": {"Digest": {"categories": ["Security"]},
+                       "GoAhead": {"categories": ["Web servers"]}},
+        "redirects": [],
+        "robots": None, "robots_hash": None,
+        "sitemap": None, "sitemap_hash": None,
+        "securitytxt": None, "securitytxt_hash": None,
+        "location": "/",
+    },
+    "os": None,
+    "transport": "tcp",
+    "timestamp": "2026-03-15T22:57:45.950793",
+    "isp": "Hangzhou Alibaba Advertising Co.,Ltd.",
+    "cpe23": ["cpe:2.3:a:embedthis:goahead"],
+    "cpe": ["cpe:/a:embedthis:goahead"],
+    "_shodan": {
+        "region": "na",
+        "module": "auto",
+        "ptr": True,
+        "options": {},
+        "id": "5fb7c1bc-d4cf-4935-b7e8-efd5bbd1c978",
+        "crawler": "6d3ed9d6b8f837a126ee7cc6b0653be94de51626",
+    },
+    "hostnames": [],
+    "location": {
+        "city": "Shenzhen",
+        "region_code": "GD",
+        "area_code": None,
+        "longitude": 114.0683,
+        "latitude": 22.54554,
+        "country_code": "CN",
+        "country_name": "China",
+    },
+    "ip": 1998060864,
+    "domains": [],
+    "org": "Aliyun Computing Co., LTD",
+    "data": "HTTP/1.1 401 Unauthorized\r\nServer: GoAhead-Webs\r\n\r\n",
+    "port": 2067,
+    "opts": {},
+    "ip_str": "119.23.253.64",
+}
+
+# Inline S7 PLC banner for unit tests (port 102, no product)
+SHODAN_BANNER_S7 = {
+    "ip_str": "10.20.30.40",
+    "ip": 169090600,
+    "port": 102,
+    "org": "Siemens AG",
+    "data": (
+        "S7comm\n"
+        "Module: CPU 315-2 DP\n"
+        "Plant: WaterPlant-North\n"
+        "PLC name: PLC-01\n"
+        "Module name: CPU 315-2 DP\n"
+    ),
+    "_shodan": {"module": "s7", "options": {}, "ptr": False},
+    "location": {
+        "city": "Berlin",
+        "country_code": "DE",
+        "latitude": 52.52,
+        "longitude": 13.405,
+    },
+    "hostnames": [],
+    "opts": {},
+    "timestamp": "2024-01-01T00:00:00.000000",
+    "transport": "tcp",
+}
+
 _DUMMY_CACHE = {"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}
 
 
@@ -183,6 +262,30 @@ class ShodanSearchWorkerTest(TestCase):
 
         write_banner_mock.assert_called_once_with(mock_fout, SHODAN_BANNER)
 
+    def test_goahead_banner_no_product_no_vulns(self):
+        """GoAhead-Webs banners (the real shodan.json.gz format) have no product
+        or vulns keys — worker must store empty strings for both."""
+        self._run_worker([SHODAN_BANNER_GOAHEAD], search_type="goahead")
+        device = Device.objects.get(search=self.search, ip="119.23.253.64")
+        self.assertEqual(device.product, "")
+        self.assertEqual(str(device.vulns), "")
+
+    def test_goahead_banner_cpe_fields_dont_crash(self):
+        """Banners with cpe/cpe23 fields (real Shodan format) must not crash.
+        These extra metadata fields are not consumed by the worker but must
+        not raise a KeyError or break the Device save."""
+        self._run_worker([SHODAN_BANNER_GOAHEAD], search_type="goahead")
+        self.assertEqual(Device.objects.filter(search=self.search).count(), 1)
+
+    def test_goahead_banner_location_extracted(self):
+        """Real GoAhead banner location block must populate lat/lon correctly."""
+        self._run_worker([SHODAN_BANNER_GOAHEAD], search_type="goahead")
+        device = Device.objects.get(search=self.search, ip="119.23.253.64")
+        self.assertAlmostEqual(float(device.lat), 22.54554, places=3)
+        self.assertAlmostEqual(float(device.lon), 114.0683, places=3)
+        self.assertEqual(device.country_code, "CN")
+        self.assertEqual(device.city, "Shenzhen")
+
 
 # ---------------------------------------------------------------------------
 # ShodanFixtureFileTest — uses .github/workflows/test.json (real banner data)
@@ -205,25 +308,26 @@ def _load_fixture_banners():
 
 
 class ShodanFixtureFileTest(TestCase):
-    """Tests that use the real Shodan banner data from .github/workflows/test.json.
+    """Tests driven by the real Shodan banner data in .github/workflows/test.json.
 
-    This file contains banners extracted from an actual shodan.json.gz download
-    (NDJSON format: one JSON object per line, exactly as produced by
-    ``gunzip -c shodan_results.json.gz > test.json``).
-
-    These tests verify that shodan_search_worker handles the full real-world
-    banner schema — including _shodan metadata, nested http/opts blocks, and
-    the extended vulns dict — without crashing or losing data.
+    That file is the NDJSON content of an actual shodan.json.gz download
+    (``gunzip -c shodan_results.json.gz > test.json``).  The banners are
+    GoAhead-Webs HTTP 401 devices — the most common real-world format:
+    - no ``product`` field
+    - no ``vulns`` field
+    - ``hash``, ``asn``, ``cpe``/``cpe23``, ``_shodan.region`` present
+    - ``opts`` is always ``{}`` (no screenshot)
+    - ``hostnames`` may be empty or contain one entry
     """
 
     def setUp(self):
         self.search = Search.objects.create(
             coordinates="0,0", country="XX",
-            ics="['hikvision']", coordinates_search="['0,0']",
+            ics="['goahead']", coordinates_search="['0,0']",
         )
         self.banners = _load_fixture_banners()
 
-    def _run_with_banners(self, banners, search_type="hikvision"):
+    def _run_with_banners(self, banners, search_type="goahead"):
         mock_api = MagicMock()
         mock_api.search_cursor.return_value = iter(banners)
         mock_fout = MagicMock()
@@ -240,72 +344,78 @@ class ShodanFixtureFileTest(TestCase):
             )
 
     def test_fixture_file_is_valid_ndjson(self):
-        """The fixture file must be parseable NDJSON with at least one banner."""
-        self.assertGreater(len(self.banners), 0, "test.json must contain at least one banner")
+        """test.json must be parseable NDJSON with required fields on every banner."""
+        self.assertEqual(len(self.banners), 4,
+                         "test.json must contain exactly 4 GoAhead-Webs banners")
         for b in self.banners:
-            self.assertIn('ip_str', b, "Every banner must have ip_str")
-            self.assertIn('port', b, "Every banner must have port")
-            self.assertIn('location', b, "Every banner must have location")
+            self.assertIn('ip_str', b)
+            self.assertIn('port', b)
+            self.assertIn('location', b)
+            self.assertIn('org', b)
+            self.assertIn('_shodan', b)
+            self.assertIn('cpe', b)
+            self.assertIn('cpe23', b)
 
     def test_all_fixture_banners_create_devices(self):
-        """Every banner in test.json must produce a Device record."""
+        """All 4 real banners must each produce a Device record."""
         self._run_with_banners(self.banners)
-        created = Device.objects.filter(search=self.search).count()
-        self.assertEqual(created, len(self.banners),
-                         f"Expected {len(self.banners)} devices, got {created}")
+        self.assertEqual(Device.objects.filter(search=self.search).count(), 4)
 
-    def test_hikvision_banner_vulns_preserved(self):
-        """The Hikvision banner's CVEs must be stored in device.vulns."""
-        hik = [b for b in self.banners if b['ip_str'] == '1.2.3.4']
-        self.assertEqual(len(hik), 1, "Hikvision banner (1.2.3.4) must be in fixture")
-        self._run_with_banners(hik)
-        device = Device.objects.get(search=self.search, ip='1.2.3.4')
-        self.assertIn('CVE-2021-36260', str(device.vulns))
-        self.assertIn('CVE-2017-7921', str(device.vulns))
+    def test_real_banners_have_no_product_field(self):
+        """Real GoAhead banners have no product key — stored as empty string."""
+        for b in self.banners:
+            self.assertNotIn('product', b,
+                             f"{b['ip_str']} unexpectedly has a product field")
+        self._run_with_banners(self.banners)
+        for device in Device.objects.filter(search=self.search):
+            self.assertEqual(device.product, "",
+                             f"{device.ip} product should be empty string")
 
-    def test_s7_banner_no_product_doesnt_crash(self):
-        """S7 PLC banner has no product field — must not crash."""
-        s7 = [b for b in self.banners if b['ip_str'] == '5.6.7.8']
-        self.assertEqual(len(s7), 1, "S7 banner (5.6.7.8) must be in fixture")
-        self._run_with_banners(s7, search_type="s7")
-        device = Device.objects.get(search=self.search, ip='5.6.7.8')
-        self.assertEqual(device.product, "")
+    def test_real_banners_have_no_vulns_field(self):
+        """Real GoAhead banners have no vulns key — stored as empty string."""
+        for b in self.banners:
+            self.assertNotIn('vulns', b,
+                             f"{b['ip_str']} unexpectedly has a vulns field")
+        self._run_with_banners(self.banners)
+        for device in Device.objects.filter(search=self.search):
+            self.assertEqual(str(device.vulns), "",
+                             f"{device.ip} vulns should be empty string")
 
-    def test_s7_banner_plant_id_in_indicator(self):
-        """S7 PLC banner data contains 'Plant identification' — parsed into indicator."""
-        s7 = [b for b in self.banners if b['ip_str'] == '5.6.7.8']
-        self._run_with_banners(s7, search_type="s7")
-        device = Device.objects.get(search=self.search, ip='5.6.7.8')
-        # indicator is stored as a list-like string; check it contains plant name
-        self.assertIn('WaterPlant-North', str(device.indicator))
+    def test_hostname_stored_when_present(self):
+        """Banner with a non-empty hostnames list must store the first entry."""
+        # 139.159.141.198 has hostnames=['ecs-139-159-141-198.compute.hwclouds-dns.com']
+        banner = next(b for b in self.banners if b['ip_str'] == '139.159.141.198')
+        self.assertTrue(banner['hostnames'], "fixture must have a hostname for this IP")
+        self._run_with_banners([banner])
+        device = Device.objects.get(search=self.search, ip='139.159.141.198')
+        self.assertEqual(device.hostnames, 'ecs-139-159-141-198.compute.hwclouds-dns.com')
 
-    def test_bacnet_banner_description_in_indicator(self):
-        """BACnet banner data contains Description/Object Name — parsed into indicator."""
-        bacnet = [b for b in self.banners if b['ip_str'] == '10.0.0.1']
-        self.assertEqual(len(bacnet), 1, "BACnet banner (10.0.0.1) must be in fixture")
-        self._run_with_banners(bacnet, search_type="bacnet")
-        device = Device.objects.get(search=self.search, ip='10.0.0.1')
-        # BACnet parser extracts Description, Object Name, Location fields
-        indicator_str = str(device.indicator)
-        self.assertTrue(
-            any(term in indicator_str
-                for term in ['HVAC-Controller-Floor3', 'Building HVAC controller', '500 Main St']),
-            f"BACnet indicator should contain parsed fields, got: {indicator_str}"
-        )
+    def test_empty_hostnames_stores_empty_string(self):
+        """Banner with hostnames=[] must store '' not crash or store 'None'."""
+        banner = next(b for b in self.banners if b['ip_str'] == '119.23.253.64')
+        self.assertEqual(banner['hostnames'], [])
+        self._run_with_banners([banner])
+        device = Device.objects.get(search=self.search, ip='119.23.253.64')
+        self.assertEqual(device.hostnames, "")
 
-    def test_hikvision_banner_hostname_stored(self):
-        """First hostname from hostnames list must be stored in device.hostnames."""
-        hik = [b for b in self.banners if b['ip_str'] == '1.2.3.4']
-        self._run_with_banners(hik)
-        device = Device.objects.get(search=self.search, ip='1.2.3.4')
-        self.assertEqual(device.hostnames, 'dvr.example.com')
-
-    def test_banner_with_undershodan_metadata_doesnt_crash(self):
-        """Banners with _shodan metadata block (full download format) must not crash."""
-        # All banners in test.json have _shodan metadata — just verify none crash
+    def test_undershodan_region_field_doesnt_crash(self):
+        """Real banners include _shodan.region which fabricated banners lacked.
+        The worker must not crash on this extra metadata field."""
+        for b in self.banners:
+            self.assertIn('region', b['_shodan'],
+                          f"{b['ip_str']} _shodan block must have region")
         self._run_with_banners(self.banners)  # no exception = pass
-        self.assertEqual(Device.objects.filter(search=self.search).count(),
-                         len(self.banners))
+        self.assertEqual(Device.objects.filter(search=self.search).count(), 4)
+
+    def test_location_fields_extracted_correctly(self):
+        """lat/lon/city/country_code must be populated from the real location block."""
+        banner = next(b for b in self.banners if b['ip_str'] == '122.9.141.98')
+        self._run_with_banners([banner])
+        device = Device.objects.get(search=self.search, ip='122.9.141.98')
+        self.assertAlmostEqual(float(device.lat), 26.58333, places=3)
+        self.assertAlmostEqual(float(device.lon), 106.71667, places=3)
+        self.assertEqual(device.country_code, 'CN')
+        self.assertEqual(device.city, 'Guiyang')
 
 
 # ---------------------------------------------------------------------------
