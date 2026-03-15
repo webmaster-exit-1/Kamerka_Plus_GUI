@@ -62,7 +62,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'app_kamerka',
+    'app_kamerka.apps.AppKamerkaConfig',
     "celery_progress"
 ]
 
@@ -103,6 +103,9 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
+        'OPTIONS': {
+            'timeout': 30,  # seconds; reduces "database is locked" under concurrent access
+        },
     }
 }
 
