@@ -254,7 +254,7 @@
                                     </div>
                                     <div style="display:flex;gap:8px;align-items:center;">
                                         <input type="text" id="cp-port-scan-ip" placeholder="Target IP (e.g. 192.168.1.1)"
-                                               style="width:220px;" pattern="[\d.:a-fA-F]+" title="Enter a valid IPv4 or IPv6 address"/>
+                                               style="width:220px;" title="Enter a valid IPv4 or IPv6 address"/>
                                         <button class="btn btn-primary active" id="cp-port-scan-btn">
                                             ⚡ SCAN PORTS
                                         </button>
@@ -446,7 +446,10 @@ $(document).ready(function(){
     $('#cp-port-scan-btn').on('click', function(){
         var targetIp = $('#cp-port-scan-ip').val().trim();
         if (!targetIp) { $('#cp-port-scan-status').html('<span class="cp-warn">Enter a target IP address first.</span>'); return; }
-        if (!/^[\d.:a-fA-F]+$/.test(targetIp)) { $('#cp-port-scan-status').html('<span class="cp-warn">Invalid IP address.</span>'); return; }
+        // Basic client-side sanity check; strict validation happens server-side via ipaddress.ip_address()
+        var ipv4re = /^(\d{1,3}\.){3}\d{1,3}$/;
+        var ipv6re = /^[0-9a-fA-F:]{2,39}$/;
+        if (!ipv4re.test(targetIp) && !ipv6re.test(targetIp)) { $('#cp-port-scan-status').html('<span class="cp-warn">Invalid IP address.</span>'); return; }
         $('#cp-port-scan-status').html('<span class="cp-blink">[ SCANNING ]</span> Launching port discovery on ' + targetIp + '…');
         $('#cp-port-scan-bar-wrap').show();
         $.ajax({
@@ -485,7 +488,7 @@ $(document).ready(function(){
                 } else if (data.state === 'SUCCESS') {
                     $('#cp-port-scan-bar').css('width','100%');
                     var doneMsg = '<span class="cp-ok">[ COMPLETE ]</span> Port scan done.';
-                    if (deviceId) { doneMsg += ' <a href="/index" style="color:var(--cp-cyan);">View results on device page.</a>'; }
+                    if (deviceId) { doneMsg += ' <a href="/results/' + deviceId + '/' + deviceId + '/' + targetIp + '" style="color:var(--cp-cyan);">View results on device page.</a>'; }
                     $('#cp-port-scan-status').html(doneMsg);
                     setTimeout(function(){ $('#cp-port-scan-bar-wrap').hide(); }, 4000);
                 } else if (data.state === 'PENDING') {

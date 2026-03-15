@@ -1671,15 +1671,20 @@ def _shodan_convert(download_path, fmt):
     format as its new extension (e.g. ``data.kml``, ``data.csv``,
     ``data.geo.json``).  Returns the path to that file.
     """
-    subprocess.run(['shodan', 'convert', download_path, fmt], check=True)
-    return download_path.replace('.json.gz', '.{}'.format(fmt))
+    from django.conf import settings
+    downloads_dir = os.path.realpath(os.path.join(settings.BASE_DIR, 'shodan_downloads'))
+    safe_path = os.path.realpath(download_path)
+    if not safe_path.startswith(downloads_dir + os.sep):
+        raise ValueError("download_path is outside the shodan_downloads directory: {}".format(download_path))
+    subprocess.run(['shodan', 'convert', safe_path, fmt], check=True)
+    return safe_path.replace('.json.gz', '.{}'.format(fmt))
 
 
 def shodan_csv_export(search_id, output_path):
     """Export Shodan results as CSV via ``shodan convert data.json.gz csv``.
 
-    Load the resulting file directly into SandDance (Microsoft), Mapbox,
-    QGIS, or Kepler.gl — all accept Shodan's native CSV schema.
+    Load the resulting file directly into PyVista or PyQt6 for 3-D
+    visualisation of Shodan findings.
     If no download file exists a header-only CSV is written as a fallback.
     """
     download_path = _shodan_download_path(search_id)
@@ -1696,8 +1701,8 @@ def shodan_csv_export(search_id, output_path):
 def shodan_kml_export(search_id, output_path):
     """Export Shodan results as KML via ``shodan convert data.json.gz kml``.
 
-    Load the resulting file directly into Mapbox, Google Earth, QGIS, Leaflet,
-    or uMap — all accept KML natively.
+    Load the resulting file into PyVista or PyQt6 for 3-D globe visualisation,
+    or into QGIS, Leaflet, and uMap for 2-D mapping.
     If no download file exists a valid empty KML document is written.
     """
     download_path = _shodan_download_path(search_id)
@@ -1715,8 +1720,8 @@ def shodan_kml_export(search_id, output_path):
 def shodan_json_export(search_id):
     """Export Shodan results as GeoJSON via ``shodan convert data.json.gz geo.json``.
 
-    Load the resulting file directly into Mapbox, SandDance, QGIS, or Kepler.gl
-    to populate a globe or map with Shodan findings.
+    Load the resulting file into PyVista or PyQt6 to populate a 3-D globe
+    or map with Shodan findings.
     Returns the GeoJSON string; an empty FeatureCollection is returned when no
     download file exists.
     """

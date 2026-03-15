@@ -3464,37 +3464,43 @@ class GlobeSidebarTests(TestCase):
 
 
 class ShodanExportToolTests(TestCase):
-    """Verify that export docstrings name the tools the user actually loads them into."""
+    """Verify that export docstrings name the tools the user loads them into."""
 
-    def test_csv_export_mentions_sanddance(self):
+    def test_csv_export_mentions_pyvista(self):
         from kamerka.tasks import shodan_csv_export
         doc = shodan_csv_export.__doc__ or ''
-        self.assertIn('SandDance', doc,
-            "shodan_csv_export docstring must mention SandDance")
+        self.assertIn('PyVista', doc,
+            "shodan_csv_export docstring must mention PyVista")
 
-    def test_csv_export_mentions_mapbox(self):
+    def test_csv_export_mentions_pyqt6(self):
         from kamerka.tasks import shodan_csv_export
         doc = shodan_csv_export.__doc__ or ''
-        self.assertIn('Mapbox', doc,
-            "shodan_csv_export docstring must mention Mapbox")
+        self.assertIn('PyQt6', doc,
+            "shodan_csv_export docstring must mention PyQt6")
 
-    def test_kml_export_mentions_mapbox(self):
+    def test_kml_export_mentions_pyvista(self):
         from kamerka.tasks import shodan_kml_export
         doc = shodan_kml_export.__doc__ or ''
-        self.assertIn('Mapbox', doc,
-            "shodan_kml_export docstring must mention Mapbox")
+        self.assertIn('PyVista', doc,
+            "shodan_kml_export docstring must mention PyVista")
 
-    def test_json_export_mentions_sanddance(self):
+    def test_kml_export_mentions_pyqt6(self):
+        from kamerka.tasks import shodan_kml_export
+        doc = shodan_kml_export.__doc__ or ''
+        self.assertIn('PyQt6', doc,
+            "shodan_kml_export docstring must mention PyQt6")
+
+    def test_json_export_mentions_pyvista(self):
         from kamerka.tasks import shodan_json_export
         doc = shodan_json_export.__doc__ or ''
-        self.assertIn('SandDance', doc,
-            "shodan_json_export docstring must mention SandDance")
+        self.assertIn('PyVista', doc,
+            "shodan_json_export docstring must mention PyVista")
 
-    def test_json_export_mentions_mapbox(self):
+    def test_json_export_mentions_pyqt6(self):
         from kamerka.tasks import shodan_json_export
         doc = shodan_json_export.__doc__ or ''
-        self.assertIn('Mapbox', doc,
-            "shodan_json_export docstring must mention Mapbox")
+        self.assertIn('PyQt6', doc,
+            "shodan_json_export docstring must mention PyQt6")
 
     def test_csv_uses_shodan_convert_command(self):
         from kamerka.tasks import shodan_csv_export

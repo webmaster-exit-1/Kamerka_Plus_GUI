@@ -640,9 +640,11 @@ def port_scan_ip_view(request, target_ip):
 
     GET /port_scan/ip/<target_ip>  →  {"task_id": "...", "device_id": <id>}
     """
-    import re as _re
+    import ipaddress
     if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-        if not _re.match(r'^[\d.:a-fA-F]+$', target_ip):
+        try:
+            ipaddress.ip_address(target_ip)
+        except ValueError:
             return HttpResponse(
                 json.dumps({'Error': 'Invalid IP address.'}),
                 content_type='application/json',
