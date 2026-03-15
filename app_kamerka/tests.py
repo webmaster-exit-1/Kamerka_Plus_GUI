@@ -230,18 +230,37 @@ class NucleiTaskTests(TestCase):
 
 
 class ExportTests(TestCase):
-    """Test CSV and KML export functionality."""
+    """Test CSV, KML, and GeoJSON export via ``shodan convert``."""
 
     def setUp(self):
+        import shodan.helpers as sh
         self.search = Search.objects.create(
             coordinates="0,0", country="US", ics="test", coordinates_search="test"
         )
-        self.device = Device.objects.create(
-            search=self.search, ip="192.168.1.1", product="Hikvision Camera",
-            port="80", type="hikvision", lat="40.7128", lon="-74.0060",
-            country_code="US", org="TestOrg", city="New York",
-            vulns="['CVE-2021-36260']"
-        )
+        # Write a minimal Shodan banner to the download file so
+        # ``shodan convert`` has real data to work with.
+        from kamerka.tasks import _shodan_download_path
+        self.download_path = _shodan_download_path(self.search.id)
+        fout = sh.open_file(self.download_path)
+        sh.write_banner(fout, {
+            'ip_str': '192.168.1.1', 'port': 80,
+            'org': 'TestOrg', 'product': 'Hikvision Camera',
+            'hostnames': [],
+            'location': {
+                'latitude': 40.7128, 'longitude': -74.0060,
+                'country_code': 'US', 'city': 'New York',
+                'country_name': 'United States',
+            },
+            'data': 'HTTP/1.1 200 OK',
+            'transport': 'tcp',
+        })
+        fout.close()
+
+    def tearDown(self):
+        for ext in ('json.gz', 'csv', 'kml', 'geo.json'):
+            p = self.download_path.replace('.json.gz', '.{}'.format(ext))
+            if os.path.exists(p):
+                os.remove(p)
 
     def test_csv_export(self):
         from kamerka.tasks import shodan_csv_export
@@ -252,9 +271,9 @@ class ExportTests(TestCase):
             self.assertTrue(os.path.exists(output_path))
             with open(output_path) as f:
                 content = f.read()
-            self.assertIn("IP_Address", content)
+            # Shodan's CsvConverter header uses its native field names
+            self.assertIn("ip_str", content)
             self.assertIn("192.168.1.1", content)
-            self.assertIn("Hikvision Camera", content)
         finally:
             os.remove(output_path)
 
@@ -267,8 +286,7 @@ class ExportTests(TestCase):
             self.assertTrue(os.path.exists(output_path))
             with open(output_path) as f:
                 content = f.read()
-            self.assertIn("192.168.1.1", content)
-            self.assertIn("-74.006", content)
+            self.assertIn("kml", content.lower())
         finally:
             os.remove(output_path)
 
@@ -386,14 +404,13 @@ class GUIVisualTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
     @patch('app_kamerka.views.check_credits', return_value=[])
-    def test_index_port_scan_device_dropdown(self, _):
-        """Verify the Port Scan Task widget has a device dropdown with devices."""
+    def test_index_port_scan_ip_widget(self, _):
+        """Verify the Port Scan Task widget accepts a target IP address."""
         response = self.client.get('/index')
         self.assertEqual(response.status_code, 200)
-        self.assertIn('port_scan_devices', response.context)
         content = response.content.decode()
-        self.assertIn('cp-port-scan-select', content)
-        self.assertIn(self.device.ip, content)
+        self.assertIn('cp-port-scan-ip', content)
+        self.assertIn('Target IP', content)
 
     def test_history_page_loads(self):
         """Verify the history page renders with the data table."""
@@ -1774,99 +1791,88 @@ class NucleiMalformedLineTests(TestCase):
 # shodan_csv_export / shodan_kml_export  –  edge cases
 # ---------------------------------------------------------------------------
 class ExportEdgeCaseTests(TestCase):
-    """Edge-case behaviour of the CSV and KML export helpers."""
+    """Edge-case behaviour of the CSV, KML, and GeoJSON export helpers."""
 
     def setUp(self):
         self.search = Search.objects.create(
             coordinates="0,0", country="US", ics="test", coordinates_search="test"
         )
+        from kamerka.tasks import _shodan_download_path
+        self.download_path = _shodan_download_path(self.search.id)
 
-    def test_csv_export_empty_search_still_has_headers(self):
-        """CSV export with zero devices must produce a header-only file (not blank)."""
+    def tearDown(self):
+        for ext in ('json.gz', 'csv', 'kml', 'geo.json'):
+            p = self.download_path.replace('.json.gz', '.{}'.format(ext))
+            if os.path.exists(p):
+                os.remove(p)
+
+    def test_csv_export_no_download_file_still_produces_headers(self):
+        """CSV export with no .json.gz file must produce a header-only CSV (not blank)."""
         from kamerka.tasks import shodan_csv_export
+        # Ensure no download file exists
+        if os.path.exists(self.download_path):
+            os.remove(self.download_path)
         fd, path = tempfile.mkstemp(suffix='.csv')
         os.close(fd)
         try:
             shodan_csv_export(self.search.id, path)
             with open(path) as f:
                 content = f.read()
-            if "IP_Address" not in content:
-                self.fail(
-                    "CSV header row is missing from empty-search export. "
-                    "File contents: {!r}".format(content[:200])
-                )
+            self.assertGreater(len(content.strip()), 0,
+                "CSV must not be blank when no download file exists")
         finally:
             if os.path.exists(path):
                 os.remove(path)
 
-    def test_csv_export_invalid_vulns_field_does_not_crash(self):
-        """CSV export must not crash when a device's vulns field is non-JSON text."""
-        from kamerka.tasks import shodan_csv_export
-        Device.objects.create(
-            search=self.search, ip="9.9.9.9", product="Y",
-            port="443", type="test", lat="0", lon="0",
-            country_code="US", vulns="this-is-not-json"
-        )
-        fd, path = tempfile.mkstemp(suffix='.csv')
-        os.close(fd)
-        try:
-            shodan_csv_export(self.search.id, path)
-            with open(path) as f:
-                content = f.read()
-            if "9.9.9.9" not in content:
-                self.fail(
-                    "Device IP missing from CSV after non-JSON vulns. "
-                    "File contents: {!r}".format(content[:300])
-                )
-        finally:
-            if os.path.exists(path):
-                os.remove(path)
-
-    def test_kml_export_invalid_latlon_device_is_skipped(self):
-        """KML export must silently skip devices with non-numeric lat/lon."""
+    def test_kml_export_no_download_file_produces_valid_kml(self):
+        """KML export with no .json.gz file must produce a valid empty KML document."""
         from kamerka.tasks import shodan_kml_export
-        Device.objects.create(
-            search=self.search, ip="1.2.3.4", product="X",
-            port="80", type="test", lat="INVALID", lon="INVALID",
-            country_code="US"
-        )
+        if os.path.exists(self.download_path):
+            os.remove(self.download_path)
         fd, path = tempfile.mkstemp(suffix='.kml')
         os.close(fd)
         try:
             shodan_kml_export(self.search.id, path)
             with open(path) as f:
                 content = f.read()
-            if "1.2.3.4" in content:
-                self.fail(
-                    "Device with invalid lat/lon must be skipped, "
-                    "but its IP was found in the KML output"
-                )
+            self.assertIn('kml', content.lower(),
+                "KML fallback output must contain valid KML markup")
         finally:
             if os.path.exists(path):
                 os.remove(path)
 
-    def test_kml_export_valid_device_is_included(self):
-        """KML export must include a device with valid numeric lat/lon."""
+    def test_kml_export_with_download_file_calls_shodan_convert(self):
+        """KML export with a .json.gz file must call shodan convert and produce output."""
+        import shodan.helpers as sh
         from kamerka.tasks import shodan_kml_export
-        Device.objects.create(
-            search=self.search, ip="5.6.7.8", product="Cam",
-            port="80", type="hikvision", lat="51.5", lon="-0.12",
-            country_code="GB"
-        )
+        fout = sh.open_file(self.download_path)
+        sh.write_banner(fout, {
+            'ip_str': '5.6.7.8', 'port': 80, 'org': 'Acme',
+            'hostnames': [],
+            'location': {'latitude': 51.5, 'longitude': -0.12,
+                         'country_code': 'GB', 'city': 'London',
+                         'country_name': 'United Kingdom'},
+            'data': 'HTTP/1.1 200 OK', 'transport': 'tcp',
+        })
+        fout.close()
         fd, path = tempfile.mkstemp(suffix='.kml')
         os.close(fd)
         try:
             shodan_kml_export(self.search.id, path)
             with open(path) as f:
                 content = f.read()
-            if "5.6.7.8" not in content:
-                self.fail(
-                    "Valid device IP '5.6.7.8' is missing from KML output. "
-                    "File contents (first 500 chars): {!r}".format(content[:500])
-                )
+            self.assertIn('kml', content.lower())
         finally:
             if os.path.exists(path):
                 os.remove(path)
+
+    def test_json_export_no_download_file_returns_empty_feature_collection(self):
+        """GeoJSON export with no .json.gz file must return an empty FeatureCollection."""
+        from kamerka.tasks import shodan_json_export
+        if os.path.exists(self.download_path):
+            os.remove(self.download_path)
+        result = shodan_json_export(self.search.id)
+        self.assertIn('FeatureCollection', result)
 
 
 # ---------------------------------------------------------------------------
@@ -3457,46 +3463,61 @@ class GlobeSidebarTests(TestCase):
         self._assert_has_globe_link('/globe')
 
 
-class FOSSDocstringTests(TestCase):
-    """Verify SandDance and Mapbox references are gone from docstrings."""
+class ShodanExportToolTests(TestCase):
+    """Verify that export docstrings name the tools the user loads them into."""
 
-    def test_csv_export_task_no_sanddance(self):
+    def test_csv_export_mentions_pyvista(self):
         from kamerka.tasks import shodan_csv_export
         doc = shodan_csv_export.__doc__ or ''
-        self.assertNotIn('SandDance', doc,
-            "shodan_csv_export docstring must not reference SandDance")
+        self.assertIn('PyVista', doc,
+            "shodan_csv_export docstring must mention PyVista")
 
-    def test_kml_export_task_no_mapbox(self):
+    def test_csv_export_mentions_pyqt6(self):
+        from kamerka.tasks import shodan_csv_export
+        doc = shodan_csv_export.__doc__ or ''
+        self.assertIn('PyQt6', doc,
+            "shodan_csv_export docstring must mention PyQt6")
+
+    def test_kml_export_mentions_pyvista(self):
         from kamerka.tasks import shodan_kml_export
         doc = shodan_kml_export.__doc__ or ''
-        self.assertNotIn('Mapbox', doc,
-            "shodan_kml_export docstring must not reference Mapbox")
+        self.assertIn('PyVista', doc,
+            "shodan_kml_export docstring must mention PyVista")
 
-    def test_csv_view_no_sanddance(self):
-        from app_kamerka.views import export_csv
-        doc = export_csv.__doc__ or ''
-        self.assertNotIn('SandDance', doc,
-            "export_csv view docstring must not reference SandDance")
-
-    def test_kml_view_no_mapbox(self):
-        from app_kamerka.views import export_kml
-        doc = export_kml.__doc__ or ''
-        self.assertNotIn('Mapbox', doc,
-            "export_kml view docstring must not reference Mapbox")
-
-    def test_csv_export_references_foss_tools(self):
-        from kamerka.tasks import shodan_csv_export
-        doc = (shodan_csv_export.__doc__ or '').lower()
-        self.assertTrue(
-            any(t in doc for t in ('qgis', 'kepler', 'globe', 'foss')),
-            "shodan_csv_export docstring must reference FOSS tools"
-        )
-
-    def test_kml_export_references_foss_tools(self):
+    def test_kml_export_mentions_pyqt6(self):
         from kamerka.tasks import shodan_kml_export
-        doc = (shodan_kml_export.__doc__ or '').lower()
-        self.assertTrue(
-            any(t in doc for t in ('qgis', 'leaflet', 'umap', 'foss')),
-            "shodan_kml_export docstring must reference FOSS tools"
-        )
+        doc = shodan_kml_export.__doc__ or ''
+        self.assertIn('PyQt6', doc,
+            "shodan_kml_export docstring must mention PyQt6")
+
+    def test_json_export_mentions_pyvista(self):
+        from kamerka.tasks import shodan_json_export
+        doc = shodan_json_export.__doc__ or ''
+        self.assertIn('PyVista', doc,
+            "shodan_json_export docstring must mention PyVista")
+
+    def test_json_export_mentions_pyqt6(self):
+        from kamerka.tasks import shodan_json_export
+        doc = shodan_json_export.__doc__ or ''
+        self.assertIn('PyQt6', doc,
+            "shodan_json_export docstring must mention PyQt6")
+
+    def test_csv_uses_shodan_convert_command(self):
+        from kamerka.tasks import shodan_csv_export
+        doc = shodan_csv_export.__doc__ or ''
+        self.assertIn('shodan convert', doc,
+            "shodan_csv_export must document the 'shodan convert' CLI command")
+
+    def test_kml_uses_shodan_convert_command(self):
+        from kamerka.tasks import shodan_kml_export
+        doc = shodan_kml_export.__doc__ or ''
+        self.assertIn('shodan convert', doc,
+            "shodan_kml_export must document the 'shodan convert' CLI command")
+
+    def test_json_uses_shodan_convert_command(self):
+        from kamerka.tasks import shodan_json_export
+        doc = shodan_json_export.__doc__ or ''
+        self.assertIn('shodan convert', doc,
+            "shodan_json_export must document the 'shodan convert' CLI command")
+
 

@@ -526,3 +526,25 @@ pre, code {
 ::-webkit-scrollbar-track        { background: #080c14; }
 ::-webkit-scrollbar-thumb        { background: var(--cp-border); }
 ::-webkit-scrollbar-thumb:hover  { background: var(--cp-cyan); }
+
+/* ── Leaflet map popup — scale text with the page font ───────── */
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: rgba(10, 13, 18, 0.92) !important;
+  border: 1px solid var(--cp-border) !important;
+  border-radius: 0 !important;
+  box-shadow: 0 0 10px rgba(0, 100, 215, 0.3) !important;
+}
+.leaflet-popup-content {
+  font-family: var(--cp-font) !important;
+  font-size: 1em !important;
+  color: var(--cp-fg) !important;
+  line-height: 1.5 !important;
+  margin: 10px 14px !important;
+}
+.leaflet-popup-content a {
+  color: var(--cp-cyan) !important;
+}
+.leaflet-container a.leaflet-popup-close-button {
+  color: var(--cp-dim) !important;
+}

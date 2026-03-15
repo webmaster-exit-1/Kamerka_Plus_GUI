@@ -55,7 +55,7 @@
                         <a href="devices"><span class="fa fa-search"></span> <span class="xn-text">Search</span></a>
                     </li>
                     <li class="">
-                        <a href="gallery"><span class="fa fa-camera"></span> <span class="xn-text">Gallery</span></a>
+                        <a href="gallery"><span class="fa fa-camera"></span> <span class="xn-text">Screenshots</span></a>
                     </li>
                     <li class="">
                         <a href="globe"><span class="fa fa-globe"></span> <span class="xn-text">Globe</span></a>
@@ -249,22 +249,12 @@
                                 </div>
                                 <div class="panel-body">
                                     <div style="font-family:var(--cp-font);font-size:0.95em;color:var(--cp-dim);margin-bottom:10px;">
-                                        Use this widget to run a full Naabu all-port discovery then chain Nuclei automatically.<br>
-                                        Select a device or enter an ID manually below.
+                                        Enter a target IP address to run a full Naabu all-port discovery scan.<br>
+                                        The scan runs in the background — check the device page for results.
                                     </div>
-                                    {% if port_scan_devices %}
-                                    <div style="margin-bottom:8px;">
-                                        <select id="cp-port-scan-select" style="width:100%;font-family:var(--cp-font);">
-                                            <option value="">— Select device —</option>
-                                            {% for d in port_scan_devices %}
-                                            <option value="{{ d.id }}">{{ d.port_scan_label }}</option>
-                                            {% endfor %}
-                                        </select>
-                                    </div>
-                                    {% endif %}
                                     <div style="display:flex;gap:8px;align-items:center;">
-                                        <input type="number" id="cp-port-scan-id" placeholder="Device ID" min="1"
-                                               style="width:110px;"/>
+                                        <input type="text" id="cp-port-scan-ip" placeholder="Target IP (e.g. 192.168.1.1)"
+                                               style="width:220px;" title="Enter a valid IPv4 or IPv6 address"/>
                                         <button class="btn btn-primary active" id="cp-port-scan-btn">
                                             ⚡ SCAN PORTS
                                         </button>
@@ -453,26 +443,22 @@ cpClock();
 
 /* Port scan widget on dashboard */
 $(document).ready(function(){
-    /* Sync device dropdown → numeric ID input */
-    $('#cp-port-scan-select').on('change', function(){
-        var val = $(this).val();
-        if (val) {
-            $('#cp-port-scan-id').val(val);
-        }
-    });
-
     $('#cp-port-scan-btn').on('click', function(){
-        var devId = $('#cp-port-scan-id').val();
-        if (!devId) { $('#cp-port-scan-status').html('<span class="cp-warn">Enter a device ID first.</span>'); return; }
-        $('#cp-port-scan-status').html('<span class="cp-blink">[ SCANNING ]</span> Launching port discovery…');
+        var targetIp = $('#cp-port-scan-ip').val().trim();
+        if (!targetIp) { $('#cp-port-scan-status').html('<span class="cp-warn">Enter a target IP address first.</span>'); return; }
+        // Basic client-side sanity check; strict validation happens server-side via ipaddress.ip_address()
+        var ipv4re = /^(\d{1,3}\.){3}\d{1,3}$/;
+        var ipv6re = /^[0-9a-fA-F:]{2,39}$/;
+        if (!ipv4re.test(targetIp) && !ipv6re.test(targetIp)) { $('#cp-port-scan-status').html('<span class="cp-warn">Invalid IP address.</span>'); return; }
+        $('#cp-port-scan-status').html('<span class="cp-blink">[ SCANNING ]</span> Launching port discovery on ' + targetIp + '…');
         $('#cp-port-scan-bar-wrap').show();
         $.ajax({
             type: 'GET',
-            url: '/port_scan/' + devId,
+            url: '/port_scan/ip/' + encodeURIComponent(targetIp),
             headers: {'X-Requested-With': 'XMLHttpRequest'},
             success: function(data) {
                 if (data.task_id) {
-                    pollPortScan(data.task_id, 0);
+                    pollPortScan(data.task_id, 0, data.device_id);
                 } else {
                     $('#cp-port-scan-status').html('<span class="cp-warn">[ ERROR ]</span> ' + (data.Error || 'Failed to start task.'));
                 }
@@ -481,7 +467,7 @@ $(document).ready(function(){
         });
     });
 
-    function pollPortScan(taskId, attempts) {
+    function pollPortScan(taskId, attempts, deviceId) {
         if (attempts > 300) {
             $('#cp-port-scan-status').html('<span class="cp-warn">[ TIMEOUT ]</span>');
             $('#cp-port-scan-bar-wrap').hide();
@@ -498,19 +484,21 @@ $(document).ready(function(){
                     var desc = (data.result && data.result.description) ? data.result.description : 'Scanning…';
                     $('#cp-port-scan-bar').css('width', pct + '%').attr('aria-valuenow', pct);
                     $('#cp-port-scan-status').html('<span class="cp-cyan">[ ' + pct + '% ]</span> ' + desc);
-                    setTimeout(function(){ pollPortScan(taskId, attempts+1); }, 1000);
+                    setTimeout(function(){ pollPortScan(taskId, attempts+1, deviceId); }, 1000);
                 } else if (data.state === 'SUCCESS') {
                     $('#cp-port-scan-bar').css('width','100%');
-                    $('#cp-port-scan-status').html('<span class="cp-ok">[ COMPLETE ]</span> Port scan done. Check device page for results.');
-                    setTimeout(function(){ $('#cp-port-scan-bar-wrap').hide(); }, 2000);
+                    var doneMsg = '<span class="cp-ok">[ COMPLETE ]</span> Port scan done.';
+                    if (deviceId) { doneMsg += ' <a href="/results/' + deviceId + '/' + deviceId + '/' + targetIp + '" style="color:var(--cp-cyan);">View results on device page.</a>'; }
+                    $('#cp-port-scan-status').html(doneMsg);
+                    setTimeout(function(){ $('#cp-port-scan-bar-wrap').hide(); }, 4000);
                 } else if (data.state === 'PENDING') {
-                    setTimeout(function(){ pollPortScan(taskId, attempts+1); }, 1000);
+                    setTimeout(function(){ pollPortScan(taskId, attempts+1, deviceId); }, 1000);
                 } else {
                     $('#cp-port-scan-status').html('<span class="cp-warn">[ ' + data.state + ' ]</span>');
                     $('#cp-port-scan-bar-wrap').hide();
                 }
             },
-            error: function() { setTimeout(function(){ pollPortScan(taskId, attempts+1); }, 2000); }
+            error: function() { setTimeout(function(){ pollPortScan(taskId, attempts+1, deviceId); }, 2000); }
         });
     }
 });

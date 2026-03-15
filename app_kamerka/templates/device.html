@@ -56,7 +56,7 @@
                         <a href="/devices"><span class="fa fa-search"></span> <span class="xn-text">Search</span></a>
                     </li>
                                        <li class="">
-                        <a href="/gallery"><span class="fa fa-camera"></span> <span class="xn-text">Gallery</span></a>
+                        <a href="/gallery"><span class="fa fa-camera"></span> <span class="xn-text">Screenshots</span></a>
                     </li>
                     <li class="">
                         <a href="/globe"><span class="fa fa-globe"></span> <span class="xn-text">Globe</span></a>
@@ -105,7 +105,8 @@
                                     <li class="active"><a href="#tab8" data-toggle="tab">Locate</a></li>
                                         {% endif %}
                                     <li><a href="#tab9" data-toggle="tab">Intel</a></li>
-                                    <li><a href="#tab10" data-toggle="tab">Exploit</a></li>
+                                    <li><a href="#tab10" data-toggle="tab">NMAP</a></li>
+                                    <li><a href="#tab11" data-toggle="tab">Exploit</a></li>
                                 </ul>
                                 <div class="panel-body tab-content">
                                     <div class="tab-pane active" id="tab8">
@@ -227,6 +228,12 @@
 
                                     <progress id="progress-bar2" value="0" max="100" style="display:none; margin-bottom: 1em;"></progress>
                                     <div id="shodan_results" style="display: none;"></div>
+                                    <div style="margin-top:10px;">
+                                        <span style="font-family:var(--cp-font);font-size:0.85em;color:var(--cp-dim);">Export:</span>
+                                        <a href="/export/csv/{{ device.search_id }}" class="btn btn-default btn-xs" style="margin-left:4px;" title="Download all search results as CSV (shodan convert csv)">CSV</a>
+                                        <a href="/export/kml/{{ device.search_id }}" class="btn btn-default btn-xs" style="margin-left:4px;" title="Download all search results as KML (shodan convert kml)">KML</a>
+                                        <a href="/export/json/{{ device.search_id }}" class="btn btn-default btn-xs" style="margin-left:4px;" title="Download all search results as GeoJSON (shodan convert geojson)">GeoJSON</a>
+                                    </div>
 
                                 </div>
                             </div>
@@ -266,9 +273,9 @@
 
 
 
-                            <!-- START USERS ACTIVITY BLOCK -->
+                            <!-- NMAP SCAN -->
 <div class="row">
-                        <div class="col-md-6">
+                        <div class="col-md-12">
 
                             <!-- START USERS ACTIVITY BLOCK -->
                             <div class="panel panel-default">
@@ -290,8 +297,17 @@
                             <!-- END USERS ACTIVITY BLOCK -->
 
                         </div>
+</div>
+                                        </div>
 
-    <div class="col-md-6">
+                                        <div class="tab-pane" id="tab11">
+
+
+
+
+                            <!-- EXPLOIT -->
+<div class="row">
+                        <div class="col-md-6">
 
                             <!-- START USERS ACTIVITY BLOCK -->
                             <div class="panel panel-default">

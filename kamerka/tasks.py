@@ -1,7 +1,9 @@
+import itertools
 import json
 import logging
 import math
 import re
+import shutil
 import subprocess
 
 import maxminddb
@@ -12,6 +14,7 @@ import requests
 from celery import shared_task, current_task
 from celery_progress.backend import ProgressRecorder
 from shodan import Shodan
+import shodan.helpers as shodan_helpers
 import time
 from bs4 import BeautifulSoup
 import pynmea2
@@ -595,60 +598,58 @@ def check_credits():
     return keys_list
 
 
+def _shodan_download_path(search_id):
+    """Return the path to the raw Shodan banner download file for a search.
+
+    The file is a gzipped NDJSON (``.json.gz``) in the format written by
+    ``shodan download`` and understood by ``shodan convert`` and all Shodan
+    converter classes (CsvConverter, KmlConverter, GeoJsonConverter).
+
+    The directory is created on first use so callers do not need to check.
+    """
+    from django.conf import settings
+    downloads_dir = os.path.join(settings.BASE_DIR, 'shodan_downloads')
+    os.makedirs(downloads_dir, exist_ok=True)
+    return os.path.join(downloads_dir, '{}.json.gz'.format(search_id))
+
+
 def shodan_search_worker(fk, query, search_type, category, country=None, coordinates=None, all_results=False):
     results = True
     page = 1
     SHODAN_API_KEY = _get_env_key('SHODAN_API_KEY', required=True)
-    pages = 0
     screenshot = ""
     print(query)
-    # print(coordinates)
-    # print(country)
 
-    while results:
-        if pages == page:
-            results = False
-            break
+    # ── Build the Shodan query string ──────────────────────────────────
+    if coordinates:
+        query_string = "geo:{},20 {}".format(coordinates, query)
+    elif country == "XX":
+        query_string = query
+    else:
+        query_string = "country:{} {}".format(country, query)
 
-        # Shodan sometimes fails with no reason, sleeping when it happens and it prevents rate limitation
-        search = Search.objects.get(id=fk)
-        api = Shodan(SHODAN_API_KEY)
-        fail = False
+    search = Search.objects.get(id=fk)
+    api = Shodan(SHODAN_API_KEY)
 
-        while not fail:
-            try:
-                time.sleep(3)
-                if coordinates:
-                    results = api.search("geo:" + coordinates + ",20 " + query, page)
-                    # print(results)
-                    fail = True
-                    # print("geo:" + coordinates + ",20 " + query)
-                elif country == "XX":
-                    results = api.search(query, page)
-                    fail = True
-                else:
-                    results = api.search("country:" + country + " " + query, page)
-                    fail = True
-            except Exception as exc:
-                fail = False
-                logger.warning("shodan_search_worker: Shodan API call failed, will retry: %s", exc)
-                # Brief back-off before retrying to respect Shodan's rate limit.
-                sleep(2)
+    # ── "shodan download" step ─────────────────────────────────────────
+    # Use search_cursor (the Python equivalent of `shodan download`) which
+    # handles paging automatically and respects Shodan's rate limits
+    # internally (retries=5 by default).
+    #
+    # When all_results=False we mirror the old behaviour of only collecting
+    # the first page (~100 results).  When True we stream everything.
+    download_path = _shodan_download_path(fk)
+    cursor = api.search_cursor(query_string, minify=False)
+    if not all_results:
+        cursor = itertools.islice(cursor, 100)
 
-        try:
-            total = results['total']
+    try:
+        fout = shodan_helpers.open_file(download_path)  # append to existing file
+        for result in cursor:
+            # ── "shodan download" — persist raw banner ─────────────────
+            shodan_helpers.write_banner(fout, result)
 
-            if total == 0:
-                print("no results")
-                break
-        except Exception as e:
-            logger.warning("%s", e)
-            break
-
-        # print(results)
-        pages = math.ceil(total / 100) + 1
-        print("Pages: " + str(pages))
-        for counter, result in enumerate(results['matches']):
+            # ── Parse into Device record (existing app logic) ──────────
             lat = str(result['location']['latitude'])
             lon = str(result['location']['longitude'])
             city = ""
@@ -664,7 +665,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
             else:
                 vulns = ""
 
-            if result['location']['city'] != None:
+            if result['location']['city'] is not None:
                 city = result['location']['city']
 
             hostnames = ""
@@ -679,26 +680,24 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                     html = result['http']['html']
                     soup = BeautifulSoup(html)
                     for gps in soup.find_all("span", {"id": "gnss_position"}):
-                        coordinates = gps.contents[0]
-                        space = coordinates.split(' ')
+                        _coord = gps.contents[0]
+                        space = _coord.split(' ')
                         if "W" in space:
                             lon = "-" + space[2][:-1]
                         else:
                             lon = space[2][:-1]
                         lat = space[0][:-1]
-            except Exception as e:
+            except Exception:
                 pass
 
             if 'opts' in result:
                 try:
                     screenshot = result['opts']['screenshot']['data']
-
                     with open("app_kamerka/static/images/screens/" + result['ip_str'] + ".jpg", "wb") as fh:
                         fh.write(base64.b64decode(screenshot))
-                        fh.close()
-                        for i in result['opts']['screenshot']['labels']:
-                            indicator.append(i)
-                except Exception as e:
+                    for i in result['opts']['screenshot']['labels']:
+                        indicator.append(i)
+                except Exception:
                     pass
 
             if query == "Niagara Web Server":
@@ -716,9 +715,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                         indicator.append(data[9] + "," + data[10])
                         lat = data[9]
                         lon = data[10]
-                    else:
-                        pass
-                except Exception as e:
+                except Exception:
                     pass
 
             # get indicator from niagara fox
@@ -744,7 +741,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                 try:
                     ta_data = result['data'].split("\\n")
                     indicator.append(ta_data[1][:-3])
-                except Exception as e:
+                except Exception:
                     pass
 
             if result['port'] == 502:
@@ -764,7 +761,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                             lat = msg.latitude
                             lon = msg.longitude
                             break
-                except Exception as e:
+                except Exception:
                     pass
 
             if result['port'] == 102:
@@ -779,6 +776,7 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                             indicator.append(i.split(":")[1])
                 except Exception:
                     pass
+
             # get indicator from bacnet
             if result['port'] == 47808:
                 try:
@@ -790,7 +788,6 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                         if "Object Name" in i:
                             splitted2 = i.split(":")
                             indicator.append(splitted2[1])
-
                         if "Location" in i:
                             splitted3 = i.split(":")
                             indicator.append(splitted3[1])
@@ -804,9 +801,9 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                             vulns=vulns, indicator=indicator, hostnames=hostnames, screenshot=screenshot)
             device.save()
 
-        page = page + 1
-        if not all_results:
-            results = False
+        fout.close()
+    except Exception as exc:
+        logger.warning("shodan_search_worker: error during search/download for '%s': %s", query_string, exc)
 
 
 def nmap_host_worker(host_arg, max_reader, search):
@@ -1662,74 +1659,78 @@ def whoisxml(id):
     wh.save()
 
 
+def _shodan_convert(download_path, fmt):
+    """Run ``shodan convert <download_path> <fmt>`` and return the output path.
+
+    This is exactly the workflow from snippets.shodan.io:
+        shodan convert data.json.gz kml
+        shodan convert data.json.gz csv
+        shodan convert data.json.gz geo.json
+
+    The shodan CLI writes the converted file next to the source with the
+    format as its new extension (e.g. ``data.kml``, ``data.csv``,
+    ``data.geo.json``).  Returns the path to that file.
+    """
+    from django.conf import settings
+    downloads_dir = os.path.realpath(os.path.join(settings.BASE_DIR, 'shodan_downloads'))
+    safe_path = os.path.realpath(download_path)
+    if not safe_path.startswith(downloads_dir + os.sep):
+        raise ValueError("download_path is outside the shodan_downloads directory: {}".format(download_path))
+    subprocess.run(['shodan', 'convert', safe_path, fmt], check=True)
+    return safe_path.replace('.json.gz', '.{}'.format(fmt))
+
+
 def shodan_csv_export(search_id, output_path):
-    """Export Shodan device data to CSV for FOSS geospatial tools (QGIS, Kepler.gl, the built-in globe)."""
-    import pandas as pd
+    """Export Shodan results as CSV via ``shodan convert data.json.gz csv``.
 
-    devices = Device.objects.filter(search_id=search_id)
-    records = []
-    for d in devices:
-        vuln_count = 0
-        if d.vulns:
-            try:
-                vuln_list = json.loads(d.vulns.replace("'", '"'))
-                vuln_count = len(vuln_list) if isinstance(vuln_list, list) else 0
-            except (json.JSONDecodeError, ValueError):
-                pass
-
-        records.append({
-            "IP_Address": d.ip,
-            "Latitude": d.lat,
-            "Longitude": d.lon,
-            "Severity_Count": vuln_count,
-            "Vendor_Name": d.product,
-            "Network_Port": d.port,
-            "Organization": d.org or "",
-            "City": d.city or "",
-            "Country_Code": d.country_code,
-            "Device_Type": d.type,
-        })
-
-    _CSV_COLUMNS = [
-        "IP_Address", "Latitude", "Longitude", "Severity_Count",
-        "Vendor_Name", "Network_Port", "Organization", "City",
-        "Country_Code", "Device_Type",
-    ]
-    df = pd.DataFrame(records, columns=_CSV_COLUMNS)
-    df.to_csv(output_path, index=False)
+    Load the resulting file directly into PyVista or PyQt6 for 3-D
+    visualisation of Shodan findings.
+    If no download file exists a header-only CSV is written as a fallback.
+    """
+    download_path = _shodan_download_path(search_id)
+    if os.path.exists(download_path):
+        converted = _shodan_convert(download_path, 'csv')
+        shutil.copy(converted, output_path)
+    else:
+        with open(output_path, 'w', encoding='utf-8') as fout:
+            fout.write("ip_str,port,org,location.country_code,location.city,"
+                       "location.latitude,location.longitude,product,vulns\n")
     return output_path
 
 
 def shodan_kml_export(search_id, output_path):
-    """Export Shodan device data to KML for FOSS geospatial tools (QGIS, Leaflet, uMap)."""
-    import simplekml
+    """Export Shodan results as KML via ``shodan convert data.json.gz kml``.
 
-    devices = Device.objects.filter(search_id=search_id)
-    kml = simplekml.Kml()
-
-    for d in devices:
-        try:
-            lon = float(d.lon)
-            lat = float(d.lat)
-        except (ValueError, TypeError):
-            continue
-
-        name = "{} - {}".format(d.product or "Unknown", d.ip)
-        pnt = kml.newpoint(name=name, coords=[(lon, lat)])
-        pnt.description = "IP: {}\nPort: {}\nOrg: {}\nCity: {}\nVulns: {}".format(
-            d.ip, d.port, d.org or "", d.city or "", d.vulns or "None"
-        )
-
-        ext = pnt.extendeddata
-        ext.newdata("ip", d.ip)
-        ext.newdata("port", d.port)
-        ext.newdata("product", d.product or "")
-        ext.newdata("org", d.org or "")
-        ext.newdata("country_code", d.country_code or "")
-        ext.newdata("vulns", d.vulns or "")
-
-    kml.save(output_path)
+    Load the resulting file into PyVista or PyQt6 for 3-D globe visualisation,
+    or into QGIS, Leaflet, and uMap for 2-D mapping.
+    If no download file exists a valid empty KML document is written.
+    """
+    download_path = _shodan_download_path(search_id)
+    if os.path.exists(download_path):
+        converted = _shodan_convert(download_path, 'kml')
+        shutil.copy(converted, output_path)
+    else:
+        with open(output_path, 'w', encoding='utf-8') as fout:
+            fout.write('<?xml version="1.0" encoding="UTF-8"?>\n'
+                       '<kml xmlns="http://www.opengis.net/kml/2.2">'
+                       '<Document></Document></kml>')
     return output_path
+
+
+def shodan_json_export(search_id):
+    """Export Shodan results as GeoJSON via ``shodan convert data.json.gz geo.json``.
+
+    Load the resulting file into PyVista or PyQt6 to populate a 3-D globe
+    or map with Shodan findings.
+    Returns the GeoJSON string; an empty FeatureCollection is returned when no
+    download file exists.
+    """
+    download_path = _shodan_download_path(search_id)
+    if os.path.exists(download_path):
+        converted = _shodan_convert(download_path, 'geo.json')
+        with open(converted, 'r', encoding='utf-8') as f:
+            return f.read()
+    return '{"type":"FeatureCollection","features":[]}'
 
 
 NMAP_RTSP_PORTS = "80,443,554,502"
