@@ -37,9 +37,11 @@ urlpatterns = [
     path('scan/<id>', views.scan_dev, name="scan"),
     path('exploit/<id>', views.exploit_dev, name="exploit"),
     path('port_scan/<id>', views.port_scan_view, name='port_scan'),
+    path('port_scan/ip/<target_ip>', views.port_scan_ip_view, name='port_scan_ip'),
 
     path('export/csv/<id>', views.export_csv, name="export_csv"),
     path('export/kml/<id>', views.export_kml, name="export_kml"),
+    path('export/json/<id>', views.export_json, name="export_json"),
 
     path('globe', views.globe, name='globe'),
     path('globe/devices.json', views.globe_devices_json, name='globe_devices_json'),

@@ -20,8 +20,8 @@ from app_kamerka.models import Search, Device, DeviceNearby, ShodanScan, Whois, 
     Bosch, WappalyzerResult, NucleiResult
 from kamerka.tasks import shodan_search, devices_nearby, shodan_scan_task, \
     whoisxml, check_credits, send_to_field_agent_task, nmap_scan, validate_nmap, validate_maxmind, scan, \
-    exploit, wappalyzer_scan, nuclei_scan, shodan_csv_export, shodan_kml_export, nmap_rtsp_scan, \
-    port_scan_task
+    exploit, wappalyzer_scan, nuclei_scan, shodan_csv_export, shodan_kml_export, shodan_json_export, \
+    nmap_rtsp_scan, port_scan_task
 
 
 # Create your views here.
@@ -279,7 +279,6 @@ def index(request):
             pass
 
     credits = check_credits()
-    port_scan_devices = Device.objects.order_by('-id')[:200]
 
     context = {'device': all_devices,
                "search": last_5_searches,
@@ -291,8 +290,7 @@ def index(request):
                'vulns': sort,
                "task_id": task,
                "search_len": search_all,
-               "credits": credits,
-               "port_scan_devices": port_scan_devices}
+               "credits": credits}
     return render(request, 'index.html', context)
 
 
@@ -632,6 +630,42 @@ def port_scan_view(request, id):
     return HttpResponse(json.dumps({'task_id': None}), content_type='application/json')
 
 
+def port_scan_ip_view(request, target_ip):
+    """Launch a port scan against a raw IP address entered on the dashboard.
+
+    Creates a minimal Device record (and a parent Search) when the IP has not
+    been seen before, then delegates to the existing ``port_scan_task``.  If
+    the IP already exists in the database the most-recently-added device is
+    reused so duplicate records are avoided.
+
+    GET /port_scan/ip/<target_ip>  →  {"task_id": "...", "device_id": <id>}
+    """
+    import re as _re
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        if not _re.match(r'^[\d.:a-fA-F]+$', target_ip):
+            return HttpResponse(
+                json.dumps({'Error': 'Invalid IP address.'}),
+                content_type='application/json',
+            )
+        device = Device.objects.filter(ip=target_ip).order_by('-id').first()
+        if device is None:
+            search = Search(coordinates='', country='PORT SCAN', ics='Port Scan', coordinates_search='')
+            search.save()
+            device = Device(
+                search=search, ip=target_ip, product='', org='', data='',
+                port='', type='PORT SCAN', city='', lat='0', lon='0',
+                country_code='', query='PORT SCAN', category='port_scan',
+                vulns='', indicator='', hostnames='', screenshot='',
+            )
+            device.save()
+        scan_task = port_scan_task.delay(device.id)
+        return HttpResponse(
+            json.dumps({'task_id': scan_task.id, 'device_id': device.id}),
+            content_type='application/json',
+        )
+    return HttpResponse(json.dumps({'task_id': None}), content_type='application/json')
+
+
 def export_csv(request, id):
     """Export search results as CSV for FOSS geospatial tools (QGIS, Kepler.gl, the built-in globe)."""
     import tempfile
@@ -662,6 +696,19 @@ def export_kml(request, id):
     finally:
         if os.path.exists(output_path):
             os.remove(output_path)
+
+
+def export_json(request, id):
+    """Export search results as GeoJSON using Shodan's own GeoJsonConverter.
+
+    Equivalent to ``shodan convert <file.json.gz> geojson``.  The output is a
+    GeoJSON FeatureCollection that can be loaded directly into the built-in
+    globe, QGIS, Kepler.gl, or any GeoJSON-aware tool.
+    """
+    geojson_str = shodan_json_export(id)
+    response = HttpResponse(geojson_str, content_type='application/geo+json')
+    response['Content-Disposition'] = 'attachment; filename="shodan_export_{}.geojson"'.format(id)
+    return response
 
 
 def rtsp_scan_view(request, id):
