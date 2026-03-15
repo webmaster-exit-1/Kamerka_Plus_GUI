@@ -263,19 +263,27 @@ class ShodanSearchWorkerTest(TestCase):
         write_banner_mock.assert_called_once_with(mock_fout, SHODAN_BANNER)
 
     def test_goahead_banner_no_product_no_vulns(self):
-        """GoAhead-Webs banners (the real shodan.json.gz format) have no product
-        or vulns keys — worker must store empty strings for both."""
+        """GoAhead-Webs banners have no 'product' or 'vulns' keys.
+        product must fall back to http.server; vulns must be empty string."""
         self._run_worker([SHODAN_BANNER_GOAHEAD], search_type="goahead")
         device = Device.objects.get(search=self.search, ip="119.23.253.64")
-        self.assertEqual(device.product, "")
+        # product falls back to http.server
+        self.assertEqual(device.product, "GoAhead-Webs")
         self.assertEqual(str(device.vulns), "")
 
-    def test_goahead_banner_cpe_fields_dont_crash(self):
-        """Banners with cpe/cpe23 fields (real Shodan format) must not crash.
-        These extra metadata fields are not consumed by the worker but must
-        not raise a KeyError or break the Device save."""
+    def test_goahead_banner_cpe_stored(self):
+        """cpe23 list must be stored in device.cpe (first entry)."""
         self._run_worker([SHODAN_BANNER_GOAHEAD], search_type="goahead")
-        self.assertEqual(Device.objects.filter(search=self.search).count(), 1)
+        device = Device.objects.get(search=self.search, ip="119.23.253.64")
+        self.assertEqual(device.cpe, "cpe:2.3:a:embedthis:goahead")
+
+    def test_goahead_banner_isp_stored(self):
+        """isp field must be stored separately from org."""
+        self._run_worker([SHODAN_BANNER_GOAHEAD], search_type="goahead")
+        device = Device.objects.get(search=self.search, ip="119.23.253.64")
+        self.assertEqual(device.isp, "Hangzhou Alibaba Advertising Co.,Ltd.")
+        # org and isp are different values from the same banner
+        self.assertNotEqual(device.org, device.isp)
 
     def test_goahead_banner_location_extracted(self):
         """Real GoAhead banner location block must populate lat/lon correctly."""
@@ -361,15 +369,16 @@ class ShodanFixtureFileTest(TestCase):
         self._run_with_banners(self.banners)
         self.assertEqual(Device.objects.filter(search=self.search).count(), 4)
 
-    def test_real_banners_have_no_product_field(self):
-        """Real GoAhead banners have no product key — stored as empty string."""
+    def test_real_banners_product_falls_back_to_http_server(self):
+        """Real GoAhead banners have no 'product' key.
+        Worker must fall back to http.server so every device gets a name."""
         for b in self.banners:
             self.assertNotIn('product', b,
                              f"{b['ip_str']} unexpectedly has a product field")
         self._run_with_banners(self.banners)
         for device in Device.objects.filter(search=self.search):
-            self.assertEqual(device.product, "",
-                             f"{device.ip} product should be empty string")
+            self.assertEqual(device.product, "GoAhead-Webs",
+                             f"{device.ip} product should fall back to http.server")
 
     def test_real_banners_have_no_vulns_field(self):
         """Real GoAhead banners have no vulns key — stored as empty string."""
@@ -380,6 +389,26 @@ class ShodanFixtureFileTest(TestCase):
         for device in Device.objects.filter(search=self.search):
             self.assertEqual(str(device.vulns), "",
                              f"{device.ip} vulns should be empty string")
+
+    def test_isp_stored_from_real_banners(self):
+        """isp must be extracted and stored — it differs from org on every
+        real banner (e.g. org=Aliyun, isp=Alibaba Advertising Co.)."""
+        self._run_with_banners(self.banners)
+        for b in self.banners:
+            device = Device.objects.get(search=self.search, ip=b['ip_str'])
+            self.assertEqual(device.isp, b['isp'],
+                             f"{b['ip_str']} isp mismatch")
+            # Shodan returns org and isp as distinct fields
+            self.assertNotEqual(device.org, device.isp,
+                                f"{b['ip_str']} org and isp should differ")
+
+    def test_cpe_stored_from_real_banners(self):
+        """cpe23[0] must be stored in device.cpe for every real banner."""
+        self._run_with_banners(self.banners)
+        for b in self.banners:
+            device = Device.objects.get(search=self.search, ip=b['ip_str'])
+            self.assertEqual(device.cpe, b['cpe23'][0],
+                             f"{b['ip_str']} cpe mismatch")
 
     def test_hostname_stored_when_present(self):
         """Banner with a non-empty hostnames list must store the first entry."""

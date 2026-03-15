@@ -655,15 +655,26 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
             city = ""
             indicator = []
 
+            # product: use the dedicated field when present; fall back to
+            # http.server (e.g. "GoAhead-Webs", "Apache", "nginx") so that
+            # banners without an explicit product still get a meaningful name.
             try:
                 product = result['product']
             except Exception:
-                product = ""
+                product = result.get('http', {}).get('server', '') or ""
 
             if 'vulns' in result:
                 vulns = [*result['vulns']]
             else:
                 vulns = ""
+
+            # isp: often differs from org (e.g. org="Aliyun" isp="Alibaba Ad Co")
+            isp = result.get('isp', '') or ""
+
+            # cpe: first CPE 2.3 string from the cpe23 list, e.g.
+            # "cpe:2.3:a:embedthis:goahead" — useful for CVE correlation.
+            cpe_list = result.get('cpe23') or result.get('cpe') or []
+            cpe = cpe_list[0] if cpe_list else ""
 
             if result['location']['city'] is not None:
                 city = result['location']['city']
@@ -798,7 +809,8 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                             data=result['data'], port=str(result['port']), type=search_type, city=city,
                             lat=lat, lon=lon,
                             country_code=result['location']['country_code'], query=search_type, category=category,
-                            vulns=vulns, indicator=indicator, hostnames=hostnames, screenshot=screenshot)
+                            vulns=vulns, indicator=indicator, hostnames=hostnames, screenshot=screenshot,
+                            isp=isp, cpe=cpe)
             device.save()
 
         fout.close()
