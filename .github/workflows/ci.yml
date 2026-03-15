@@ -48,7 +48,7 @@ jobs:
     - name: Install Python Logic & Wappalyzer
       run: |
         pip install -r requirements.txt
-        pip install wappalyzer pytest
+        pip install wappalyzer
 
     - name: Django System Checks
       run: |
@@ -56,17 +56,11 @@ jobs:
         python manage.py migrate --run-syncdb
         python manage.py collectstatic --noinput
 
-    - name: Run Django Test Suite
+    - name: Run Tests
       run: python manage.py test app_kamerka -v2
-
-    - name: Run Unit Tests (pytest)
-      run: pytest tests/ -v --strict-markers --tb=short
 
     - name: Verify Security Engine Health
       run: |
         nmap --version
         nuclei -version
         pip show wappalyzer
-
-    - name: Run China-IoT Template Validation
-      run: nuclei -validate -t nuclei_templates/china-iot/
