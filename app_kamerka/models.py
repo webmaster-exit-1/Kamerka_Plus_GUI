@@ -43,6 +43,12 @@ class Device(models.Model):
         ),
     )
 
+    def port_scan_label(self):
+        """Short label used in the Port Scan Task dropdown (ID · IP · product or type)."""
+        detail = (self.product or self.type or "")[:30]
+        return "#{} {} {}".format(self.id, self.ip, ("· " + detail) if detail else "").strip()
+
+
 class DeviceNearby(models.Model):
     device = models.ForeignKey(Device, on_delete=models.CASCADE)
     lat = models.CharField(max_length=100)

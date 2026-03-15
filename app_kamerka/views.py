@@ -279,6 +279,7 @@ def index(request):
             pass
 
     credits = check_credits()
+    port_scan_devices = Device.objects.order_by('-id')[:200]
 
     context = {'device': all_devices,
                "search": last_5_searches,
@@ -290,7 +291,8 @@ def index(request):
                'vulns': sort,
                "task_id": task,
                "search_len": search_all,
-               "credits": credits}
+               "credits": credits,
+               "port_scan_devices": port_scan_devices}
     return render(request, 'index.html', context)
 
 
