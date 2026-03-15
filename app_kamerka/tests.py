@@ -2,6 +2,7 @@
 Kamerka tests — test what matters.
 
 Each test here would catch a real bug in the application:
+  - shodan_search_worker creates Device records from Shodan banner data
   - scan() saves results to the device record
   - exploit() routes to the right handler per device type
   - nuclei_scan saves NucleiResult rows
@@ -13,13 +14,54 @@ Each test here would catch a real bug in the application:
 """
 
 import json
+import os
 import subprocess
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 
 from django.test import TestCase, override_settings
 from django.test import Client
 
 from app_kamerka.models import Search, Device, NucleiResult, WappalyzerResult
+
+# Minimal Shodan banner — the format returned by api.search_cursor()
+# and written to .json.gz by shodan_helpers.write_banner().
+SHODAN_BANNER = {
+    "ip_str": "1.2.3.4",
+    "ip": 16909060,
+    "port": 80,
+    "org": "TestOrg",
+    "data": "HTTP/1.1 200 OK\r\nServer: hikvision\r\n",
+    "product": "Hikvision DVR",
+    "location": {
+        "city": "Beijing",
+        "country_code": "CN",
+        "latitude": 39.9042,
+        "longitude": 116.4074,
+    },
+    "vulns": {"CVE-2021-36260": {"cvss": 9.8, "summary": "Unauthenticated RCE"}},
+    "hostnames": ["cam.example.com"],
+    "opts": {},
+    "timestamp": "2024-01-01T00:00:00.000000",
+    "transport": "tcp",
+}
+
+SHODAN_BANNER_NO_PRODUCT = {
+    "ip_str": "5.6.7.8",
+    "ip": 84281096,
+    "port": 502,
+    "org": "AcmeCorp",
+    "data": "Modbus/TCP\n",
+    "location": {
+        "city": None,
+        "country_code": "DE",
+        "latitude": 52.52,
+        "longitude": 13.405,
+    },
+    "hostnames": [],
+    "opts": {},
+    "timestamp": "2024-01-01T00:00:00.000000",
+    "transport": "tcp",
+}
 
 _DUMMY_CACHE = {"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}
 
@@ -38,6 +80,107 @@ def _make_device(search, ip="1.2.3.4", device_type="hikvision", port="80",
         type=device_type, lat="40.7128", lon="-74.0060",
         country_code="US", org="TestOrg", city="New York", vulns=vulns,
     )
+
+
+# ---------------------------------------------------------------------------
+# shodan_search_worker — the core Shodan ingest path
+# ---------------------------------------------------------------------------
+class ShodanSearchWorkerTest(TestCase):
+    """shodan_search_worker must create Device records from Shodan banner data.
+
+    This is the single most critical code path: if it breaks, no Shodan results
+    ever appear in the UI regardless of how many API credits are used.
+    """
+
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="CN",
+            ics="['hikvision']", coordinates_search="['0,0']",
+        )
+
+    def _run_worker(self, banners, query="hikvision", search_type="hikvision"):
+        """Run shodan_search_worker with mocked API and file I/O."""
+        mock_api = MagicMock()
+        mock_api.search_cursor.return_value = iter(banners)
+        mock_fout = MagicMock()
+
+        with patch("kamerka.tasks.Shodan", return_value=mock_api), \
+             patch("kamerka.tasks._get_env_key", return_value="fake-key"), \
+             patch("kamerka.tasks.shodan_helpers.open_file", return_value=mock_fout), \
+             patch("kamerka.tasks.shodan_helpers.write_banner"):
+            from kamerka.tasks import shodan_search_worker
+            shodan_search_worker(
+                fk=self.search.id, query=query,
+                search_type=search_type, category="ics",
+                country="CN",
+            )
+
+    def test_device_created_from_banner(self):
+        """A Shodan banner must produce exactly one Device record."""
+        self._run_worker([SHODAN_BANNER])
+        self.assertEqual(Device.objects.filter(search=self.search).count(), 1)
+
+    def test_device_ip_matches_banner(self):
+        self._run_worker([SHODAN_BANNER])
+        device = Device.objects.get(search=self.search)
+        self.assertEqual(device.ip, "1.2.3.4")
+
+    def test_device_port_matches_banner(self):
+        self._run_worker([SHODAN_BANNER])
+        device = Device.objects.get(search=self.search)
+        self.assertEqual(device.port, "80")
+
+    def test_device_vulns_extracted(self):
+        """CVE list must be stored in device.vulns."""
+        self._run_worker([SHODAN_BANNER])
+        device = Device.objects.get(search=self.search)
+        self.assertIn("CVE-2021-36260", str(device.vulns))
+
+    def test_device_location_extracted(self):
+        """Lat/lon and country_code must be populated from location block."""
+        self._run_worker([SHODAN_BANNER])
+        device = Device.objects.get(search=self.search)
+        self.assertAlmostEqual(float(device.lat), 39.9042, places=3)
+        self.assertAlmostEqual(float(device.lon), 116.4074, places=3)
+        self.assertEqual(device.country_code, "CN")
+
+    def test_missing_product_stores_empty_string(self):
+        """Banners without a 'product' key must not crash — empty string is stored."""
+        self._run_worker([SHODAN_BANNER_NO_PRODUCT], search_type="modbus")
+        device = Device.objects.get(search=self.search, ip="5.6.7.8")
+        self.assertEqual(device.product, "")
+
+    def test_null_city_stored_as_empty_string(self):
+        """city=None in Shodan response must be stored as '' not 'None'."""
+        self._run_worker([SHODAN_BANNER_NO_PRODUCT], search_type="modbus")
+        device = Device.objects.get(search=self.search, ip="5.6.7.8")
+        self.assertNotEqual(device.city, "None")
+
+    def test_multiple_banners_create_multiple_devices(self):
+        """Each banner in the cursor must create its own Device row."""
+        self._run_worker([SHODAN_BANNER, SHODAN_BANNER_NO_PRODUCT],
+                         search_type="hikvision")
+        self.assertEqual(Device.objects.filter(search=self.search).count(), 2)
+
+    def test_banner_written_to_download_file(self):
+        """Every banner must be persisted to the .json.gz download file
+        so that shodan convert can later produce CSV/KML exports."""
+        mock_api = MagicMock()
+        mock_api.search_cursor.return_value = iter([SHODAN_BANNER])
+        mock_fout = MagicMock()
+        write_banner_mock = MagicMock()
+
+        with patch("kamerka.tasks.Shodan", return_value=mock_api), \
+             patch("kamerka.tasks._get_env_key", return_value="fake-key"), \
+             patch("kamerka.tasks.shodan_helpers.open_file", return_value=mock_fout), \
+             patch("kamerka.tasks.shodan_helpers.write_banner", write_banner_mock):
+            from kamerka.tasks import shodan_search_worker
+            shodan_search_worker(
+                fk=self.search.id, query="hikvision",
+                search_type="hikvision", category="ics", country="CN",
+            )
+
+        write_banner_mock.assert_called_once_with(mock_fout, SHODAN_BANNER)
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,27 @@
+{
+  "ip_str": "1.2.3.4",
+  "ip": 16909060,
+  "port": 80,
+  "org": "TestOrg",
+  "data": "HTTP/1.1 200 OK\r\nServer: hikvision\r\n",
+  "product": "Hikvision DVR",
+  "location": {
+    "city": "Beijing",
+    "country_code": "CN",
+    "latitude": 39.9042,
+    "longitude": 116.4074
+  },
+  "vulns": {
+    "CVE-2021-36260": {
+      "cvss": 9.8,
+      "summary": "RCE vuln"
+    }
+  },
+  "hostnames": [
+    "cam.example.com"
+  ],
+  "opts": {},
+  "timestamp": "2024-01-01T00:00:00.000000",
+  "transport": "tcp",
+  "asn": "AS12345"
+}
