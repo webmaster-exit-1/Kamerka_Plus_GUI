@@ -27,6 +27,8 @@ class Device(models.Model):
     vulns = models.CharField(max_length=100, default="")
     indicator = models.CharField(max_length=100, default="")
     hostnames = models.CharField(max_length=500, default="")
+    isp = models.CharField(max_length=200, default="")
+    cpe = models.CharField(max_length=500, default="")
     screenshot = models.CharField(max_length=100000, default="")
     located = models.BooleanField(default=False, null=True)
     notes = models.CharField(max_length=1000, default="")

@@ -1,5 +1,6 @@
 import ast
 import json
+import logging
 import os
 from collections import Counter
 import requests
@@ -22,6 +23,22 @@ from kamerka.tasks import shodan_search, devices_nearby, shodan_scan_task, \
     whoisxml, check_credits, send_to_field_agent_task, nmap_scan, validate_nmap, validate_maxmind, scan, \
     exploit, wappalyzer_scan, nuclei_scan, shodan_csv_export, shodan_kml_export, shodan_json_export, \
     nmap_rtsp_scan, port_scan_task
+
+_views_logger = logging.getLogger(__name__)
+
+
+def _parse_vulns(raw):
+    """Parse a Device.vulns string (Python list literal) into a list of CVE IDs.
+
+    Returns an empty list when the value is absent, unparseable, or not a list.
+    """
+    if not raw:
+        return []
+    try:
+        result = ast.literal_eval(raw)
+        return result if isinstance(result, list) else []
+    except Exception:
+        return []
 
 
 # Create your views here.
@@ -76,9 +93,6 @@ passwds = {"bosch_security":"""The Bosch Video Recorder 630/650 Series is an 8/1
            "amcrest":"https://www.exploit-db.com/exploits/47188",
            "lutron":"Quantum is a lighting control and energy management system that provides total light management by tying the most complete line of lighting controls, motorized window shades, digital ballasts and LED drivers, and sensors together under one software umbrella. Quantum is ideal for new construction or retrofit applications and can easily scale from a single area to a building, or to a campus with many buildings.<br>https://www.exploit-db.com/exploits/44488",
            }
-
-import logging as _logging
-_views_logger = _logging.getLogger(__name__)
 
 def _get_env_key(name, *, required=False):
     """Return an environment-variable API key value.
@@ -302,6 +316,10 @@ def devices(request):
             i.indicator = ast.literal_eval(i.indicator)
         except:
             pass
+        try:
+            i.vulns_list = _parse_vulns(i.vulns)
+        except Exception:
+            i.vulns_list = []
 
     context = {"devices": all_devices}
 
@@ -360,6 +378,10 @@ def results(request, id):
 
         except:
             pass
+        try:
+            i.vulns_list = _parse_vulns(i.vulns)
+        except Exception:
+            i.vulns_list = []
 
 
     context = {'search': all_devices,
@@ -478,13 +500,16 @@ def device(request, id, device_id, ip):
                     'match': False,
                 })
 
+    cve_list = _parse_vulns(all_devices.vulns)
+
     context = {'device': all_devices,
                'nearby': nearby,
                "shodan": shodan,
                "wappalyzer": wappalyzer,
                "nuclei": nuclei,
                "passwd": info,
-               "nuclei_templates": nuclei_template_list}
+               "nuclei_templates": nuclei_template_list,
+               "cve_list": cve_list}
 
     return render(request, 'device.html', context)
 
