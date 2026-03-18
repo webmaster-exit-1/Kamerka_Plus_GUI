@@ -33,8 +33,20 @@ from app_kamerka import exploits
 
 from app_kamerka.models import Device, DeviceNearby, Search, ShodanScan, \
     Whois, Bosch, WappalyzerResult, NucleiResult
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
+
+# Warn once at import time when sudo mode is active so operators are reminded
+# to configure sudoers env_keep (see kamerka/tool_settings.py for details).
+if getattr(settings, "NMAP_USE_SUDO", False):
+    logger.warning(
+        "KAMERKA_NMAP_SUDO is enabled.  Nmap will run under sudo.  "
+        "Ensure sudoers preserves required env vars:\n"
+        "  Defaults env_keep += "
+        "\"SHODAN_API_KEY REDIS_URL CELERY_BROKER_URL CELERY_RESULT_BACKEND\"\n"
+        "or start the Celery worker as root so no sudo wrapper is needed."
+    )
 
 healthcare_queries = {"zoll": "http.favicon.hash:-236942626",
                       'dicom': "dicom",
@@ -464,16 +476,27 @@ attackers_infra_queries = {"cobaltstrike": 'product:"Cobalt Strike Beacon"',
 def _get_env_key(name, *, required=False):
     """Return an environment variable value.
 
+    Checks ``os.environ`` first.  For ``SHODAN_API_KEY`` specifically, falls
+    back to ``django.conf.settings.SHODAN_API_KEY`` so the value set at
+    Django/Celery *startup* is reused without needing the variable to be
+    re-exported in every new terminal.
+
     Logs a warning when a key that is marked *required* is missing so that
     operators know immediately which variable to set, without crashing the
     whole worker on startup.
     """
+    from django.conf import settings as _django_settings
+
     value = os.environ.get(name, "")
+    if not value:
+        # Fall back to the value resolved when Django started
+        value = getattr(_django_settings, name, "") or ""
     if required and not value:
         logger.warning(
             "Environment variable %s is not set. "
             "Features that depend on it will fail at runtime. "
-            "Set it in your shell (e.g. 'export %s=...').",
+            "Set it in your shell (e.g. 'export %s=...') and restart "
+            "the Celery worker, or add it to ~/.bashrc for persistence.",
             name, name,
         )
     return value
@@ -1504,7 +1527,8 @@ def scan(id):
     type = device1.type
 
     if type in ics_scan.keys():
-        nm = NmapProcess(ip, options="-p " + str(port) + " " + ics_scan[type])
+        nm = NmapProcess(ip, options="-p " + str(port) + " " + ics_scan[type],
+                         sudo=settings.NMAP_USE_SUDO)
         nm.run_background()
 
         while nm.is_running():
@@ -1541,7 +1565,8 @@ def scan(id):
 
 
     else:
-        nm = NmapProcess(ip, options="-p " + str(port))
+        nm = NmapProcess(ip, options="-p " + str(port),
+                         sudo=settings.NMAP_USE_SUDO)
         nm.run_background()
 
         while nm.is_running():
@@ -1767,7 +1792,7 @@ def nmap_rtsp_scan(id, ports=None, timing=None):
     elif device_type in ("dahua", "amcrest"):
         options += ",http-auth"
 
-    nm = NmapProcess(ip, options=options)
+    nm = NmapProcess(ip, options=options, sudo=settings.NMAP_USE_SUDO)
     nm.run_background()
 
     while nm.is_running():

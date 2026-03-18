@@ -133,6 +133,34 @@ export SHODAN_API_KEY=your_shodan_api_key_here
 # export PASTEBIN_DEV_KEY=your_pastebin_developer_key
 ```
 
+**Making environment variables persistent (so you don't have to re-export in every new terminal)**
+
+Add the exports to your shell profile so they are set automatically for every session:
+
+```bash
+# Append to ~/.bashrc  (bash) or ~/.zshrc (zsh)
+echo 'export SHODAN_API_KEY=your_shodan_api_key_here' >> ~/.bashrc
+source ~/.bashrc          # apply to the current shell immediately
+```
+
+For **systemd** service units, add an `Environment=` line in the `[Service]` section:
+
+```ini
+[Service]
+Environment="SHODAN_API_KEY=your_shodan_api_key_here"
+```
+
+For **Docker**, pass the variable with `-e` or an `--env-file`:
+
+```bash
+docker run -e SHODAN_API_KEY=your_key ...
+```
+
+> **Important:** Django and the Celery worker are separate processes.  Both must
+> be started with `SHODAN_API_KEY` set in their environment.  If you add the
+> export to `~/.bashrc`, open a *new* terminal (or run `source ~/.bashrc`) before
+> starting each process.
+
 | Variable | Required | Description |
 |---|---|---|
 | `SHODAN_API_KEY` | ✅ | Shodan paid-account API key |
@@ -269,6 +297,48 @@ Additional tunables in `kamerka/tool_settings.py`:
 | `NAABU_DEFAULT_PORTS` | `KAMERKA_NAABU_PORTS` | `top-100` | Port spec for liveness checks |
 | `NAABU_DEFAULT_TIMEOUT` | `KAMERKA_NAABU_TIMEOUT` | `60` | Naabu subprocess timeout (s) |
 | `NUCLEI_DEFAULT_TIMEOUT` | `KAMERKA_NUCLEI_TIMEOUT` | `300` | Nuclei subprocess timeout (s) |
+| `NMAP_USE_SUDO` | `KAMERKA_NMAP_SUDO` | `false` | Run Nmap under sudo (see below) |
+
+### Nmap and sudo
+
+Some Nmap scan types (SYN scans `-sS`, OS detection `-O`, raw-packet probes) require
+`CAP_NET_RAW` / root privileges.  There are two ways to grant them:
+
+**Option A — run the Celery worker as root**
+
+This is the simplest approach.  All environment variables (including
+`SHODAN_API_KEY`) are naturally available because root inherits the environment
+you set before starting the worker.
+
+```bash
+sudo -E celery --app kamerka worker --loglevel=info
+# -E preserves the calling user's environment including SHODAN_API_KEY
+```
+
+**Option B — enable the `KAMERKA_NMAP_SUDO` flag**
+
+```bash
+export KAMERKA_NMAP_SUDO=true
+```
+
+With this flag set, every `NmapProcess` call is wrapped with `sudo`.
+**Important:** `sudo` strips the user's environment by default, so `SHODAN_API_KEY`
+(and other variables) will **not** be visible to the Celery task unless you
+configure sudoers to preserve them:
+
+```bash
+sudo visudo
+# Add inside the Defaults block (one line per variable, or use a list):
+Defaults env_keep += "SHODAN_API_KEY REDIS_URL CELERY_BROKER_URL CELERY_RESULT_BACKEND"
+```
+
+Alternatively, use `sudo -E` (preserve entire environment) by starting the worker with:
+
+```bash
+sudo -E celery --app kamerka worker --loglevel=info
+```
+
+and leave `KAMERKA_NMAP_SUDO` unset (Nmap will already run as root).
 
 ---
 
