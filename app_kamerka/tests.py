@@ -501,7 +501,7 @@ class ScanSavesResultTest(TestCase):
 
         captured = {}
 
-        def capture_proc(ip, options=""):
+        def capture_proc(ip, options="", **kwargs):
             captured["options"] = options
             return mock_proc
 

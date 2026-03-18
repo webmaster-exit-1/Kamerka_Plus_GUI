@@ -164,6 +164,84 @@
                 letter-spacing: 0.3em;
                 z-index: 20;
             }
+            /* ── Geographic labels overlay ── */
+            #globe-labels-wrap {
+                position: absolute;
+                inset: 0;
+                pointer-events: none;
+                overflow: hidden;
+                z-index: 5;
+            }
+            .geo-label {
+                position: absolute;
+                transform: translate(-50%, -50%);
+                white-space: nowrap;
+                text-transform: uppercase;
+                font-family: var(--cp-font, monospace);
+                pointer-events: none;
+                transition: opacity 0.12s;
+            }
+            .geo-label-country {
+                font-size: 0.58em;
+                color: rgba(0,225,255,0.9);
+                letter-spacing: 0.12em;
+                text-shadow: 0 0 6px rgba(0,225,255,0.5), 0 0 2px #000;
+            }
+            .geo-label-city {
+                font-size: 0.44em;
+                color: rgba(255,0,205,0.85);
+                letter-spacing: 0.06em;
+                text-shadow: 0 0 4px rgba(255,0,205,0.45), 0 0 2px #000;
+            }
+            /* ── Opacity slider rows ── */
+            .slider-row {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                margin-top: 4px;
+                font-size: 0.78em;
+                color: var(--cp-dim);
+            }
+            .slider-row span:first-child { width: 44px; flex-shrink: 0; }
+            .slider-row span:last-child  { width: 32px; text-align: right; flex-shrink: 0; }
+            .slider-row input[type=range] {
+                flex: 1;
+                accent-color: var(--cp-cyan);
+                height: 3px;
+                cursor: pointer;
+            }
+            /* ── Enhanced legend ── */
+            #globe-legend {
+                max-height: calc(100vh - 80px);
+                overflow-y: auto;
+            }
+            .leg-section {
+                margin-top: 8px;
+                padding-top: 6px;
+                border-top: 1px solid rgba(0,100,215,0.25);
+            }
+            .leg-section-title {
+                font-size: 0.68em;
+                color: var(--cp-magenta);
+                letter-spacing: 0.18em;
+                margin-bottom: 4px;
+            }
+            .leg-stat-row {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 3px;
+                font-size: 0.78em;
+            }
+            .leg-stat-row .leg-stat-val { color: var(--cp-cyan); }
+            .leg-org-row {
+                font-size: 0.7em;
+                margin-bottom: 2px;
+                display: flex;
+                justify-content: space-between;
+                gap: 6px;
+            }
+            .leg-org-name { color: var(--cp-dim); overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
+            .leg-org-count { color: var(--cp-cyan); flex-shrink: 0; }
         </style>
     </head>
     <body>
@@ -210,6 +288,9 @@
 
                     <canvas id="globe-canvas"></canvas>
 
+                    <!-- Geographic label overlay (positioned via JS / Vector3.project) -->
+                    <div id="globe-labels-wrap"></div>
+
                     <!-- Controls -->
                     <div id="globe-controls">
                         <div class="ctrl-group">
@@ -233,7 +314,32 @@
                         <div class="ctrl-group">
                             <label>ROTATION</label>
                             <div class="btn-row">
-                                <button class="mode-btn active" id="btn-rotate">⏸ PAUSE</button>
+                                <button class="mode-btn" id="btn-rotate">▶ ROTATE</button>
+                            </div>
+                        </div>
+                        <div class="ctrl-group">
+                            <label>LABELS</label>
+                            <div class="btn-row">
+                                <button class="mode-btn active" id="btn-countries">🗺 COUNTRIES</button>
+                                <button class="mode-btn active" id="btn-cities">🏙 CITIES</button>
+                            </div>
+                        </div>
+                        <div class="ctrl-group">
+                            <label>OPACITY</label>
+                            <div class="slider-row">
+                                <span>Spikes</span>
+                                <input type="range" id="slider-spike" min="0" max="100" value="100">
+                                <span id="val-spike">100%</span>
+                            </div>
+                            <div class="slider-row">
+                                <span>Heat</span>
+                                <input type="range" id="slider-heat" min="0" max="100" value="70">
+                                <span id="val-heat">70%</span>
+                            </div>
+                            <div class="slider-row">
+                                <span>Labels</span>
+                                <input type="range" id="slider-labels" min="0" max="100" value="100">
+                                <span id="val-labels">100%</span>
                             </div>
                         </div>
                     </div>
@@ -249,17 +355,37 @@
                     <div id="globe-stats">
                         DEVICES: <span id="stat-total">—</span>
                         UNIQUE IPs: <span id="stat-ips">—</span>
+                        COUNTRIES: <span id="stat-countries">—</span>
                         CRITICAL: <span id="stat-crit" style="color:#ff2050">—</span>
                         HIGH: <span id="stat-high" style="color:#ff6030">—</span>
                     </div>
 
-                    <!-- Legend -->
+                    <!-- Enhanced legend -->
                     <div id="globe-legend">
-                        <div class="leg-row"><span class="leg-dot" style="background:#ff2050"></span> Critical</div>
-                        <div class="leg-row"><span class="leg-dot" style="background:#ff6030"></span> High</div>
-                        <div class="leg-row"><span class="leg-dot" style="background:#ffe600"></span> Medium</div>
-                        <div class="leg-row"><span class="leg-dot" style="background:#00ff88"></span> Low</div>
-                        <div class="leg-row"><span class="leg-dot" style="background:#00e1ff"></span> Info/Unknown</div>
+                        <div class="leg-section-title">STATISTICS</div>
+                        <div class="leg-stat-row"><span>Devices</span><span class="leg-stat-val" id="leg-devices">—</span></div>
+                        <div class="leg-stat-row"><span>Unique IPs</span><span class="leg-stat-val" id="leg-ips">—</span></div>
+                        <div class="leg-stat-row"><span>Countries</span><span class="leg-stat-val" id="leg-countries">—</span></div>
+                        <div class="leg-stat-row"><span>Orgs</span><span class="leg-stat-val" id="leg-orgs">—</span></div>
+
+                        <div class="leg-section">
+                            <div class="leg-section-title">SEVERITY</div>
+                            <div class="leg-row"><span class="leg-dot" style="background:#ff2050"></span> Critical <span class="leg-stat-val" id="leg-crit" style="margin-left:auto">—</span></div>
+                            <div class="leg-row"><span class="leg-dot" style="background:#ff6030"></span> High     <span class="leg-stat-val" id="leg-high" style="margin-left:auto">—</span></div>
+                            <div class="leg-row"><span class="leg-dot" style="background:#ffe600"></span> Medium   <span class="leg-stat-val" id="leg-med"  style="margin-left:auto">—</span></div>
+                            <div class="leg-row"><span class="leg-dot" style="background:#00ff88"></span> Low      <span class="leg-stat-val" id="leg-low"  style="margin-left:auto">—</span></div>
+                            <div class="leg-row"><span class="leg-dot" style="background:#00e1ff"></span> Info     <span class="leg-stat-val" id="leg-info" style="margin-left:auto">—</span></div>
+                        </div>
+
+                        <div class="leg-section">
+                            <div class="leg-section-title">TOP ORGS</div>
+                            <div id="leg-top-orgs"></div>
+                        </div>
+
+                        <div class="leg-section">
+                            <div class="leg-section-title">TOP COUNTRIES</div>
+                            <div id="leg-top-countries"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -279,6 +405,108 @@
 
         const EARTH_RADIUS = 1.0;
         const SPIKE_BASE   = 0.012;
+
+        // ── Label visibility tuning ───────────────────────────────────
+        // Camera z > this threshold hides city labels (too far zoomed out).
+        const CITY_VISIBILITY_ZOOM_THRESHOLD = 3.6;
+        // Dot-product value below which a label is fully hidden (< 0 = back face).
+        const HORIZON_THRESHOLD = 0.12;
+        // Multiplier that controls how quickly labels fade in from the horizon.
+        const FADE_MULTIPLIER   = 4.5;
+
+        // ── Opacity state (updated by sliders) ───────────────────────
+        let spikeOpacity  = 1.0;
+        let heatOpacity   = 0.70;
+        let labelOpacity  = 1.0;
+        let showCountries = true;
+        let showCities    = true;
+
+        // ── Geographic label data  [lat, lon, "Name"] ────────────────
+        // Country centroids (approximate)
+        const COUNTRY_DATA = [
+            [37,-96,"USA"],[60,-96,"Canada"],[23,-102,"Mexico"],
+            [-10,-53,"Brazil"],[-34,-64,"Argentina"],[4,-72,"Colombia"],
+            [-10,-76,"Peru"],[-30,-71,"Chile"],[-33,-56,"Uruguay"],
+            [-17,-65,"Bolivia"],[-23,-58,"Paraguay"],
+            [54,-2,"UK"],[46,2,"France"],[51,10,"Germany"],
+            [40,-4,"Spain"],[42,12,"Italy"],[39,-8,"Portugal"],
+            [52,5,"Netherlands"],[51,4,"Belgium"],[47,8,"Switzerland"],
+            [47,13,"Austria"],[62,15,"Sweden"],[65,14,"Norway"],
+            [64,26,"Finland"],[56,10,"Denmark"],[52,20,"Poland"],
+            [49,31,"Ukraine"],[53,28,"Belarus"],[55,37,"Russia"],
+            [39,35,"Turkey"],[50,14,"Czech Rep."],[47,19,"Hungary"],
+            [45,25,"Romania"],[44,20,"Serbia"],[42,12.5,"Croatia"],
+            [35,105,"China"],[36,138,"Japan"],[20,77,"India"],
+            [36,128,"S. Korea"],[40,127,"N. Korea"],[23,121,"Taiwan"],
+            [15,101,"Thailand"],[16,108,"Vietnam"],[-5,120,"Indonesia"],
+            [13,122,"Philippines"],[4,109,"Malaysia"],[18,97,"Myanmar"],
+            [11,104,"Cambodia"],[18,103,"Laos"],[23,90,"Bangladesh"],
+            [30,69,"Pakistan"],[33,65,"Afghanistan"],
+            [41,64,"Uzbekistan"],[48,68,"Kazakhstan"],
+            [40,47,"Azerbaijan"],[40,45,"Armenia"],[42,44,"Georgia"],
+            [35,38,"Syria"],[33,44,"Iraq"],[24,45,"Saudi Arabia"],
+            [25,51,"Qatar"],[24,54,"UAE"],[15,48,"Yemen"],
+            [21,57,"Oman"],[31,35,"Israel"],[31,36,"Jordan"],
+            [33,9,"Tunisia"],[32,-5,"Morocco"],[28,3,"Algeria"],
+            [27,17,"Libya"],[26,30,"Egypt"],[15,30,"Sudan"],
+            [9,38,"Ethiopia"],[0,38,"Kenya"],[-1,32,"Uganda"],
+            [-6,35,"Tanzania"],[10,8,"Nigeria"],[8,-1,"Ghana"],
+            [6,12,"Cameroon"],[-4,24,"D.R. Congo"],
+            [-29,25,"S. Africa"],[-20,30,"Zimbabwe"],
+            [-25,133,"Australia"],[-41,174,"New Zealand"],
+            [-6,147,"Papua N.G."],[60,10,"Norway"],
+        ];
+        // Major cities  [lat, lon, "Name"]
+        const CITY_DATA = [
+            [40.7,-74,"New York"],[34.1,-118,"Los Angeles"],
+            [41.9,-87.6,"Chicago"],[29.8,-95.4,"Houston"],
+            [43.7,-79.4,"Toronto"],[45.5,-73.6,"Montreal"],
+            [49.3,-123.1,"Vancouver"],[38.9,-77,"Washington DC"],
+            [37.8,-122.4,"San Francisco"],[25.8,-80.2,"Miami"],
+            [19.4,-99.1,"Mexico City"],[20.7,-103.4,"Guadalajara"],
+            [-23.5,-46.6,"São Paulo"],[-22.9,-43.2,"Rio de Janeiro"],
+            [-34.6,-58.4,"Buenos Aires"],[4.7,-74.1,"Bogotá"],
+            [-12.1,-77,"Lima"],[-33.5,-70.7,"Santiago"],
+            [51.5,-0.1,"London"],[48.9,2.3,"Paris"],
+            [52.5,13.4,"Berlin"],[53.3,-6.3,"Dublin"],
+            [40.4,-3.7,"Madrid"],[41.4,2.2,"Barcelona"],
+            [41.9,12.5,"Rome"],[45.5,9.2,"Milan"],
+            [52.4,4.9,"Amsterdam"],[50.8,4.4,"Brussels"],
+            [47.4,8.5,"Zürich"],[48.2,16.4,"Vienna"],
+            [52.2,21,"Warsaw"],[50.1,14.5,"Prague"],
+            [47.5,19.1,"Budapest"],[44.4,26.1,"Bucharest"],
+            [50.4,30.5,"Kyiv"],[55.8,37.6,"Moscow"],
+            [59.9,30.3,"St. Petersburg"],[59.3,18.1,"Stockholm"],
+            [59.9,10.7,"Oslo"],[55.7,12.6,"Copenhagen"],
+            [60.2,25,"Helsinki"],[38.7,-9.1,"Lisbon"],
+            [37.9,23.7,"Athens"],[41,28.9,"Istanbul"],
+            [25.2,55.3,"Dubai"],[24.7,46.7,"Riyadh"],
+            [33.3,44.4,"Baghdad"],[35.7,51.4,"Tehran"],
+            [32.1,34.8,"Tel Aviv"],[30,31.2,"Cairo"],
+            [33.9,35.5,"Beirut"],[15.6,32.5,"Khartoum"],
+            [33.6,-7.6,"Casablanca"],[36.8,3.1,"Algiers"],
+            [5.6,-0.2,"Accra"],[6.5,3.4,"Lagos"],
+            [9,7.5,"Abuja"],[4.4,9.7,"Douala"],
+            [-4.3,15.3,"Kinshasa"],[-8.8,13.2,"Luanda"],
+            [-26.2,28,"Johannesburg"],[-33.9,18.4,"Cape Town"],
+            [-1.3,36.8,"Nairobi"],[9,38.7,"Addis Ababa"],
+            [39.9,116.4,"Beijing"],[31.2,121.5,"Shanghai"],
+            [23.1,113.3,"Guangzhou"],[22.3,114.2,"Hong Kong"],
+            [25,121.5,"Taipei"],[35.7,139.7,"Tokyo"],
+            [34.7,135.5,"Osaka"],[37.6,127,"Seoul"],
+            [21,105.8,"Hanoi"],[10.8,106.7,"Ho Chi Minh City"],
+            [13.8,100.5,"Bangkok"],[16.9,96.2,"Yangon"],
+            [1.4,103.8,"Singapore"],[3.1,101.7,"Kuala Lumpur"],
+            [-6.2,106.8,"Jakarta"],[14.6,121,"Manila"],
+            [28.6,77.2,"New Delhi"],[19.1,72.9,"Mumbai"],
+            [22.6,88.4,"Kolkata"],[13.1,80.3,"Chennai"],
+            [12.9,77.6,"Bangalore"],[23.7,90.4,"Dhaka"],
+            [24.9,67.1,"Karachi"],[31.5,74.3,"Lahore"],
+            [34.5,69.2,"Kabul"],[41.3,69.3,"Tashkent"],
+            [43.3,76.9,"Almaty"],[40.4,49.9,"Baku"],
+            [-33.9,151.2,"Sydney"],[-37.8,145,"Melbourne"],
+            [-36.9,174.8,"Auckland"],
+        ];
 
         // ── Theme definitions (mirror globe_3d/themes.py) ────────────
         const THEMES = {
@@ -384,7 +612,9 @@
         // ── Build device spike (cylinder tapered to point) ────────────
         function buildSpike(lat, lon, height, colour) {
             const geo = new THREE.CylinderGeometry(0, SPIKE_BASE, height, 5);
-            const mat = new THREE.MeshBasicMaterial({ color: colour });
+            const mat = new THREE.MeshBasicMaterial({
+                color: colour, transparent: true, opacity: spikeOpacity,
+            });
             const mesh = new THREE.Mesh(geo, mat);
 
             const origin = latLonToVec3(lat, lon, EARTH_RADIUS);
@@ -420,7 +650,7 @@
             const tex = new THREE.CanvasTexture(canvas);
             const mat = new THREE.SpriteMaterial({
                 map: tex, blending: THREE.AdditiveBlending,
-                depthWrite: false, transparent: true,
+                depthWrite: false, transparent: true, opacity: heatOpacity,
             });
             const sprite = new THREE.Sprite(mat);
             const r = EARTH_RADIUS + 0.005;
@@ -473,7 +703,7 @@
         (function loadEarthTexture() {
             const loader = new THREE.TextureLoader();
             loader.load(
-                'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/land_ocean_ice_cloud_2048.jpg',
+                'https://threejs.org/examples/textures/land_ocean_ice_cloud_2048.jpg',
                 function onLoad(tex) {
                     earthMat.map   = tex;
                     // Use neutral white so the texture renders without a colour
@@ -509,9 +739,67 @@
         // State
         let currentTheme = 'cyberpunk';
         let currentMode  = 'spikes';
-        let rotating     = true;
+        let rotating     = false;   // default: globe starts paused
         let allDevices   = [];
         let spikeObjects = [];  // { mesh, device } for raycasting
+
+        // ── Label DOM system ──────────────────────────────────────────
+        const labelsWrap = document.getElementById('globe-labels-wrap');
+        const allLabels  = [];   // { el, base: THREE.Vector3, type }
+        const _lblMat4   = new THREE.Matrix4();
+        const _lblVec    = new THREE.Vector3();
+        const _lblCamPos = new THREE.Vector3();
+
+        function _createLabel(lat, lon, name, type) {
+            const el = document.createElement('div');
+            el.className = 'geo-label geo-label-' + type;
+            el.textContent = name;
+            labelsWrap.appendChild(el);
+            const base = latLonToVec3(lat, lon, EARTH_RADIUS + 0.012);
+            allLabels.push({ el, base, type });
+        }
+        COUNTRY_DATA.forEach(([lat, lon, name]) => _createLabel(lat, lon, name, 'country'));
+        CITY_DATA.forEach(([lat, lon, name])    => _createLabel(lat, lon, name, 'city'));
+
+        function updateLabels() {
+            const w = wrap.clientWidth, h = wrap.clientHeight;
+            _lblMat4.makeRotationFromEuler(earthMesh.rotation);
+            camera.getWorldPosition(_lblCamPos);
+            _lblCamPos.normalize();
+
+            allLabels.forEach(lbl => {
+                // Zoom-gating: cities only visible when zoomed in
+                if (lbl.type === 'city' && camera.position.z > CITY_VISIBILITY_ZOOM_THRESHOLD) {
+                    lbl.el.style.display = 'none'; return;
+                }
+                if (lbl.type === 'country' && !showCountries) {
+                    lbl.el.style.display = 'none'; return;
+                }
+                if (lbl.type === 'city' && !showCities) {
+                    lbl.el.style.display = 'none'; return;
+                }
+
+                // World-space position of the label after earth rotation
+                _lblVec.copy(lbl.base).applyMatrix4(_lblMat4);
+
+                // Visibility: dot > 0 means this point faces the camera
+                const facing = _lblVec.clone().normalize().dot(_lblCamPos);
+                if (facing < HORIZON_THRESHOLD) { lbl.el.style.display = 'none'; return; }
+
+                // Project to 2-D screen coords
+                const ndc = _lblVec.clone().project(camera);
+                const x   = ( ndc.x * 0.5 + 0.5) * w;
+                const y   = (-ndc.y * 0.5 + 0.5) * h;
+
+                // Fade as label approaches the horizon
+                const alpha = Math.min(1, (facing - HORIZON_THRESHOLD) * FADE_MULTIPLIER) * labelOpacity;
+
+                lbl.el.style.display = '';
+                lbl.el.style.left    = x + 'px';
+                lbl.el.style.top     = y + 'px';
+                lbl.el.style.opacity = alpha;
+            });
+        }
 
         // Raycaster for click-to-inspect
         const raycaster = new THREE.Raycaster();
@@ -533,14 +821,51 @@
         }
 
         function updateStats() {
-            const total = allDevices.length;
-            const ips   = new Set(allDevices.map(d => d.ip)).size;
-            const crit  = allDevices.filter(d => d.severity === 'critical').length;
-            const high  = allDevices.filter(d => d.severity === 'high').length;
-            document.getElementById('stat-total').textContent = total;
-            document.getElementById('stat-ips').textContent   = ips;
-            document.getElementById('stat-crit').textContent  = crit;
-            document.getElementById('stat-high').textContent  = high;
+            const total    = allDevices.length;
+            const ips      = new Set(allDevices.map(d => d.ip)).size;
+            const crit     = allDevices.filter(d => d.severity === 'critical').length;
+            const high     = allDevices.filter(d => d.severity === 'high').length;
+            const med      = allDevices.filter(d => d.severity === 'medium').length;
+            const low      = allDevices.filter(d => d.severity === 'low').length;
+            const info     = allDevices.filter(d => d.severity === 'info').length;
+            const countries = new Set(allDevices.map(d => d.country).filter(Boolean)).size;
+
+            // Stats bar
+            document.getElementById('stat-total').textContent    = total;
+            document.getElementById('stat-ips').textContent      = ips;
+            document.getElementById('stat-crit').textContent     = crit;
+            document.getElementById('stat-high').textContent     = high;
+            document.getElementById('stat-countries').textContent = countries;
+
+            // Legend – stats
+            document.getElementById('leg-devices').textContent   = total;
+            document.getElementById('leg-ips').textContent       = ips;
+            document.getElementById('leg-countries').textContent  = countries;
+            document.getElementById('leg-orgs').textContent      =
+                new Set(allDevices.map(d => d.org).filter(Boolean)).size;
+
+            // Legend – severity counts
+            document.getElementById('leg-crit').textContent = crit;
+            document.getElementById('leg-high').textContent = high;
+            document.getElementById('leg-med').textContent  = med;
+            document.getElementById('leg-low').textContent  = low;
+            document.getElementById('leg-info').textContent = info;
+
+            // Legend – top 5 orgs
+            const orgMap = {};
+            allDevices.forEach(d => { if (d.org) orgMap[d.org] = (orgMap[d.org] || 0) + 1; });
+            const topOrgs = Object.entries(orgMap).sort((a,b) => b[1]-a[1]).slice(0, 5);
+            document.getElementById('leg-top-orgs').innerHTML = topOrgs.map(([name, cnt]) =>
+                `<div class="leg-org-row"><span class="leg-org-name">${name}</span><span class="leg-org-count">${cnt}</span></div>`
+            ).join('') || '<div class="leg-org-row" style="color:var(--cp-dim)">No data</div>';
+
+            // Legend – top 5 countries
+            const ctryMap = {};
+            allDevices.forEach(d => { if (d.country) ctryMap[d.country] = (ctryMap[d.country] || 0) + 1; });
+            const topCtry = Object.entries(ctryMap).sort((a,b) => b[1]-a[1]).slice(0, 5);
+            document.getElementById('leg-top-countries').innerHTML = topCtry.map(([name, cnt]) =>
+                `<div class="leg-org-row"><span class="leg-org-name">${name}</span><span class="leg-org-count">${cnt}</span></div>`
+            ).join('') || '<div class="leg-org-row" style="color:var(--cp-dim)">No data</div>';
         }
 
         // ─────────────────────────────────────────────────────────────
@@ -712,6 +1037,36 @@
             rotBtn.classList.toggle('active', rotating);
         });
 
+        // ── Labels toggles ────────────────────────────────────────────
+        document.getElementById('btn-countries').addEventListener('click', function() {
+            showCountries = !showCountries;
+            this.classList.toggle('active', showCountries);
+        });
+        document.getElementById('btn-cities').addEventListener('click', function() {
+            showCities = !showCities;
+            this.classList.toggle('active', showCities);
+        });
+
+        // ── Opacity sliders ───────────────────────────────────────────
+        document.getElementById('slider-spike').addEventListener('input', function() {
+            spikeOpacity = this.value / 100;
+            document.getElementById('val-spike').textContent = this.value + '%';
+            spikesGroup.traverse(o => {
+                if (o.material) { o.material.opacity = spikeOpacity; o.material.transparent = spikeOpacity < 1; }
+            });
+        });
+        document.getElementById('slider-heat').addEventListener('input', function() {
+            heatOpacity = this.value / 100;
+            document.getElementById('val-heat').textContent = this.value + '%';
+            heatmapGroup.traverse(o => {
+                if (o.material) { o.material.opacity = heatOpacity; }
+            });
+        });
+        document.getElementById('slider-labels').addEventListener('input', function() {
+            labelOpacity = this.value / 100;
+            document.getElementById('val-labels').textContent = this.value + '%';
+        });
+
         // ─────────────────────────────────────────────────────────────
         //  Resize handler
         // ─────────────────────────────────────────────────────────────
@@ -735,6 +1090,7 @@
                 graticule.rotation.y    += delta;
             }
             renderer.render(scene, camera);
+            updateLabels();
         }
         animate();
 
