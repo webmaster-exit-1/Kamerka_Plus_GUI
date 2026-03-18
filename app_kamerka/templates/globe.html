@@ -464,6 +464,31 @@
         const earthMesh = new THREE.Mesh(earthGeo, earthMat);
         scene.add(earthMesh);
 
+        // ── Earth texture ─────────────────────────────────────────────
+        // Try to load the NASA Blue Marble Earth map from the Three.js
+        // examples CDN (public-domain image, stable URL).  If the request
+        // fails (offline / firewalled) we fall back silently to the solid
+        // theme colour that was already set above.
+        let earthTextureLoaded = false;
+        (function loadEarthTexture() {
+            const loader = new THREE.TextureLoader();
+            loader.load(
+                'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/land_ocean_ice_cloud_2048.jpg',
+                function onLoad(tex) {
+                    earthMat.map   = tex;
+                    // Use neutral white so the texture renders without a colour
+                    // tint; theme atmosphere/grid still applies to other objects.
+                    earthMat.color.set('#ffffff');
+                    earthMat.needsUpdate = true;
+                    earthTextureLoaded = true;
+                },
+                undefined,   // onProgress (not needed)
+                function onError() {
+                    // Network failure – keep existing solid colour (no-op).
+                }
+            );
+        })();
+
         // Atmosphere glow
         const atmGeo = new THREE.SphereGeometry(EARTH_RADIUS * 1.015, 64, 64);
         const atmMat = new THREE.MeshBasicMaterial({
@@ -553,8 +578,11 @@
                 }
             });
 
-            // Apply theme to earth
-            earthMat.color.set(theme.earth);
+            // Apply theme to earth – only override colour when no texture is
+            // loaded (texture uses neutral white to render without tinting).
+            if (!earthTextureLoaded) {
+                earthMat.color.set(theme.earth);
+            }
 
             // Rebuild graticule with new colour
             scene.remove(graticule);

@@ -161,4 +161,19 @@ from kamerka.tool_settings import (  # noqa: E402
     NAABU_DISCOVERY_TIMEOUT,
     NUCLEI_BIN,
     NUCLEI_DEFAULT_TIMEOUT,
+    NMAP_USE_SUDO,
 )
+
+# ---------------------------------------------------------------------------
+# Shodan API key – read once at startup so every component (Django views,
+# Celery tasks) shares a single resolved value.  Setting it here means you
+# only need the env-var to be present when Django / Celery *start*, not in
+# every new terminal that you open afterwards.
+#
+# Persist it across sessions by adding to ~/.bashrc (or ~/.profile):
+#   export SHODAN_API_KEY=your_key_here
+#
+# For systemd services add an EnvironmentFile or an Environment= line in the
+# unit file.  For Docker, use --env-file or -e SHODAN_API_KEY=...
+# ---------------------------------------------------------------------------
+SHODAN_API_KEY: str = os.environ.get("SHODAN_API_KEY", "")

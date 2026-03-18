@@ -68,6 +68,18 @@
                         <a href="/sources"><span class="fa fa-book"></span> <span class="xn-text">Useful links</span></a>
                     </li>
 
+                    <li class="xn-title">Scan Tools</li>
+                    <li>
+                        <a href="javascript:void(0)" onclick="$('[href=\'#tab10\']').tab('show');window.scrollTo(0,0);" title="Run an Nmap port/service scan against this device">
+                            <span class="fa fa-terminal" style="color:#ff2050"></span> <span class="xn-text">NMAP Scan</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="javascript:void(0)" onclick="$('[href=\'#tab11\']').tab('show');window.scrollTo(0,0);" title="Run exploit checks against this device">
+                            <span class="fa fa-bug" style="color:#ffe600"></span> <span class="xn-text">Exploit</span>
+                        </a>
+                    </li>
+
 
                 </ul>
                 <!-- END X-NAVIGATION -->
@@ -105,8 +117,8 @@
                                     <li class="active"><a href="#tab8" data-toggle="tab">Locate</a></li>
                                         {% endif %}
                                     <li><a href="#tab9" data-toggle="tab">Intel</a></li>
-                                    <li><a href="#tab10" data-toggle="tab">NMAP</a></li>
-                                    <li><a href="#tab11" data-toggle="tab">Exploit</a></li>
+                                    <li><a href="#tab10" data-toggle="tab" style="color:#ff2050;font-weight:bold;">&#9889; NMAP</a></li>
+                                    <li><a href="#tab11" data-toggle="tab" style="color:#ffe600;font-weight:bold;">&#128027; Exploit</a></li>
                                 </ul>
                                 <div class="panel-body tab-content">
                                     <div class="tab-pane active" id="tab8">

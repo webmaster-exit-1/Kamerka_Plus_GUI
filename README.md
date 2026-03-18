@@ -133,6 +133,34 @@ export SHODAN_API_KEY=your_shodan_api_key_here
 # export PASTEBIN_DEV_KEY=your_pastebin_developer_key
 ```
 
+**Making environment variables persistent (so you don't have to re-export in every new terminal)**
+
+Add the exports to your shell profile so they are set automatically for every session:
+
+```bash
+# Append to ~/.bashrc  (bash) or ~/.zshrc (zsh)
+echo 'export SHODAN_API_KEY=your_shodan_api_key_here' >> ~/.bashrc
+source ~/.bashrc          # apply to the current shell immediately
+```
+
+For **systemd** service units, add an `Environment=` line in the `[Service]` section:
+
+```ini
+[Service]
+Environment="SHODAN_API_KEY=your_shodan_api_key_here"
+```
+
+For **Docker**, pass the variable with `-e` or an `--env-file`:
+
+```bash
+docker run -e SHODAN_API_KEY=your_key ...
+```
+
+> **Important:** Django and the Celery worker are separate processes.  Both must
+> be started with `SHODAN_API_KEY` set in their environment.  If you add the
+> export to `~/.bashrc`, open a *new* terminal (or run `source ~/.bashrc`) before
+> starting each process.
+
 | Variable | Required | Description |
 |---|---|---|
 | `SHODAN_API_KEY` | ✅ | Shodan paid-account API key |
