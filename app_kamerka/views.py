@@ -23,7 +23,8 @@ from app_kamerka.models import Search, Device, DeviceNearby, ShodanScan, Whois, 
 from kamerka.tasks import shodan_search, devices_nearby, shodan_scan_task, \
     whoisxml, check_credits, send_to_field_agent_task, nmap_scan, validate_nmap, validate_maxmind, scan, \
     exploit, wappalyzer_scan, nuclei_scan, shodan_csv_export, shodan_kml_export, shodan_json_export, \
-    nmap_rtsp_scan, port_scan_task
+    nmap_rtsp_scan, port_scan_task, deep_protocol_scan, nvd_lookup, honeypot_check, \
+    sbom_lookup, gfw_check, check_search_cost
 
 _views_logger = logging.getLogger(__name__)
 
@@ -503,6 +504,25 @@ def device(request, id, device_id, ip):
 
     cve_list = _parse_vulns(all_devices.vulns)
 
+    # New intelligence data
+    fingerprints = ProtocolFingerprint.objects.filter(device_id=all_devices.id)
+    vuln_intel = VulnIntelligence.objects.filter(device_id=all_devices.id)
+    honeypot = HoneypotAnalysis.objects.filter(device_id=all_devices.id).first()
+    sbom_components = SBOMComponent.objects.filter(device_id=all_devices.id)
+    gfw_status = GFWStatus.objects.filter(device_id=all_devices.id).first()
+
+    # Compute max EPSS for risk meter
+    max_epss = 0.0
+    has_kev = False
+    has_exploit = False
+    for vi in vuln_intel:
+        if vi.epss_score > max_epss:
+            max_epss = vi.epss_score
+        if vi.kev_listed:
+            has_kev = True
+        if vi.exploit_available:
+            has_exploit = True
+
     context = {'device': all_devices,
                'nearby': nearby,
                "shodan": shodan,
@@ -510,7 +530,15 @@ def device(request, id, device_id, ip):
                "nuclei": nuclei,
                "passwd": info,
                "nuclei_templates": nuclei_template_list,
-               "cve_list": cve_list}
+               "cve_list": cve_list,
+               "fingerprints": fingerprints,
+               "vuln_intel": vuln_intel,
+               "honeypot": honeypot,
+               "sbom_components": sbom_components,
+               "gfw_status": gfw_status,
+               "max_epss": max_epss,
+               "has_kev": has_kev,
+               "has_exploit": has_exploit}
 
     return render(request, 'device.html', context)
 
@@ -857,6 +885,214 @@ def globe_devices_json(request):
             'country':    d.country_code or '',
             'vuln_count': vuln_count,
             'severity':   severity,
+        })
+
+    return JsonResponse(records, safe=False)
+
+
+# ---------------------------------------------------------------------------
+# Deep Protocol Scan views
+# ---------------------------------------------------------------------------
+
+def deep_scan_view(request, id):
+    """Trigger a deep protocol fingerprinting scan via Celery."""
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        protocol = request.GET.get('protocol', None)
+        task = deep_protocol_scan.delay(device_id=id, protocol=protocol)
+        return HttpResponse(json.dumps({'task_id': task.id}), content_type='application/json')
+    return HttpResponse(json.dumps({'task_id': None}), content_type='application/json')
+
+
+def get_fingerprint_results(request, id):
+    """Return protocol fingerprint data for a device."""
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        fps = ProtocolFingerprint.objects.filter(device_id=id)
+        if not fps.exists():
+            return HttpResponse(json.dumps([]), content_type="application/json")
+        response_data = serializers.serialize('json', fps)
+        return HttpResponse(response_data, content_type="application/json")
+    return HttpResponse(json.dumps([]), content_type="application/json")
+
+
+# ---------------------------------------------------------------------------
+# Vulnerability Intelligence views
+# ---------------------------------------------------------------------------
+
+def nvd_scan_view(request, id):
+    """Trigger NVD lookup + EPSS/KEV enrichment via Celery."""
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        task = nvd_lookup.delay(device_id=id)
+        return HttpResponse(json.dumps({'task_id': task.id}), content_type='application/json')
+    return HttpResponse(json.dumps({'task_id': None}), content_type='application/json')
+
+
+def get_vuln_intel(request, id):
+    """Return vulnerability intelligence data for a device."""
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        vulns = VulnIntelligence.objects.filter(device_id=id)
+        if not vulns.exists():
+            return HttpResponse(json.dumps([]), content_type="application/json")
+        data = []
+        for v in vulns:
+            data.append({
+                "cve_id": v.cve_id,
+                "cvss_score": v.cvss_score,
+                "epss_score": v.epss_score,
+                "epss_percentile": v.epss_percentile,
+                "kev_listed": v.kev_listed,
+                "exploit_available": v.exploit_available,
+                "description": v.description[:300],
+            })
+        return HttpResponse(json.dumps(data), content_type="application/json")
+    return HttpResponse(json.dumps([]), content_type="application/json")
+
+
+# ---------------------------------------------------------------------------
+# Honeypot Analysis views
+# ---------------------------------------------------------------------------
+
+def honeypot_scan_view(request, id):
+    """Trigger honeypot probability analysis via Celery."""
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        task = honeypot_check.delay(device_id=id)
+        return HttpResponse(json.dumps({'task_id': task.id}), content_type='application/json')
+    return HttpResponse(json.dumps({'task_id': None}), content_type='application/json')
+
+
+# ---------------------------------------------------------------------------
+# SBOM views
+# ---------------------------------------------------------------------------
+
+def sbom_scan_view(request, id):
+    """Trigger SBOM component lookup via Celery."""
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        task = sbom_lookup.delay(device_id=id)
+        return HttpResponse(json.dumps({'task_id': task.id}), content_type='application/json')
+    return HttpResponse(json.dumps({'task_id': None}), content_type='application/json')
+
+
+def get_sbom_results(request, id):
+    """Return SBOM components for a device."""
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        components = SBOMComponent.objects.filter(device_id=id)
+        if not components.exists():
+            return HttpResponse(json.dumps([]), content_type="application/json")
+        data = []
+        for c in components:
+            data.append({
+                "component_name": c.component_name,
+                "version": c.version,
+                "component_type": c.component_type,
+                "license_name": c.license_name,
+                "cpe_string": c.cpe_string,
+            })
+        return HttpResponse(json.dumps(data), content_type="application/json")
+    return HttpResponse(json.dumps([]), content_type="application/json")
+
+
+# ---------------------------------------------------------------------------
+# GFW Reachability views
+# ---------------------------------------------------------------------------
+
+def gfw_check_view(request, id):
+    """Trigger GFW reachability check via Celery."""
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        task = gfw_check.delay(device_id=id)
+        return HttpResponse(json.dumps({'task_id': task.id}), content_type='application/json')
+    return HttpResponse(json.dumps({'task_id': None}), content_type='application/json')
+
+
+# ---------------------------------------------------------------------------
+# Search Cost Estimate view
+# ---------------------------------------------------------------------------
+
+def search_cost_view(request):
+    """Return estimated Shodan API credit cost for a search query."""
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        query = request.GET.get('query', '')
+        country = request.GET.get('country', None)
+        if not query:
+            return HttpResponse(
+                json.dumps({'error': 'No query provided'}),
+                content_type='application/json',
+            )
+        result = check_search_cost(query, country)
+        return HttpResponse(json.dumps(result), content_type='application/json')
+    return HttpResponse(json.dumps({'error': 'Invalid request'}), content_type='application/json')
+
+
+# ---------------------------------------------------------------------------
+# Enhanced globe_devices_json with EPSS/KEV data
+# ---------------------------------------------------------------------------
+
+def globe_devices_epss_json(request):
+    """Return devices with EPSS risk scoring for the 3D globe.
+
+    Extends the base globe_devices_json with EPSS scores, KEV status,
+    and honeypot probability for enhanced spike coloring.
+    """
+    devices = Device.objects.all()
+    records = []
+    for d in devices:
+        try:
+            lat = float(d.lat)
+            lon = float(d.lon)
+        except (ValueError, TypeError):
+            continue
+
+        vuln_count = 0
+        if d.vulns:
+            try:
+                vuln_list = json.loads(d.vulns.replace("'", '"'))
+                vuln_count = len(vuln_list) if isinstance(vuln_list, list) else 0
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        # Get EPSS data
+        max_epss = 0.0
+        is_kev = False
+        vuln_intels = VulnIntelligence.objects.filter(device=d)
+        for vi in vuln_intels:
+            if vi.epss_score > max_epss:
+                max_epss = vi.epss_score
+            if vi.kev_listed:
+                is_kev = True
+
+        # Get honeypot data
+        honeypot_prob = 0.0
+        hp = HoneypotAnalysis.objects.filter(device=d).first()
+        if hp:
+            honeypot_prob = hp.probability
+
+        # EPSS-based severity (overrides vuln-count severity)
+        if is_kev:
+            severity = 'kev'
+        elif max_epss > 0.7:
+            severity = 'critical'
+        elif max_epss > 0.4:
+            severity = 'high'
+        elif max_epss > 0.1:
+            severity = 'medium'
+        elif vuln_count > 0:
+            severity = 'low'
+        else:
+            severity = 'info'
+
+        records.append({
+            'ip':             d.ip,
+            'lat':            lat,
+            'lon':            lon,
+            'product':        d.product or '',
+            'type':           d.type or '',
+            'port':           d.port or '',
+            'city':           d.city or '',
+            'org':            d.org or '',
+            'country':        d.country_code or '',
+            'vuln_count':     vuln_count,
+            'severity':       severity,
+            'epss_score':     max_epss,
+            'kev_listed':     is_kev,
+            'honeypot_prob':  honeypot_prob,
         })
 
     return JsonResponse(records, safe=False)
