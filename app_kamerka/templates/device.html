@@ -208,11 +208,11 @@
     <!-- HONEYPOT WARNING BANNER -->
     {% if honeypot and honeypot.probability >= 0.5 %}
     <div style="background:linear-gradient(90deg,#ff2050,#ff6030);color:#fff;padding:10px 18px;margin-bottom:12px;border-radius:4px;font-weight:bold;font-size:1.1em;letter-spacing:0.1em;text-align:center;text-shadow:0 1px 4px rgba(0,0,0,0.4);">
-        &#9888; HIGH HONEYPOT PROBABILITY ({{ honeypot.probability|floatformat:0 }}%) — This device may be a decoy
+        &#9888; HIGH HONEYPOT PROBABILITY ({{ honeypot.probability|mul:100|floatformat:0 }}%) — This device may be a decoy
     </div>
     {% elif honeypot and honeypot.probability >= 0.2 %}
     <div style="background:linear-gradient(90deg,#ffe600,#ff6030);color:#000;padding:8px 14px;margin-bottom:12px;border-radius:4px;font-weight:bold;text-align:center;">
-        &#9888; Moderate Honeypot Probability ({{ honeypot.probability|floatformat:0 }}%)
+        &#9888; Moderate Honeypot Probability ({{ honeypot.probability|mul:100|floatformat:0 }}%)
     </div>
     {% endif %}
 
