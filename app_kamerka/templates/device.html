@@ -119,6 +119,9 @@
                                     <li><a href="#tab9" data-toggle="tab">Intel</a></li>
                                     <li><a href="#tab10" data-toggle="tab" style="color:#ff2050;font-weight:bold;">&#9889; NMAP</a></li>
                                     <li><a href="#tab11" data-toggle="tab" style="color:#ffe600;font-weight:bold;">&#128027; Exploit</a></li>
+                                    <li><a href="#tab_hw" data-toggle="tab" style="color:#00e1ff;font-weight:bold;">&#128268; Hardware</a></li>
+                                    <li><a href="#tab_risk" data-toggle="tab" style="color:#ff2050;font-weight:bold;">&#9888; Risk</a></li>
+                                    <li><a href="#tab_supply" data-toggle="tab" style="color:#00ff88;font-weight:bold;">&#128230; Supply Chain</a></li>
                                 </ul>
                                 <div class="panel-body tab-content">
                                     <div class="tab-pane active" id="tab8">
@@ -201,9 +204,38 @@
 
 
 <div class="tab-pane" id="tab9">
+
+    <!-- HONEYPOT WARNING BANNER -->
+    {% if honeypot and honeypot.probability >= 0.5 %}
+    <div style="background:linear-gradient(90deg,#ff2050,#ff6030);color:#fff;padding:10px 18px;margin-bottom:12px;border-radius:4px;font-weight:bold;font-size:1.1em;letter-spacing:0.1em;text-align:center;text-shadow:0 1px 4px rgba(0,0,0,0.4);">
+        &#9888; HIGH HONEYPOT PROBABILITY ({{ honeypot.probability|floatformat:0 }}%) — This device may be a decoy
+    </div>
+    {% elif honeypot and honeypot.probability >= 0.2 %}
+    <div style="background:linear-gradient(90deg,#ffe600,#ff6030);color:#000;padding:8px 14px;margin-bottom:12px;border-radius:4px;font-weight:bold;text-align:center;">
+        &#9888; Moderate Honeypot Probability ({{ honeypot.probability|floatformat:0 }}%)
+    </div>
+    {% endif %}
+
     <div class="panel panel-default">
                                 <div class="panel-heading">
-                                    <h3 class="panel-title">{{ device.ip }}</h3>
+                                    <h3 class="panel-title">{{ device.ip }}
+                                        <!-- GFW STATUS ICON -->
+                                        {% if gfw_status %}
+                                            {% if gfw_status.reachable %}
+                                                <span title="Reachable from China (OONI)" style="color:#00ff88;margin-left:8px;font-size:0.85em;">&#127464;&#127475; &#9989;</span>
+                                            {% else %}
+                                                <span title="Blocked by Great Firewall ({{ gfw_status.blocking_type }})" style="color:#ff2050;margin-left:8px;font-size:0.85em;">&#127464;&#127475; &#10060;</span>
+                                            {% endif %}
+                                        {% endif %}
+                                        <!-- KEV BADGE -->
+                                        {% if has_kev %}
+                                            <span style="background:#ff2050;color:#fff;padding:2px 8px;border-radius:3px;font-size:0.75em;margin-left:8px;font-weight:bold;" title="CISA Known Exploited Vulnerability">KEV &#9888;</span>
+                                        {% endif %}
+                                        <!-- EXPLOIT AVAILABLE BADGE -->
+                                        {% if has_exploit %}
+                                            <span style="background:#ffe600;color:#000;padding:2px 8px;border-radius:3px;font-size:0.75em;margin-left:4px;font-weight:bold;" title="Public exploit available">MSF &#128163;</span>
+                                        {% endif %}
+                                    </h3>
                                 </div>
                                 <div class="panel-body"><center>
                                         <b>{{ device.hostnames }}<br>
@@ -212,6 +244,18 @@
                                         {{ device.org }}<br>
                                         {% for cve in cve_list %}<a href="https://nvd.nist.gov/vuln/detail/{{ cve }}" target="_blank" rel="noopener noreferrer" style="font-family:monospace;color:#00e1ff;font-size:0.82em;text-decoration:none;border:1px solid #0064d7;padding:1px 6px;display:inline-block;margin:1px;">{{ cve }}</a>{% empty %}<span class="cp-dim">No CVEs</span>{% endfor %}<br>
                                             {{ device.city }}</b><br><br>
+
+                                    <!-- EPSS RISK METER -->
+                                    {% if max_epss > 0 %}
+                                    <div style="margin:10px 0;padding:8px;border:1px solid #0064d7;border-radius:4px;">
+                                        <span style="color:var(--cp-dim,#888);font-size:0.85em;">EPSS Risk Score:</span>
+                                        <div style="background:#1a1a2e;border-radius:3px;height:22px;margin:4px 0;position:relative;overflow:hidden;">
+                                            <div style="height:100%;border-radius:3px;width:{{ max_epss|floatformat:0 }}%;background:{% if max_epss > 0.7 %}#ff2050{% elif max_epss > 0.4 %}#ff6030{% elif max_epss > 0.1 %}#ffe600{% else %}#00ff88{% endif %};transition:width 0.5s;"></div>
+                                            <span style="position:absolute;top:2px;left:8px;font-size:0.8em;color:#fff;font-weight:bold;">{{ max_epss|floatformat:2 }}%</span>
+                                        </div>
+                                    </div>
+                                    {% endif %}
+
                                      {{ device.data }}<br>
                                         {{ device.ssl }}
                                                                                     <td>{{ device.category }}</td><br>
@@ -389,6 +433,215 @@
 
                         </div>
                                         </div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- HARDWARE & PROTOCOL TAB                                           -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane" id="tab_hw">
+<div class="row">
+    <div class="col-md-12">
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                <h3 class="panel-title">&#128268; Hardware & Protocol Fingerprint</h3>
+            </div>
+            <div class="panel-body">
+                <!-- DEEP PROBE BUTTON -->
+                <div style="margin-bottom:12px;">
+                    <button type="button" id="deep_probe_btn" class="btn btn-primary active" style="background:#00e1ff;border-color:#0064d7;color:#000;font-weight:bold;">
+                        &#128269; Deep Probe
+                    </button>
+                    <select id="deep_probe_protocol" style="margin-left:8px;padding:4px;">
+                        <option value="">Auto-detect</option>
+                        <option value="modbus">Modbus</option>
+                        <option value="s7">Siemens S7</option>
+                        <option value="bacnet">BACnet</option>
+                    </select>
+                    <progress id="progress-bar-deep" value="0" max="100" style="display:none; margin-left:8px;"></progress>
+                </div>
+
+                <!-- PROTOCOL FINGERPRINT RESULTS -->
+                {% if fingerprints %}
+                {% for fp in fingerprints %}
+                <div style="border:1px solid #0064d7;border-radius:4px;padding:12px;margin-bottom:10px;background:rgba(0,100,215,0.08);">
+                    <h4 style="color:#00e1ff;margin:0 0 8px;text-transform:uppercase;letter-spacing:0.1em;">{{ fp.protocol }}</h4>
+                    <table style="width:100%;font-size:0.9em;">
+                        {% if fp.vendor_id %}<tr><td style="color:#888;width:140px;">Vendor ID</td><td style="color:#00e1ff;">{{ fp.vendor_id }}</td></tr>{% endif %}
+                        {% if fp.module_name %}<tr><td style="color:#888;">Module Name</td><td style="color:#00e1ff;">{{ fp.module_name }}</td></tr>{% endif %}
+                        {% if fp.project_name %}<tr><td style="color:#888;">Project / Product</td><td style="color:#00e1ff;">{{ fp.project_name }}</td></tr>{% endif %}
+                        {% if fp.hardware_version %}<tr><td style="color:#888;">Hardware Version</td><td style="color:#00e1ff;">{{ fp.hardware_version }}</td></tr>{% endif %}
+                        {% if fp.firmware_version %}<tr><td style="color:#888;">Firmware Version</td><td style="color:#00e1ff;">{{ fp.firmware_version }}</td></tr>{% endif %}
+                        {% if fp.serial_number %}<tr><td style="color:#888;">Serial Number</td><td style="color:#00e1ff;">{{ fp.serial_number }}</td></tr>{% endif %}
+                        {% if fp.slave_id %}<tr><td style="color:#888;">Slave ID</td><td style="color:#00e1ff;">{{ fp.slave_id }}</td></tr>{% endif %}
+                        {% if fp.plant_id %}<tr><td style="color:#888;">Plant ID</td><td style="color:#00e1ff;">{{ fp.plant_id }}</td></tr>{% endif %}
+                    </table>
+                </div>
+                {% endfor %}
+                {% else %}
+                <p style="color:#888;">No protocol fingerprints yet. Click <b>Deep Probe</b> to scan.</p>
+                {% endif %}
+
+                <!-- HARDWARE IDENTITY BLOCK (from Shodan data) -->
+                {% if device.cpe or device.isp %}
+                <div style="border:1px solid #333;border-radius:4px;padding:12px;margin-top:10px;background:rgba(0,0,0,0.2);">
+                    <h4 style="color:#ffe600;margin:0 0 8px;">Device Identity (Shodan)</h4>
+                    <table style="width:100%;font-size:0.9em;">
+                        {% if device.cpe %}<tr><td style="color:#888;width:140px;">CPE</td><td style="color:#00e1ff;font-family:monospace;">{{ device.cpe }}</td></tr>{% endif %}
+                        {% if device.isp %}<tr><td style="color:#888;">ISP</td><td style="color:#00e1ff;">{{ device.isp }}</td></tr>{% endif %}
+                        {% if device.product %}<tr><td style="color:#888;">Product</td><td style="color:#00e1ff;">{{ device.product }}</td></tr>{% endif %}
+                        {% if device.org %}<tr><td style="color:#888;">Organization</td><td style="color:#00e1ff;">{{ device.org }}</td></tr>{% endif %}
+                    </table>
+                </div>
+                {% endif %}
+
+                <div id="deep_probe_results" style="display:none;margin-top:10px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- RISK & VULNERABILITY TAB                                          -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane" id="tab_risk">
+<div class="row">
+    <div class="col-md-12">
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                <h3 class="panel-title">&#9888; Risk & Vulnerability Intelligence</h3>
+            </div>
+            <div class="panel-body">
+                <!-- NVD LOOKUP BUTTON -->
+                <div style="margin-bottom:12px;">
+                    <button type="button" id="nvd_scan_btn" class="btn btn-primary active" style="background:#ff2050;border-color:#ff2050;font-weight:bold;">
+                        &#128270; Fetch CVE Intelligence
+                    </button>
+                    <button type="button" id="honeypot_scan_btn" class="btn btn-primary active" style="background:#ffe600;border-color:#ffe600;color:#000;font-weight:bold;margin-left:4px;">
+                        &#128373; Honeypot Check
+                    </button>
+                    <button type="button" id="gfw_check_btn" class="btn btn-primary active" style="background:#00ff88;border-color:#00ff88;color:#000;font-weight:bold;margin-left:4px;">
+                        &#127464;&#127475; GFW Check
+                    </button>
+                    <progress id="progress-bar-risk" value="0" max="100" style="display:none; margin-left:8px;"></progress>
+                </div>
+
+                <!-- EPSS RISK METER (full version) -->
+                {% if max_epss > 0 %}
+                <div style="border:1px solid {% if max_epss > 0.7 %}#ff2050{% elif max_epss > 0.4 %}#ff6030{% else %}#ffe600{% endif %};border-radius:4px;padding:12px;margin-bottom:12px;background:rgba(0,0,0,0.3);">
+                    <h4 style="margin:0 0 8px;color:{% if max_epss > 0.7 %}#ff2050{% elif max_epss > 0.4 %}#ff6030{% else %}#ffe600{% endif %};">EPSS Risk Meter</h4>
+                    <div style="background:#1a1a2e;border-radius:4px;height:28px;position:relative;overflow:hidden;">
+                        <div style="height:100%;border-radius:4px;width:{{ max_epss|floatformat:0 }}%;background:linear-gradient(90deg,{% if max_epss > 0.7 %}#ff2050,#ff0040{% elif max_epss > 0.4 %}#ff6030,#ff2050{% else %}#ffe600,#ff6030{% endif %});transition:width 0.5s;"></div>
+                        <span style="position:absolute;top:4px;left:10px;font-size:0.9em;color:#fff;font-weight:bold;">{{ max_epss|floatformat:2 }}% exploit probability</span>
+                    </div>
+                    {% if has_kev %}<p style="color:#ff2050;margin:6px 0 0;font-weight:bold;">&#9888; CISA Known Exploited Vulnerability — Active exploitation confirmed</p>{% endif %}
+                </div>
+                {% endif %}
+
+                <!-- CVE INTELLIGENCE TABLE -->
+                {% if vuln_intel %}
+                <table class="table" style="font-size:0.9em;">
+                    <thead>
+                        <tr>
+                            <th>CVE</th>
+                            <th>CVSS</th>
+                            <th>EPSS</th>
+                            <th>KEV</th>
+                            <th>Exploit</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for vi in vuln_intel %}
+                        <tr>
+                            <td><a href="https://nvd.nist.gov/vuln/detail/{{ vi.cve_id }}" target="_blank" rel="noopener noreferrer" style="color:#00e1ff;font-family:monospace;">{{ vi.cve_id }}</a></td>
+                            <td style="color:{% if vi.cvss_score >= 9.0 %}#ff2050{% elif vi.cvss_score >= 7.0 %}#ff6030{% elif vi.cvss_score >= 4.0 %}#ffe600{% else %}#00ff88{% endif %};font-weight:bold;">{{ vi.cvss_score|floatformat:1 }}</td>
+                            <td style="font-family:monospace;">{{ vi.epss_score|floatformat:4 }}</td>
+                            <td>{% if vi.kev_listed %}<span style="background:#ff2050;color:#fff;padding:1px 6px;border-radius:3px;font-size:0.8em;font-weight:bold;">KEV</span>{% else %}—{% endif %}</td>
+                            <td>{% if vi.exploit_available %}<span style="background:#ffe600;color:#000;padding:1px 6px;border-radius:3px;font-size:0.8em;font-weight:bold;">MSF</span>{% else %}—{% endif %}</td>
+                            <td style="font-size:0.85em;max-width:300px;overflow:hidden;text-overflow:ellipsis;">{{ vi.description|truncatechars:150 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p style="color:#888;">No vulnerability intelligence yet. Click <b>Fetch CVE Intelligence</b> to query NVD/EPSS/KEV.</p>
+                {% endif %}
+
+                <!-- HONEYPOT ANALYSIS RESULTS -->
+                {% if honeypot %}
+                <div style="border:1px solid {% if honeypot.probability >= 0.5 %}#ff2050{% elif honeypot.probability >= 0.2 %}#ffe600{% else %}#00ff88{% endif %};border-radius:4px;padding:12px;margin-top:12px;background:rgba(0,0,0,0.2);">
+                    <h4 style="margin:0 0 8px;color:{% if honeypot.probability >= 0.5 %}#ff2050{% else %}#ffe600{% endif %};">&#128373; Honeypot Analysis</h4>
+                    <p><b>Probability:</b> <span style="font-size:1.2em;font-weight:bold;">{{ honeypot.probability|floatformat:0 }}%</span></p>
+                    {% if honeypot.is_conpot %}<p style="color:#ff2050;">&#9888; Matches Conpot honeypot signatures</p>{% endif %}
+                    {% if honeypot.is_cowrie %}<p style="color:#ff2050;">&#9888; Matches Cowrie honeypot signatures</p>{% endif %}
+                    <p><b>Identical banners in /24:</b> {{ honeypot.banner_count_in_subnet }}</p>
+                </div>
+                {% endif %}
+
+                <!-- GFW STATUS -->
+                {% if gfw_status %}
+                <div style="border:1px solid {% if gfw_status.reachable %}#00ff88{% else %}#ff2050{% endif %};border-radius:4px;padding:12px;margin-top:12px;background:rgba(0,0,0,0.2);">
+                    <h4 style="margin:0 0 8px;color:{% if gfw_status.reachable %}#00ff88{% else %}#ff2050{% endif %};">&#127464;&#127475; Great Firewall Status</h4>
+                    {% if gfw_status.reachable %}
+                        <p style="color:#00ff88;font-weight:bold;">&#9989; Reachable from China</p>
+                    {% else %}
+                        <p style="color:#ff2050;font-weight:bold;">&#10060; Blocked by Great Firewall</p>
+                        {% if gfw_status.blocking_type %}<p><b>Blocking type:</b> {{ gfw_status.blocking_type }}</p>{% endif %}
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <div id="risk_results" style="display:none;margin-top:10px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SUPPLY CHAIN TAB                                                   -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane" id="tab_supply">
+<div class="row">
+    <div class="col-md-12">
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                <h3 class="panel-title">&#128230; Supply Chain & SBOM</h3>
+            </div>
+            <div class="panel-body">
+                <div style="margin-bottom:12px;">
+                    <button type="button" id="sbom_scan_btn" class="btn btn-primary active" style="background:#00ff88;border-color:#00ff88;color:#000;font-weight:bold;">
+                        &#128270; SBOM Lookup
+                    </button>
+                    <progress id="progress-bar-sbom" value="0" max="100" style="display:none; margin-left:8px;"></progress>
+                </div>
+
+                <!-- SBOM COMPONENTS TREE VIEW -->
+                {% if sbom_components %}
+                <div style="border:1px solid #0064d7;border-radius:4px;padding:12px;background:rgba(0,100,215,0.06);">
+                    <h4 style="color:#00e1ff;margin:0 0 10px;">Software Bill of Materials</h4>
+                    <ul style="list-style:none;padding:0;">
+                        {% for comp in sbom_components %}
+                        <li style="padding:6px 0;border-bottom:1px solid rgba(0,100,215,0.15);">
+                            <span style="color:#00e1ff;font-weight:bold;">{{ comp.component_name }}</span>
+                            {% if comp.version %}<span style="color:#ffe600;margin-left:8px;font-family:monospace;">v{{ comp.version }}</span>{% endif %}
+                            <span style="color:#888;margin-left:8px;font-size:0.85em;">[{{ comp.component_type }}]</span>
+                            {% if comp.cpe_string %}<br><span style="color:#666;font-family:monospace;font-size:0.8em;margin-left:16px;">{{ comp.cpe_string }}</span>{% endif %}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% else %}
+                <p style="color:#888;">No SBOM data yet. Click <b>SBOM Lookup</b> to discover software components.</p>
+                {% endif %}
+
+                <div id="sbom_results" style="display:none;margin-top:10px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+
                                                           </div>
 
 
@@ -919,9 +1172,112 @@ console.log(response);
 
 });
 
-</script>
+// ═══════════════════════════════════════════════════════════════════
+// DEEP PROBE BUTTON — triggers protocol fingerprinting
+// ═══════════════════════════════════════════════════════════════════
+$('#deep_probe_btn').on('click', function(){
+    var protocol = $('#deep_probe_protocol').val();
+    var pgrbar_deep = $('#progress-bar-deep');
+    var url = "/{{device.id}}/deep_scan";
+    if (protocol) { url += "?protocol=" + encodeURIComponent(protocol); }
+    $.ajax({
+        type: "GET",
+        url: url,
+        success: function (data) {
+            if (data.task_id != null) {
+                pgrbar_deep.css('display', 'inline-block');
+                get_task_info(data.task_id, pgrbar_deep);
+                noty({text: "Deep protocol scan started", layout: 'topRight', type: 'success', timeout: 3000});
+            } else if (data.Error) {
+                noty({text: data.Error, layout: 'topRight', type: 'error', timeout: 3000});
+            }
+        },
+        error: function () { console.log("Deep probe error"); }
+    });
+    return false;
+});
 
-        <!-- START TEMPLATE -->
+// ═══════════════════════════════════════════════════════════════════
+// NVD / CVE INTELLIGENCE BUTTON
+// ═══════════════════════════════════════════════════════════════════
+$('#nvd_scan_btn').on('click', function(){
+    var pgrbar_risk = $('#progress-bar-risk');
+    $.ajax({
+        type: "GET",
+        url: "/{{device.id}}/nvd/scan",
+        success: function (data) {
+            if (data.task_id != null) {
+                pgrbar_risk.css('display', 'inline-block');
+                get_task_info(data.task_id, pgrbar_risk);
+                noty({text: "CVE intelligence lookup started", layout: 'topRight', type: 'success', timeout: 3000});
+            }
+        },
+        error: function () { console.log("NVD scan error"); }
+    });
+    return false;
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// HONEYPOT CHECK BUTTON
+// ═══════════════════════════════════════════════════════════════════
+$('#honeypot_scan_btn').on('click', function(){
+    var pgrbar_risk = $('#progress-bar-risk');
+    $.ajax({
+        type: "GET",
+        url: "/{{device.id}}/honeypot/scan",
+        success: function (data) {
+            if (data.task_id != null) {
+                pgrbar_risk.css('display', 'inline-block');
+                get_task_info(data.task_id, pgrbar_risk);
+                noty({text: "Honeypot analysis started", layout: 'topRight', type: 'success', timeout: 3000});
+            }
+        },
+        error: function () { console.log("Honeypot check error"); }
+    });
+    return false;
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// GFW CHECK BUTTON
+// ═══════════════════════════════════════════════════════════════════
+$('#gfw_check_btn').on('click', function(){
+    var pgrbar_risk = $('#progress-bar-risk');
+    $.ajax({
+        type: "GET",
+        url: "/{{device.id}}/gfw/check",
+        success: function (data) {
+            if (data.task_id != null) {
+                pgrbar_risk.css('display', 'inline-block');
+                get_task_info(data.task_id, pgrbar_risk);
+                noty({text: "GFW reachability check started", layout: 'topRight', type: 'success', timeout: 3000});
+            }
+        },
+        error: function () { console.log("GFW check error"); }
+    });
+    return false;
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// SBOM LOOKUP BUTTON
+// ═══════════════════════════════════════════════════════════════════
+$('#sbom_scan_btn').on('click', function(){
+    var pgrbar_sbom = $('#progress-bar-sbom');
+    $.ajax({
+        type: "GET",
+        url: "/{{device.id}}/sbom/scan",
+        success: function (data) {
+            if (data.task_id != null) {
+                pgrbar_sbom.css('display', 'inline-block');
+                get_task_info(data.task_id, pgrbar_sbom);
+                noty({text: "SBOM component lookup started", layout: 'topRight', type: 'success', timeout: 3000});
+            }
+        },
+        error: function () { console.log("SBOM lookup error"); }
+    });
+    return false;
+});
+
+</script>
 
             <script type='text/javascript' src="{% static 'js/plugins/noty/jquery.noty.js' %}"></script>
             <script type='text/javascript' src="{% static 'js/plugins/noty/themes/default.js' %}"></script>

@@ -30,6 +30,7 @@ SEVERITY_COLOURS: Dict[str, Tuple[float, float, float]] = {
     "low":      (0.0, 0.8, 0.0),   # green
     "info":     (0.0, 0.6, 1.0),   # blue
     "unknown":  (0.5, 0.5, 0.5),   # grey
+    "kev":      (0.6, 0.0, 1.0),   # purple — CISA KEV listed
 }
 
 #: Spike geometry constants (units match the Earth sphere radius = 1.0).
@@ -151,7 +152,7 @@ def dominant_severity(severities: Sequence[str]) -> str:
         The highest-priority severity found, or ``"unknown"`` if the input is
         empty.
     """
-    priority = ["critical", "high", "medium", "low", "info", "unknown"]
+    priority = ["kev", "critical", "high", "medium", "low", "info", "unknown"]
     normalised = [_normalise_severity(s) for s in severities]
     for level in priority:
         if level in normalised:

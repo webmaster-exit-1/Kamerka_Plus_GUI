@@ -832,5 +832,88 @@ new Selectr('#cam', {
 	width: 300
 });
     </script>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- CREDIT-COST CONFIRMATION MODAL                                    -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div id="credit-cost-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;justify-content:center;align-items:center;">
+    <div style="background:#0a1428;border:2px solid #0064d7;border-radius:8px;padding:30px;max-width:450px;width:90%;text-align:center;box-shadow:0 0 30px rgba(0,100,215,0.3);">
+        <h3 style="color:#00e1ff;margin:0 0 16px;letter-spacing:0.1em;">&#128176; API Credit Estimate</h3>
+        <div id="credit-cost-content" style="color:#fff;font-size:1.1em;margin-bottom:20px;">
+            <p>Estimating cost...</p>
+        </div>
+        <button id="credit-cost-confirm" style="background:#00e1ff;color:#000;border:none;padding:10px 30px;font-weight:bold;border-radius:4px;cursor:pointer;margin-right:10px;">Proceed</button>
+        <button id="credit-cost-cancel" style="background:#ff2050;color:#fff;border:none;padding:10px 30px;font-weight:bold;border-radius:4px;cursor:pointer;">Cancel</button>
+    </div>
+</div>
+
+<script>
+(function() {
+    // Intercept form submissions to show credit cost estimate
+    var forms = document.querySelectorAll('form[method="POST"]');
+    var modal = document.getElementById('credit-cost-modal');
+    var content = document.getElementById('credit-cost-content');
+    var pendingForm = null;
+
+    forms.forEach(function(form) {
+        form.addEventListener('submit', function(e) {
+            // Skip for file upload forms and own-database searches
+            var ownDbCheckbox = form.querySelector('input[name="own_database"]');
+            if (ownDbCheckbox && ownDbCheckbox.checked) return;
+            if (form.querySelector('input[type="file"]')) return;
+
+            e.preventDefault();
+            pendingForm = form;
+
+            // Try to get query info from form
+            var selects = form.querySelectorAll('select[multiple]');
+            var queries = [];
+            selects.forEach(function(sel) {
+                var selected = Array.from(sel.selectedOptions).map(function(o) { return o.text || o.value; });
+                queries = queries.concat(selected);
+            });
+            var queryStr = queries.join(', ') || 'search';
+
+            // Show modal with loading state
+            modal.style.display = 'flex';
+            content.innerHTML = '<p style="color:#00e1ff;">&#9203; Checking Shodan result count...</p><p style="color:#888;font-size:0.85em;">Query: ' + queryStr + '</p>';
+
+            // Fetch cost estimate
+            $.ajax({
+                type: "GET",
+                url: "/search_cost",
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                data: { query: queries[0] || 'webcam' },
+                success: function(data) {
+                    if (data.error) {
+                        content.innerHTML = '<p style="color:#ffe600;">&#9888; ' + data.error + '</p><p style="color:#888;">Proceed anyway?</p>';
+                    } else {
+                        content.innerHTML = '<p><b style="color:#00e1ff;font-size:1.3em;">' + data.count.toLocaleString() + '</b> results found</p>' +
+                            '<p>Estimated credit cost: <b style="color:' + (data.credits_cost > 10 ? '#ff2050' : '#00ff88') + ';">' + data.credits_cost + ' credits</b></p>' +
+                            '<p style="color:#888;font-size:0.85em;">Query: ' + (data.query || queryStr) + '</p>';
+                    }
+                },
+                error: function() {
+                    content.innerHTML = '<p style="color:#888;">Could not estimate cost. Proceed anyway?</p>';
+                }
+            });
+        });
+    });
+
+    document.getElementById('credit-cost-confirm').addEventListener('click', function() {
+        modal.style.display = 'none';
+        if (pendingForm) {
+            pendingForm.removeEventListener('submit', arguments.callee);
+            pendingForm.submit();
+        }
+    });
+
+    document.getElementById('credit-cost-cancel').addEventListener('click', function() {
+        modal.style.display = 'none';
+        pendingForm = null;
+    });
+})();
+</script>
+
 </body>
 </html>
