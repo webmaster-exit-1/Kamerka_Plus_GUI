@@ -96,6 +96,28 @@ class DetailsPanel(QWidget if _PYQT6_AVAILABLE else object):
         self._banner_text.setPlaceholderText("No banner data available.")
         self._body_layout.addWidget(self._banner_text)
 
+        # Hardware & Protocol section
+        self._hw_label = QLabel("Hardware & Protocol")
+        self._hw_label.setStyleSheet("color: grey; font-size: 11px;")
+        self._body_layout.addWidget(self._hw_label)
+
+        self._hw_text = QTextEdit()
+        self._hw_text.setReadOnly(True)
+        self._hw_text.setMaximumHeight(120)
+        self._hw_text.setPlaceholderText("No protocol fingerprint data.")
+        self._body_layout.addWidget(self._hw_text)
+
+        # Risk & Vulnerability section
+        self._risk_label = QLabel("Risk Intelligence")
+        self._risk_label.setStyleSheet("color: grey; font-size: 11px;")
+        self._body_layout.addWidget(self._risk_label)
+
+        self._risk_text = QTextEdit()
+        self._risk_text.setReadOnly(True)
+        self._risk_text.setMaximumHeight(100)
+        self._risk_text.setPlaceholderText("No EPSS/KEV data available.")
+        self._body_layout.addWidget(self._risk_text)
+
         # Vulnerability findings
         self._vulns_label = QLabel("Vulnerability Findings")
         self._vulns_label.setStyleSheet("color: grey; font-size: 11px;")
@@ -127,6 +149,8 @@ class DetailsPanel(QWidget if _PYQT6_AVAILABLE else object):
         """Reset all fields to their empty/placeholder state."""
         self._ip_label.setText("No device selected")
         self._banner_text.clear()
+        self._hw_text.clear()
+        self._risk_text.clear()
         self._vulns_text.clear()
         self._notes_text.clear()
 
@@ -180,6 +204,47 @@ class DetailsPanel(QWidget if _PYQT6_AVAILABLE else object):
 
         banner = device.get("data", "")
         self._banner_text.setPlainText(banner or "No banner data available.")
+
+        # Hardware & Protocol
+        hw_lines = []
+        product = device.get("product", "")
+        if product:
+            hw_lines.append("Product: {}".format(product))
+        cpe = device.get("cpe", "")
+        if cpe:
+            hw_lines.append("CPE: {}".format(cpe))
+        isp = device.get("isp", "")
+        if isp:
+            hw_lines.append("ISP: {}".format(isp))
+        fingerprints = device.get("fingerprints", [])
+        for fp in fingerprints:
+            proto = fp.get("protocol", "?")
+            hw_lines.append("[{}]".format(proto.upper()))
+            for k in ("vendor_id", "module_name", "hardware_version",
+                       "firmware_version", "serial_number"):
+                val = fp.get(k, "")
+                if val:
+                    hw_lines.append("  {}: {}".format(
+                        k.replace("_", " ").title(), val
+                    ))
+        self._hw_text.setPlainText(
+            "\n".join(hw_lines) if hw_lines else "No hardware data."
+        )
+
+        # Risk Intelligence
+        risk_lines = []
+        vuln_intel = device.get("vuln_intel", [])
+        for vi in vuln_intel:
+            cve = vi.get("cve_id", "?")
+            epss = vi.get("epss_score", 0.0)
+            kev = vi.get("kev_listed", False)
+            line = "{} EPSS:{:.4f}".format(cve, epss)
+            if kev:
+                line += " [KEV]"
+            risk_lines.append(line)
+        self._risk_text.setPlainText(
+            "\n".join(risk_lines) if risk_lines else "No EPSS/KEV data."
+        )
 
         self._render_vulns(device)
 

@@ -554,15 +554,25 @@
             critical: '#ff2050', high: '#ff6030',
             medium: '#ffe600', low: '#00ff88',
             info: '#00e1ff', unknown: '#00e1ff',
+            kev: '#9900ff',
         };
 
         function sevColour(severity, theme) {
             const key = (severity || 'unknown').toLowerCase().trim();
+            if (key === 'kev') return '#9900ff';
             const override = (THEMES[theme] || THEMES.cyberpunk).sevColours[key];
             return override || SEV_COLOURS_DEFAULT[key] || SEV_COLOURS_DEFAULT.unknown;
         }
 
-        // ── Severity from vuln count (mirrors CSV export logic) ───────
+        // ── Severity from EPSS score (preferred) or vuln count ───────
+        function severityFromEPSS(d) {
+            if (d.kev_listed) return 'kev';
+            if (d.epss_score > 0.7) return 'critical';
+            if (d.epss_score > 0.4) return 'high';
+            if (d.epss_score > 0.1) return 'medium';
+            return null;
+        }
+
         function severityFromVulnCount(n) {
             if (n > 10) return 'critical';
             if (n > 5)  return 'high';
@@ -810,8 +820,15 @@
         // ─────────────────────────────────────────────────────────────
         async function loadDevices() {
             try {
-                const resp = await fetch('/globe/devices.json');
+                // Try EPSS-enhanced endpoint first, fall back to basic
+                let resp = await fetch('/globe/devices_epss.json');
+                if (!resp.ok) resp = await fetch('/globe/devices.json');
                 allDevices = await resp.json();
+                // Apply EPSS-based severity override when available
+                allDevices.forEach(d => {
+                    const epssSev = severityFromEPSS(d);
+                    if (epssSev) d.severity = epssSev;
+                });
             } catch (e) {
                 allDevices = [];
             }
@@ -828,6 +845,7 @@
             const med      = allDevices.filter(d => d.severity === 'medium').length;
             const low      = allDevices.filter(d => d.severity === 'low').length;
             const info     = allDevices.filter(d => d.severity === 'info').length;
+            const kev      = allDevices.filter(d => d.severity === 'kev' || d.kev_listed).length;
             const countries = new Set(allDevices.map(d => d.country).filter(Boolean)).size;
 
             // Stats bar

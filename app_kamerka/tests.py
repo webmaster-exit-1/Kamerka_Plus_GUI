@@ -759,3 +759,491 @@ class ResultsPageTest(TestCase):
         body = response.content.decode()
         # Device 10.0.0.2 has no vulns — its cell must show the empty-state marker
         self.assertIn("—", body)
+
+
+# ---------------------------------------------------------------------------
+# Protocol metadata parsers
+# ---------------------------------------------------------------------------
+class ModbusParserTest(TestCase):
+    """_parse_modbus_output must extract Modbus-specific fields."""
+
+    def test_slave_id_extracted(self):
+        from kamerka.tasks import _parse_modbus_output
+        output = "Slave ID data: Schneider Electric\nDevice Identification: BMX P34\n"
+        result = _parse_modbus_output(output)
+        self.assertEqual(result.get("slave_id"), "Schneider Electric")
+
+    def test_vendor_name_extracted(self):
+        from kamerka.tasks import _parse_modbus_output
+        output = "Vendor Name: Schneider Electric\nProduct Code: BMX P34\n"
+        result = _parse_modbus_output(output)
+        self.assertEqual(result.get("vendor_id"), "Schneider Electric")
+        self.assertEqual(result.get("project_name"), "BMX P34")
+
+    def test_revision_extracted(self):
+        from kamerka.tasks import _parse_modbus_output
+        output = "Revision: V2.60\n"
+        result = _parse_modbus_output(output)
+        self.assertEqual(result.get("firmware_version"), "V2.60")
+
+    def test_empty_output_returns_empty_dict(self):
+        from kamerka.tasks import _parse_modbus_output
+        result = _parse_modbus_output("")
+        self.assertEqual(result, {})
+
+
+class S7ParserTest(TestCase):
+    """_parse_s7_output must extract Siemens S7-specific fields."""
+
+    def test_module_name_extracted(self):
+        from kamerka.tasks import _parse_s7_output
+        output = "Module: CPU 315-2 DP\nPlant: WaterPlant\nSerial: S-123456\n"
+        result = _parse_s7_output(output)
+        self.assertEqual(result.get("module_name"), "CPU 315-2 DP")
+
+    def test_plant_id_extracted(self):
+        from kamerka.tasks import _parse_s7_output
+        output = "Plant identification: WaterPlant-North\n"
+        result = _parse_s7_output(output)
+        self.assertEqual(result.get("plant_id"), "WaterPlant-North")
+
+    def test_serial_number_extracted(self):
+        from kamerka.tasks import _parse_s7_output
+        output = "Serial number: S-1234567890\n"
+        result = _parse_s7_output(output)
+        self.assertEqual(result.get("serial_number"), "S-1234567890")
+
+    def test_hardware_firmware_version(self):
+        from kamerka.tasks import _parse_s7_output
+        output = "Hardware version: 3.0\nFirmware version: V3.2.8\n"
+        result = _parse_s7_output(output)
+        self.assertEqual(result.get("hardware_version"), "3.0")
+        self.assertEqual(result.get("firmware_version"), "V3.2.8")
+
+    def test_siemens_vendor_auto_detected(self):
+        from kamerka.tasks import _parse_s7_output
+        output = "Module: S7-300 CPU\n"
+        result = _parse_s7_output(output)
+        self.assertEqual(result.get("vendor_id"), "Siemens")
+
+    def test_empty_output(self):
+        from kamerka.tasks import _parse_s7_output
+        result = _parse_s7_output("")
+        self.assertEqual(result, {})
+
+
+class BACnetParserTest(TestCase):
+    """_parse_bacnet_output must extract BACnet-specific fields."""
+
+    def test_vendor_extracted(self):
+        from kamerka.tasks import _parse_bacnet_output
+        output = "Vendor Name: Honeywell\nModel Name: Spyder\n"
+        result = _parse_bacnet_output(output)
+        self.assertEqual(result.get("vendor_id"), "Honeywell")
+        self.assertEqual(result.get("project_name"), "Spyder")
+
+    def test_firmware_version_extracted(self):
+        from kamerka.tasks import _parse_bacnet_output
+        output = "Firmware Version: 2.04.016\n"
+        result = _parse_bacnet_output(output)
+        self.assertEqual(result.get("firmware_version"), "2.04.016")
+
+    def test_empty_output(self):
+        from kamerka.tasks import _parse_bacnet_output
+        result = _parse_bacnet_output("")
+        self.assertEqual(result, {})
+
+
+# ---------------------------------------------------------------------------
+# Honeypot probability engine
+# ---------------------------------------------------------------------------
+@override_settings(CACHES=_DUMMY_CACHE)
+class HoneypotCheckTest(TestCase):
+    """honeypot_check must analyze banner density and signature matching."""
+
+    def setUp(self):
+        self.search = _make_search()
+
+    def test_low_density_gives_low_probability(self):
+        device = _make_device(self.search, ip="10.0.0.1")
+        device.data = "HTTP/1.1 200 OK\r\nServer: nginx\r\n"
+        device.save()
+        from kamerka.tasks import honeypot_check
+        result = honeypot_check(device.id)
+        self.assertLessEqual(result["probability"], 0.1)
+
+    def test_conpot_signature_detected(self):
+        device = _make_device(self.search, ip="10.0.0.2")
+        device.data = "Siemens, SIMATIC, S7-200 response data"
+        device.save()
+        from kamerka.tasks import honeypot_check
+        result = honeypot_check(device.id)
+        self.assertTrue(result["is_conpot"])
+        self.assertGreater(result["probability"], 0.2)
+
+    def test_cowrie_signature_detected(self):
+        device = _make_device(self.search, ip="10.0.0.3")
+        device.data = "SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2"
+        device.save()
+        from kamerka.tasks import honeypot_check
+        result = honeypot_check(device.id)
+        self.assertTrue(result["is_cowrie"])
+
+    def test_saves_to_database(self):
+        device = _make_device(self.search, ip="10.0.0.4")
+        from kamerka.tasks import honeypot_check
+        honeypot_check(device.id)
+        from app_kamerka.models import HoneypotAnalysis
+        self.assertTrue(HoneypotAnalysis.objects.filter(device=device).exists())
+
+
+# ---------------------------------------------------------------------------
+# SBOM Lookup
+# ---------------------------------------------------------------------------
+class SBOMLookupTest(TestCase):
+    """sbom_lookup must identify known software components."""
+
+    def setUp(self):
+        self.search = _make_search()
+
+    def test_hikvision_components_found(self):
+        device = _make_device(self.search, device_type="hikvision")
+        device.product = "Hikvision DVR"
+        device.save()
+        from kamerka.tasks import sbom_lookup
+        result = sbom_lookup(device.id)
+        self.assertGreater(result["components"], 0)
+
+    def test_goahead_components_found(self):
+        device = _make_device(self.search)
+        device.product = "GoAhead-Webs"
+        device.cpe = "cpe:2.3:a:embedthis:goahead"
+        device.save()
+        from kamerka.tasks import sbom_lookup
+        result = sbom_lookup(device.id)
+        from app_kamerka.models import SBOMComponent
+        comps = SBOMComponent.objects.filter(device=device)
+        self.assertTrue(comps.exists())
+        names = [c.component_name for c in comps]
+        self.assertIn("GoAhead WebServer", names)
+
+    def test_unknown_product_returns_zero(self):
+        device = _make_device(self.search)
+        device.product = "UnknownManufacturer XYZ"
+        device.save()
+        from kamerka.tasks import sbom_lookup
+        result = sbom_lookup(device.id)
+        self.assertEqual(result["components"], 0)
+
+
+# ---------------------------------------------------------------------------
+# New intelligence view endpoints
+# ---------------------------------------------------------------------------
+class DeepScanViewTest(TestCase):
+    """deep_scan_view must trigger a Celery task."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    def test_returns_task_id(self):
+        with patch("app_kamerka.views.deep_protocol_scan") as mock_task:
+            mock_task.delay.return_value = MagicMock(id="fake-deep-task")
+            response = self.client.get(
+                "/{}/deep_scan".format(self.device.id),
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["task_id"], "fake-deep-task")
+
+    def test_non_ajax_returns_null_task(self):
+        response = self.client.get("/{}/deep_scan".format(self.device.id))
+        data = json.loads(response.content)
+        self.assertIsNone(data["task_id"])
+
+
+class NVDScanViewTest(TestCase):
+    """nvd_scan_view must trigger CVE intelligence lookup."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    def test_returns_task_id(self):
+        with patch("app_kamerka.views.nvd_lookup") as mock_task:
+            mock_task.delay.return_value = MagicMock(id="fake-nvd-task")
+            response = self.client.get(
+                "/{}/nvd/scan".format(self.device.id),
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["task_id"], "fake-nvd-task")
+
+
+class HoneypotScanViewTest(TestCase):
+    """honeypot_scan_view must trigger honeypot analysis."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    def test_returns_task_id(self):
+        with patch("app_kamerka.views.honeypot_check") as mock_task:
+            mock_task.delay.return_value = MagicMock(id="fake-hp-task")
+            response = self.client.get(
+                "/{}/honeypot/scan".format(self.device.id),
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["task_id"], "fake-hp-task")
+
+
+class SBOMScanViewTest(TestCase):
+    """sbom_scan_view must trigger SBOM lookup."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    def test_returns_task_id(self):
+        with patch("app_kamerka.views.sbom_lookup") as mock_task:
+            mock_task.delay.return_value = MagicMock(id="fake-sbom-task")
+            response = self.client.get(
+                "/{}/sbom/scan".format(self.device.id),
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["task_id"], "fake-sbom-task")
+
+
+class GFWCheckViewTest(TestCase):
+    """gfw_check_view must trigger GFW reachability check."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    def test_returns_task_id(self):
+        with patch("app_kamerka.views.gfw_check") as mock_task:
+            mock_task.delay.return_value = MagicMock(id="fake-gfw-task")
+            response = self.client.get(
+                "/{}/gfw/check".format(self.device.id),
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["task_id"], "fake-gfw-task")
+
+
+class SearchCostViewTest(TestCase):
+    """search_cost_view must return Shodan count estimate."""
+
+    def test_returns_cost_estimate(self):
+        mock_api = MagicMock()
+        mock_api.count.return_value = {"total": 500}
+        with patch("kamerka.tasks.Shodan", return_value=mock_api), \
+             patch("kamerka.tasks._get_env_key", return_value="fake-key"):
+            response = self.client.get(
+                "/search_cost?query=webcam",
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["count"], 500)
+        self.assertIn("credits_cost", data)
+
+    def test_no_query_returns_error(self):
+        response = self.client.get(
+            "/search_cost",
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        data = json.loads(response.content)
+        self.assertIn("error", data)
+
+
+# ---------------------------------------------------------------------------
+# Globe EPSS endpoint
+# ---------------------------------------------------------------------------
+class GlobeDevicesEPSSTest(TestCase):
+    """globe_devices_epss_json must include EPSS and KEV fields."""
+
+    def setUp(self):
+        self.search = _make_search()
+        _make_device(self.search, ip="10.0.0.1",
+                     vulns="['CVE-2021-36260']")
+
+    def test_returns_json_with_epss_fields(self):
+        response = self.client.get("/globe/devices_epss.json")
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(len(data), 1)
+        self.assertIn("epss_score", data[0])
+        self.assertIn("kev_listed", data[0])
+        self.assertIn("honeypot_prob", data[0])
+
+
+# ---------------------------------------------------------------------------
+# Device detail page shows new intelligence tabs
+# ---------------------------------------------------------------------------
+class DeviceDetailIntelTabsTest(TestCase):
+    """Device detail page must render the new intelligence tabs."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(
+            self.search,
+            vulns="['CVE-2021-36260']",
+        )
+
+    def test_hardware_tab_present(self):
+        url = "/results/{}/{}/{}".format(
+            self.search.id, self.device.id, self.device.ip
+        )
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn("tab_hw", body, "Hardware tab must be present")
+        self.assertIn("Hardware", body)
+
+    def test_risk_tab_present(self):
+        url = "/results/{}/{}/{}".format(
+            self.search.id, self.device.id, self.device.ip
+        )
+        response = self.client.get(url)
+        body = response.content.decode()
+        self.assertIn("tab_risk", body, "Risk tab must be present")
+        self.assertIn("Risk", body)
+
+    def test_supply_chain_tab_present(self):
+        url = "/results/{}/{}/{}".format(
+            self.search.id, self.device.id, self.device.ip
+        )
+        response = self.client.get(url)
+        body = response.content.decode()
+        self.assertIn("tab_supply", body, "Supply Chain tab must be present")
+        self.assertIn("Supply Chain", body)
+
+    def test_deep_probe_button_present(self):
+        url = "/results/{}/{}/{}".format(
+            self.search.id, self.device.id, self.device.ip
+        )
+        response = self.client.get(url)
+        body = response.content.decode()
+        self.assertIn("deep_probe_btn", body, "Deep Probe button must be present")
+
+    def test_kev_badge_shown_when_kev_data_exists(self):
+        from app_kamerka.models import VulnIntelligence
+        VulnIntelligence.objects.create(
+            device=self.device, cve_id="CVE-2021-36260",
+            kev_listed=True, epss_score=0.85,
+        )
+        url = "/results/{}/{}/{}".format(
+            self.search.id, self.device.id, self.device.ip
+        )
+        response = self.client.get(url)
+        body = response.content.decode()
+        self.assertIn("KEV", body, "KEV badge must appear for KEV-listed CVEs")
+
+    def test_honeypot_warning_shown_when_probability_high(self):
+        from app_kamerka.models import HoneypotAnalysis
+        HoneypotAnalysis.objects.create(
+            device=self.device, probability=0.7,
+            reasons='["High banner density"]',
+        )
+        url = "/results/{}/{}/{}".format(
+            self.search.id, self.device.id, self.device.ip
+        )
+        response = self.client.get(url)
+        body = response.content.decode()
+        self.assertIn("HONEYPOT PROBABILITY", body,
+                       "Honeypot warning banner must appear for high probability")
+
+
+# ---------------------------------------------------------------------------
+# Globe spike renderer KEV colour support
+# ---------------------------------------------------------------------------
+class SpikeRendererKEVTest(TestCase):
+    """spike_renderer must support the 'kev' severity level."""
+
+    def test_kev_severity_colour(self):
+        from globe_3d.spike_renderer import severity_to_colour, SEVERITY_COLOURS
+        colour = severity_to_colour("kev")
+        self.assertEqual(colour, SEVERITY_COLOURS["kev"])
+
+    def test_dominant_severity_includes_kev(self):
+        from globe_3d.spike_renderer import dominant_severity
+        result = dominant_severity(["low", "kev", "high"])
+        self.assertEqual(result, "kev", "KEV must be highest priority severity")
+
+    def test_dominant_severity_without_kev(self):
+        from globe_3d.spike_renderer import dominant_severity
+        result = dominant_severity(["low", "high", "medium"])
+        self.assertEqual(result, "high")
+
+
+# ---------------------------------------------------------------------------
+# Vulnerability intelligence data view
+# ---------------------------------------------------------------------------
+class VulnIntelDataViewTest(TestCase):
+    """get_vuln_intel must return CVE/EPSS/KEV data."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+        from app_kamerka.models import VulnIntelligence
+        VulnIntelligence.objects.create(
+            device=self.device, cve_id="CVE-2021-36260",
+            cvss_score=9.8, epss_score=0.85, kev_listed=True,
+        )
+
+    def test_returns_vuln_data(self):
+        response = self.client.get(
+            "/get_vuln_intel/{}".format(self.device.id),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["cve_id"], "CVE-2021-36260")
+        self.assertEqual(data[0]["cvss_score"], 9.8)
+        self.assertTrue(data[0]["kev_listed"])
+
+    def test_empty_when_no_data(self):
+        device2 = _make_device(self.search, ip="5.5.5.5")
+        response = self.client.get(
+            "/get_vuln_intel/{}".format(device2.id),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        data = json.loads(response.content)
+        self.assertEqual(data, [])
+
+
+# ---------------------------------------------------------------------------
+# SBOM results data view
+# ---------------------------------------------------------------------------
+class SBOMResultsViewTest(TestCase):
+    """get_sbom_results must return SBOM component data."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+        from app_kamerka.models import SBOMComponent
+        SBOMComponent.objects.create(
+            device=self.device, component_name="OpenSSL",
+            version="1.1.1", component_type="library",
+        )
+
+    def test_returns_sbom_data(self):
+        response = self.client.get(
+            "/get_sbom_results/{}".format(self.device.id),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["component_name"], "OpenSSL")
+        self.assertEqual(data[0]["version"], "1.1.1")

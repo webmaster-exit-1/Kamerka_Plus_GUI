@@ -45,4 +45,28 @@ urlpatterns = [
 
     path('globe', views.globe, name='globe'),
     path('globe/devices.json', views.globe_devices_json, name='globe_devices_json'),
+
+    # Deep Protocol Scan
+    path('<id>/deep_scan', views.deep_scan_view, name='deep_scan'),
+    path('get_fingerprint_results/<id>', views.get_fingerprint_results, name='get_fingerprint_results'),
+
+    # Vulnerability Intelligence
+    path('<id>/nvd/scan', views.nvd_scan_view, name='nvd_scan'),
+    path('get_vuln_intel/<id>', views.get_vuln_intel, name='get_vuln_intel'),
+
+    # Honeypot Analysis
+    path('<id>/honeypot/scan', views.honeypot_scan_view, name='honeypot_scan'),
+
+    # SBOM
+    path('<id>/sbom/scan', views.sbom_scan_view, name='sbom_scan'),
+    path('get_sbom_results/<id>', views.get_sbom_results, name='get_sbom_results'),
+
+    # GFW Check
+    path('<id>/gfw/check', views.gfw_check_view, name='gfw_check'),
+
+    # Search Cost Estimate
+    path('search_cost', views.search_cost_view, name='search_cost'),
+
+    # Enhanced Globe Data
+    path('globe/devices_epss.json', views.globe_devices_epss_json, name='globe_devices_epss_json'),
 ]
