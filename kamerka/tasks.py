@@ -32,7 +32,8 @@ import xml.etree.ElementTree as et
 from app_kamerka import exploits
 
 from app_kamerka.models import Device, DeviceNearby, Search, ShodanScan, \
-    Whois, Bosch, WappalyzerResult, NucleiResult
+    Whois, Bosch, WappalyzerResult, NucleiResult, ProtocolFingerprint, \
+    VulnIntelligence, HoneypotAnalysis, SBOMComponent, GFWStatus
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -1816,3 +1817,643 @@ def nmap_rtsp_scan(id, ports=None, timing=None):
         return_dict["error"] = str(e)
 
     return return_dict
+
+
+# ---------------------------------------------------------------------------
+# Deep Protocol Fingerprinting — Nmap NSE metadata parsers
+# ---------------------------------------------------------------------------
+
+# Maps protocol names to relevant ICS ports for targeted scanning.
+PROTOCOL_PORTS = {
+    "modbus": "502",
+    "s7": "102",
+    "bacnet": "47808",
+    "dnp3": "20000",
+    "ethernetip": "44818",
+    "niagara": "1911",
+}
+
+# NSE scripts used for deep protocol fingerprinting.
+DEEP_SCAN_SCRIPTS = {
+    "modbus": "nmap_scripts/modbus-discover.nse",
+    "s7": "nmap_scripts/s7-enumerate.nse,nmap_scripts/s7-info.nse",
+    "bacnet": "nmap_scripts/bacnet-info.nse",
+}
+
+
+def _parse_modbus_output(raw_output):
+    """Parse Modbus NSE script output for protocol metadata.
+
+    Extracts Slave ID, Vendor, Product Code from modbus-discover output.
+    """
+    result = {}
+    # Match patterns like "Slave ID data: \xab\x..." or readable text
+    sid_match = re.search(r'Slave ID data:\s*(.+?)(?:\n|$)', raw_output)
+    if sid_match:
+        result['slave_id'] = sid_match.group(1).strip()
+
+    device_id_match = re.search(r'Device Identification:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    if device_id_match:
+        result['vendor_id'] = device_id_match.group(1).strip()
+
+    vendor_match = re.search(r'Vendor Name:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    if vendor_match:
+        result['vendor_id'] = vendor_match.group(1).strip()
+
+    product_match = re.search(r'Product Code:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    if product_match:
+        result['project_name'] = product_match.group(1).strip()
+
+    version_match = re.search(r'(?:Revision|Major Minor Revision):\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    if version_match:
+        result['firmware_version'] = version_match.group(1).strip()
+
+    return result
+
+
+def _parse_s7_output(raw_output):
+    """Parse S7 (Siemens) NSE script output for protocol metadata.
+
+    Extracts Module, Plant ID, Serial Number, Hardware/Firmware Version.
+    """
+    result = {}
+    module_match = re.search(r'Module(?:\s+name)?:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    if module_match:
+        result['module_name'] = module_match.group(1).strip()
+
+    plant_match = re.search(r'Plant(?:\s+identification)?:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    if plant_match:
+        result['plant_id'] = plant_match.group(1).strip()
+
+    serial_match = re.search(r'Serial(?:\s+number)?:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    if serial_match:
+        result['serial_number'] = serial_match.group(1).strip()
+
+    hw_match = re.search(r'Hardware(?:\s+version)?:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    if hw_match:
+        result['hardware_version'] = hw_match.group(1).strip()
+
+    fw_match = re.search(r'Firmware(?:\s+version)?:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    if fw_match:
+        result['firmware_version'] = fw_match.group(1).strip()
+
+    name_match = re.search(r'(?:PLC\s+name|Module\s+type):\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    if name_match:
+        result['project_name'] = name_match.group(1).strip()
+
+    vendor_match = re.search(r'(?:Copyright|Vendor):\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    if vendor_match:
+        result['vendor_id'] = vendor_match.group(1).strip()
+    elif 'siemens' in raw_output.lower() or 's7' in raw_output.lower():
+        result['vendor_id'] = 'Siemens'
+
+    return result
+
+
+def _parse_bacnet_output(raw_output):
+    """Parse BACnet NSE script output for protocol metadata."""
+    result = {}
+    vendor_match = re.search(r'Vendor(?:\s+(?:Name|ID))?:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    if vendor_match:
+        result['vendor_id'] = vendor_match.group(1).strip()
+
+    model_match = re.search(r'(?:Model\s+Name|Object\s+Name):\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    if model_match:
+        result['project_name'] = model_match.group(1).strip()
+
+    fw_match = re.search(r'(?:Firmware|Application Software)(?:\s+Version)?:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    if fw_match:
+        result['firmware_version'] = fw_match.group(1).strip()
+
+    desc_match = re.search(r'Description:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    if desc_match:
+        result['module_name'] = desc_match.group(1).strip()
+
+    return result
+
+
+# Dispatcher for protocol-specific parsers
+_PROTOCOL_PARSERS = {
+    "modbus": _parse_modbus_output,
+    "s7": _parse_s7_output,
+    "bacnet": _parse_bacnet_output,
+}
+
+
+@shared_task(bind=False)
+def deep_protocol_scan(device_id, protocol=None):
+    """Run deep protocol fingerprinting using Nmap NSE scripts.
+
+    Executes protocol-specific NSE scripts against a device and parses
+    the output to extract Vendor ID, Project Name, Hardware Version, etc.
+    Results are saved to the ProtocolFingerprint model.
+    """
+    device = Device.objects.get(id=device_id)
+    ip = device.ip
+    port = device.port or ""
+
+    # Determine which protocol(s) to scan
+    if protocol and protocol in DEEP_SCAN_SCRIPTS:
+        protocols_to_scan = [protocol]
+    else:
+        # Auto-detect based on device type or scan all known protocols
+        device_type = (device.type or "").lower()
+        if device_type in DEEP_SCAN_SCRIPTS:
+            protocols_to_scan = [device_type]
+        elif device_type == "siemens":
+            protocols_to_scan = ["s7"]
+        else:
+            protocols_to_scan = list(DEEP_SCAN_SCRIPTS.keys())
+
+    results = {}
+    for proto in protocols_to_scan:
+        scan_port = port if port else PROTOCOL_PORTS.get(proto, "")
+        if not scan_port:
+            continue
+
+        scripts = DEEP_SCAN_SCRIPTS[proto]
+        options = "-p {} --script={}".format(scan_port, scripts)
+
+        try:
+            nm = NmapProcess(ip, options=options, sudo=settings.NMAP_USE_SUDO)
+            nm.run_background()
+
+            while nm.is_running():
+                sleep(2)
+
+            if not nm.stdout:
+                continue
+
+            raw_xml = nm.stdout
+            parsed_data = xmltodict.parse(raw_xml)
+
+            # Extract script output from nmap XML
+            raw_output = ""
+            try:
+                host = parsed_data.get('nmaprun', {}).get('host', {})
+                ports = host.get('ports', {}).get('port', {})
+                if isinstance(ports, list):
+                    for p in ports:
+                        scripts_data = p.get('script', {})
+                        if isinstance(scripts_data, list):
+                            for s in scripts_data:
+                                raw_output += s.get('@output', '') + "\n"
+                        elif isinstance(scripts_data, dict):
+                            raw_output += scripts_data.get('@output', '') + "\n"
+                elif isinstance(ports, dict):
+                    scripts_data = ports.get('script', {})
+                    if isinstance(scripts_data, list):
+                        for s in scripts_data:
+                            raw_output += s.get('@output', '') + "\n"
+                    elif isinstance(scripts_data, dict):
+                        raw_output += scripts_data.get('@output', '') + "\n"
+            except Exception as e:
+                logger.warning("Error extracting NSE output: %s", e)
+                raw_output = raw_xml
+
+            if not raw_output.strip():
+                continue
+
+            # Parse protocol-specific metadata
+            parser = _PROTOCOL_PARSERS.get(proto)
+            metadata = parser(raw_output) if parser else {}
+
+            # Save fingerprint to database
+            fp = ProtocolFingerprint(
+                device=device,
+                protocol=proto,
+                vendor_id=metadata.get('vendor_id', ''),
+                project_name=metadata.get('project_name', ''),
+                hardware_version=metadata.get('hardware_version', ''),
+                firmware_version=metadata.get('firmware_version', ''),
+                serial_number=metadata.get('serial_number', ''),
+                module_name=metadata.get('module_name', ''),
+                slave_id=metadata.get('slave_id', ''),
+                plant_id=metadata.get('plant_id', ''),
+                raw_output=raw_output[:10000],
+            )
+            fp.save()
+
+            results[proto] = metadata
+            results[proto]['raw_output'] = raw_output[:500]
+
+        except Exception as e:
+            logger.warning("Deep protocol scan error for %s/%s: %s", ip, proto, e)
+            results[proto] = {"error": str(e)}
+
+    return results
+
+
+@shared_task(bind=False)
+def nvd_lookup(device_id):
+    """Query the NIST NVD API for CVEs matching the device vendor/version.
+
+    Uses the device's vendor and product information (from ProtocolFingerprint
+    or Shodan CPE data) to find matching vulnerabilities, then enriches each
+    CVE with EPSS scores and CISA KEV status.
+    """
+    device = Device.objects.get(id=device_id)
+    cve_ids = []
+
+    # Collect CVE IDs from device.vulns
+    if device.vulns:
+        try:
+            import ast
+            vulns_list = ast.literal_eval(device.vulns)
+            if isinstance(vulns_list, list):
+                cve_ids.extend(vulns_list)
+        except Exception:
+            pass
+
+    # Also try to get CVEs from CPE string
+    cpe = device.cpe or ""
+    if cpe and not cve_ids:
+        try:
+            url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+            params = {"cpeName": cpe, "resultsPerPage": 20}
+            resp = requests.get(url, params=params, timeout=30)
+            if resp.status_code == 200:
+                data = resp.json()
+                for vuln in data.get("vulnerabilities", []):
+                    cve_data = vuln.get("cve", {})
+                    cve_id = cve_data.get("id", "")
+                    if cve_id:
+                        cve_ids.append(cve_id)
+        except Exception as e:
+            logger.warning("NVD CPE lookup error for %s: %s", device.ip, e)
+
+    if not cve_ids:
+        return {"status": "no_cves", "device_id": device_id}
+
+    # Fetch EPSS scores in batch
+    epss_scores = _fetch_epss_scores(cve_ids)
+
+    # Fetch CISA KEV list
+    kev_set = _fetch_kev_list()
+
+    results = []
+    for cve_id in cve_ids:
+        epss_data = epss_scores.get(cve_id, {})
+        is_kev = cve_id in kev_set
+
+        # Fetch individual CVE detail from NVD for CVSS score
+        cvss = 0.0
+        description = ""
+        try:
+            url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+            params = {"cveId": cve_id}
+            resp = requests.get(url, params=params, timeout=30)
+            if resp.status_code == 200:
+                data = resp.json()
+                vulns = data.get("vulnerabilities", [])
+                if vulns:
+                    cve_data = vulns[0].get("cve", {})
+                    # Get CVSS score
+                    metrics = cve_data.get("metrics", {})
+                    for version_key in ("cvssMetricV31", "cvssMetricV30", "cvssMetricV2"):
+                        metric_list = metrics.get(version_key, [])
+                        if metric_list:
+                            cvss = metric_list[0].get("cvssData", {}).get("baseScore", 0.0)
+                            break
+                    # Get description
+                    descs = cve_data.get("descriptions", [])
+                    for d in descs:
+                        if d.get("lang") == "en":
+                            description = d.get("value", "")
+                            break
+        except Exception as e:
+            logger.warning("NVD detail lookup error for %s: %s", cve_id, e)
+
+        # Save to database
+        VulnIntelligence.objects.update_or_create(
+            device=device,
+            cve_id=cve_id,
+            defaults={
+                "cvss_score": cvss,
+                "epss_score": epss_data.get("epss", 0.0),
+                "epss_percentile": epss_data.get("percentile", 0.0),
+                "kev_listed": is_kev,
+                "description": description[:2000],
+                "source": "nvd",
+            },
+        )
+        results.append({
+            "cve_id": cve_id,
+            "cvss": cvss,
+            "epss": epss_data.get("epss", 0.0),
+            "kev": is_kev,
+        })
+
+    return {"status": "ok", "cve_count": len(results), "results": results}
+
+
+def _fetch_epss_scores(cve_ids):
+    """Fetch EPSS scores from the FIRST.org EPSS API.
+
+    Returns a dict mapping CVE ID to {"epss": float, "percentile": float}.
+    """
+    if not cve_ids:
+        return {}
+    try:
+        cve_list = ",".join(cve_ids[:100])
+        url = "https://api.first.org/data/v1/epss"
+        params = {"cve": cve_list}
+        resp = requests.get(url, params=params, timeout=30)
+        if resp.status_code == 200:
+            data = resp.json()
+            result = {}
+            for item in data.get("data", []):
+                cve = item.get("cve", "")
+                result[cve] = {
+                    "epss": float(item.get("epss", 0.0)),
+                    "percentile": float(item.get("percentile", 0.0)),
+                }
+            return result
+    except Exception as e:
+        logger.warning("EPSS API error: %s", e)
+    return {}
+
+
+def _fetch_kev_list():
+    """Fetch the CISA Known Exploited Vulnerabilities catalog.
+
+    Returns a set of CVE IDs that are on the KEV list.
+    """
+    try:
+        url = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+        resp = requests.get(url, timeout=30)
+        if resp.status_code == 200:
+            data = resp.json()
+            return {v.get("cveID", "") for v in data.get("vulnerabilities", [])}
+    except Exception as e:
+        logger.warning("CISA KEV API error: %s", e)
+    return set()
+
+
+# ---------------------------------------------------------------------------
+# Honeypot signatures — known patterns for common honeypots
+# ---------------------------------------------------------------------------
+CONPOT_SIGNATURES = [
+    "Siemens, SIMATIC, S7-200",
+    "Moxa Nport",
+    "Schneider Electric",
+]
+
+COWRIE_SIGNATURES = [
+    "SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2",
+    "SSH-2.0-OpenSSH_5.9p1 Debian-5ubuntu1",
+]
+
+
+@shared_task(bind=False)
+def honeypot_check(device_id):
+    """Analyze a device for honeypot characteristics.
+
+    Checks for:
+    - Banner density in /24 subnet (>= 500 identical banners indicates honeypot)
+    - Conpot/Cowrie signature matching
+    - Suspiciously perfect response times
+    """
+    device = Device.objects.get(id=device_id)
+    probability = 0.0
+    reasons = []
+    banner = (device.data or "").strip()
+
+    # Check banner density in /24 subnet
+    ip_parts = device.ip.split(".")
+    subnet_count = 0
+    if len(ip_parts) == 4:
+        subnet_prefix = ".".join(ip_parts[:3])
+        subnet_devices = Device.objects.filter(ip__startswith=subnet_prefix + ".")
+        if banner:
+            subnet_count = subnet_devices.filter(data=banner).count()
+            if subnet_count >= 500:
+                probability += 0.4
+                reasons.append(
+                    "High banner density: {} identical banners in /{} subnet".format(
+                        subnet_count, 24
+                    )
+                )
+            elif subnet_count >= 100:
+                probability += 0.2
+                reasons.append(
+                    "Elevated banner density: {} identical banners in /{} subnet".format(
+                        subnet_count, 24
+                    )
+                )
+
+    # Check Conpot signatures
+    is_conpot = False
+    for sig in CONPOT_SIGNATURES:
+        if sig.lower() in banner.lower():
+            is_conpot = True
+            probability += 0.3
+            reasons.append("Matches Conpot signature: {}".format(sig))
+            break
+
+    # Check Cowrie signatures
+    is_cowrie = False
+    for sig in COWRIE_SIGNATURES:
+        if sig.lower() in banner.lower():
+            is_cowrie = True
+            probability += 0.3
+            reasons.append("Matches Cowrie signature: {}".format(sig))
+            break
+
+    # Cap probability at 1.0
+    probability = min(probability, 1.0)
+
+    # Save analysis
+    HoneypotAnalysis.objects.update_or_create(
+        device=device,
+        defaults={
+            "probability": probability,
+            "reasons": json.dumps(reasons),
+            "banner_count_in_subnet": subnet_count,
+            "is_conpot": is_conpot,
+            "is_cowrie": is_cowrie,
+        },
+    )
+
+    return {
+        "probability": probability,
+        "reasons": reasons,
+        "is_conpot": is_conpot,
+        "is_cowrie": is_cowrie,
+        "banner_count": subnet_count,
+    }
+
+
+@shared_task(bind=False)
+def sbom_lookup(device_id):
+    """Look up known software components for the device firmware/product.
+
+    Uses the device's CPE string and product name to identify known
+    software components (BusyBox, OpenSSL, etc.) that are commonly
+    bundled with the firmware model.
+    """
+    device = Device.objects.get(id=device_id)
+    product = (device.product or "").lower()
+    cpe = device.cpe or ""
+    components_found = []
+
+    # Known firmware component mappings (common ICS/IoT firmware stacks)
+    KNOWN_COMPONENTS = {
+        "goahead": [
+            {"name": "GoAhead WebServer", "type": "framework", "cpe": "cpe:2.3:a:embedthis:goahead"},
+        ],
+        "lighttpd": [
+            {"name": "lighttpd", "type": "framework", "cpe": "cpe:2.3:a:lighttpd:lighttpd"},
+        ],
+        "busybox": [
+            {"name": "BusyBox", "type": "os", "cpe": "cpe:2.3:a:busybox:busybox"},
+        ],
+        "hikvision": [
+            {"name": "Hikvision Firmware", "type": "framework"},
+            {"name": "BusyBox", "type": "os"},
+            {"name": "OpenSSL", "type": "library"},
+            {"name": "lighttpd", "type": "framework"},
+        ],
+        "dahua": [
+            {"name": "Dahua Firmware", "type": "framework"},
+            {"name": "BusyBox", "type": "os"},
+            {"name": "OpenSSL", "type": "library"},
+        ],
+        "siemens": [
+            {"name": "Siemens S7 Runtime", "type": "framework"},
+        ],
+        "schneider": [
+            {"name": "Schneider Electric Firmware", "type": "framework"},
+            {"name": "OpenSSL", "type": "library"},
+        ],
+    }
+
+    # Match by product name
+    for key, components in KNOWN_COMPONENTS.items():
+        if key in product:
+            components_found.extend(components)
+
+    # Match by CPE
+    if cpe:
+        for key, components in KNOWN_COMPONENTS.items():
+            if key in cpe.lower():
+                for c in components:
+                    if c not in components_found:
+                        components_found.append(c)
+
+    # Also check Wappalyzer results for web components
+    wap_results = WappalyzerResult.objects.filter(device=device)
+    for wap in wap_results:
+        techs = wap.technologies
+        if isinstance(techs, list):
+            for entry in techs:
+                tech_list = entry.get("technologies", []) if isinstance(entry, dict) else []
+                for tech in tech_list:
+                    components_found.append({
+                        "name": tech.get("name", ""),
+                        "version": tech.get("version", ""),
+                        "type": "library",
+                    })
+
+    # Save components to database
+    saved_count = 0
+    for comp in components_found:
+        SBOMComponent.objects.update_or_create(
+            device=device,
+            component_name=comp.get("name", ""),
+            defaults={
+                "version": comp.get("version", ""),
+                "component_type": comp.get("type", "library"),
+                "cpe_string": comp.get("cpe", ""),
+                "source": "known_mapping",
+            },
+        )
+        saved_count += 1
+
+    return {"status": "ok", "components": saved_count}
+
+
+@shared_task(bind=False)
+def gfw_check(device_id):
+    """Check if the device IP is reachable from China using the OONI Probe API.
+
+    Queries the OONI API for recent measurement data on the device's IP
+    to determine if it's blocked by the Great Firewall.
+    """
+    device = Device.objects.get(id=device_id)
+    ip = device.ip
+
+    reachable = True
+    blocking_type = ""
+    report_id = ""
+
+    try:
+        url = "https://api.ooni.io/api/v1/measurements"
+        params = {
+            "input": ip,
+            "probe_cc": "CN",
+            "limit": 5,
+            "order_by": "measurement_start_time",
+            "order": "desc",
+        }
+        resp = requests.get(url, params=params, timeout=30)
+        if resp.status_code == 200:
+            data = resp.json()
+            results = data.get("results", [])
+            for r in results:
+                if r.get("anomaly", False) or r.get("confirmed", False):
+                    reachable = False
+                    blocking_type = r.get("test_name", "unknown")
+                    report_id = r.get("report_id", "")
+                    break
+                report_id = r.get("report_id", report_id)
+    except Exception as e:
+        logger.warning("OONI API error for %s: %s", ip, e)
+
+    GFWStatus.objects.update_or_create(
+        device=device,
+        defaults={
+            "reachable": reachable,
+            "ooni_report_id": report_id[:200],
+            "blocking_type": blocking_type[:100],
+        },
+    )
+
+    return {
+        "reachable": reachable,
+        "blocking_type": blocking_type,
+        "report_id": report_id,
+    }
+
+
+def check_search_cost(query, country=None):
+    """Check the estimated API credit cost of a Shodan search.
+
+    Calls shodan.count() to get the number of results without consuming
+    search credits, allowing the UI to show a confirmation dialog.
+    Returns dict with 'count' and 'credits_cost'.
+    """
+    SHODAN_API_KEY = _get_env_key('SHODAN_API_KEY')
+    if not SHODAN_API_KEY:
+        return {"count": 0, "credits_cost": 0, "error": "No API key configured"}
+
+    try:
+        api = Shodan(SHODAN_API_KEY)
+        if country:
+            query_str = "{} country:{}".format(query, country)
+        else:
+            query_str = query
+
+        result = api.count(query_str)
+        total = result.get("total", 0)
+        # Shodan charges 1 credit per 100 results (first page is free)
+        credits_cost = max(0, (total // 100))
+
+        return {
+            "count": total,
+            "credits_cost": credits_cost,
+            "query": query_str,
+        }
+    except Exception as e:
+        logger.warning("Shodan count error: %s", e)
+        return {"count": 0, "credits_cost": 0, "error": str(e)}
