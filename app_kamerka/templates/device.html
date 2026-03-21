@@ -571,7 +571,8 @@
                 {% if honeypot %}
                 <div style="border:1px solid {% if honeypot.probability >= 0.5 %}#ff2050{% elif honeypot.probability >= 0.2 %}#ffe600{% else %}#00ff88{% endif %};border-radius:4px;padding:12px;margin-top:12px;background:rgba(0,0,0,0.2);">
                     <h4 style="margin:0 0 8px;color:{% if honeypot.probability >= 0.5 %}#ff2050{% else %}#ffe600{% endif %};">&#128373; Honeypot Analysis</h4>
-                    <p><b>Probability:</b> <span style="font-size:1.2em;font-weight:bold;">{{ honeypot.probability|floatformat:0 }}%</span></p>
+                    {% widthratio honeypot.probability 1 100 as honeypot_percent %}
+                    <p><b>Probability:</b> <span style="font-size:1.2em;font-weight:bold;">{{ honeypot_percent|floatformat:0 }}%</span></p>
                     {% if honeypot.is_conpot %}<p style="color:#ff2050;">&#9888; Matches Conpot honeypot signatures</p>{% endif %}
                     {% if honeypot.is_cowrie %}<p style="color:#ff2050;">&#9888; Matches Cowrie honeypot signatures</p>{% endif %}
                     <p><b>Identical banners in /24:</b> {{ honeypot.banner_count_in_subnet }}</p>
