@@ -4,6 +4,7 @@ import logging
 import math
 import re
 import shutil
+import socket
 import subprocess
 
 import maxminddb
@@ -2267,7 +2268,6 @@ def honeypot_check(device_id):
     ip = device.ip
     port = device.port or "80"
     try:
-        import socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(5)
         start = time.perf_counter()
@@ -2276,7 +2276,8 @@ def honeypot_check(device_id):
         sock.close()
 
         # Flag suspiciously perfect response times (honeypot indicators)
-        if response_time_ms > 0 and (response_time_ms % 10 == 0 or response_time_ms < 1.0):
+        rounded_ms = round(response_time_ms, 1)
+        if response_time_ms > 0 and (rounded_ms % 10 == 0 or response_time_ms < 1.0):
             probability += 0.15
             reasons.append(
                 "Suspiciously static response time: {:.3f}ms".format(response_time_ms)
