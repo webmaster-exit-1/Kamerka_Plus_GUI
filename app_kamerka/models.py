@@ -111,3 +111,60 @@ class Dnp3(models.Model):
     destination = models.CharField(max_length=100)
     control = models.CharField(max_length=100)
 
+class ProtocolFingerprint(models.Model):
+    device = models.ForeignKey(Device, on_delete=models.CASCADE)
+    protocol = models.CharField(max_length=50, default="")
+    vendor_id = models.CharField(max_length=200, default="")
+    project_name = models.CharField(max_length=200, default="")
+    hardware_version = models.CharField(max_length=200, default="")
+    firmware_version = models.CharField(max_length=200, default="")
+    serial_number = models.CharField(max_length=200, default="")
+    module_name = models.CharField(max_length=200, default="")
+    slave_id = models.CharField(max_length=100, default="")
+    plant_id = models.CharField(max_length=200, default="")
+    raw_output = models.TextField(default="")
+    scan_date = models.DateTimeField(auto_now_add=True)
+
+
+class VulnIntelligence(models.Model):
+    device = models.ForeignKey(Device, on_delete=models.CASCADE)
+    cve_id = models.CharField(max_length=30, default="")
+    cvss_score = models.FloatField(default=0.0)
+    epss_score = models.FloatField(default=0.0)
+    epss_percentile = models.FloatField(default=0.0)
+    kev_listed = models.BooleanField(default=False)
+    description = models.TextField(default="")
+    exploit_available = models.BooleanField(default=False)
+    source = models.CharField(max_length=50, default="nvd")
+    last_updated = models.DateTimeField(auto_now=True)
+
+
+class HoneypotAnalysis(models.Model):
+    device = models.ForeignKey(Device, on_delete=models.CASCADE)
+    probability = models.FloatField(default=0.0)
+    reasons = models.TextField(default="")
+    banner_count_in_subnet = models.IntegerField(default=0)
+    is_conpot = models.BooleanField(default=False)
+    is_cowrie = models.BooleanField(default=False)
+    response_time_ms = models.FloatField(default=0.0)
+    scan_date = models.DateTimeField(auto_now_add=True)
+
+
+class SBOMComponent(models.Model):
+    device = models.ForeignKey(Device, on_delete=models.CASCADE)
+    component_name = models.CharField(max_length=200, default="")
+    version = models.CharField(max_length=100, default="")
+    component_type = models.CharField(max_length=50, default="library")
+    license_name = models.CharField(max_length=100, default="")
+    cpe_string = models.CharField(max_length=300, default="")
+    source = models.CharField(max_length=50, default="")
+    scan_date = models.DateTimeField(auto_now_add=True)
+
+
+class GFWStatus(models.Model):
+    device = models.ForeignKey(Device, on_delete=models.CASCADE)
+    reachable = models.BooleanField(default=True)
+    last_checked = models.DateTimeField(auto_now=True)
+    ooni_report_id = models.CharField(max_length=200, default="")
+    blocking_type = models.CharField(max_length=100, default="")
+

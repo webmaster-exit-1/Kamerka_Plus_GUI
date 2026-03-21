@@ -18,7 +18,8 @@ from libnmap.parser import NmapParserException
 
 from app_kamerka import forms
 from app_kamerka.models import Search, Device, DeviceNearby, ShodanScan, Whois, \
-    Bosch, WappalyzerResult, NucleiResult
+    Bosch, WappalyzerResult, NucleiResult, ProtocolFingerprint, VulnIntelligence, \
+    HoneypotAnalysis, SBOMComponent, GFWStatus
 from kamerka.tasks import shodan_search, devices_nearby, shodan_scan_task, \
     whoisxml, check_credits, send_to_field_agent_task, nmap_scan, validate_nmap, validate_maxmind, scan, \
     exploit, wappalyzer_scan, nuclei_scan, shodan_csv_export, shodan_kml_export, shodan_json_export, \
