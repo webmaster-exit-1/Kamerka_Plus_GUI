@@ -10,7 +10,8 @@ from .forms import UploadFileForm
 import pycountry
 from celery.result import AsyncResult
 from django.core import serializers
-from django.db.models import Count
+from django.db.models import Count, Max, Exists, OuterRef, Subquery, FloatField
+from django.db.models.functions import Coalesce
 from django.http import HttpResponse, JsonResponse
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
@@ -537,6 +538,7 @@ def device(request, id, device_id, ip):
                "sbom_components": sbom_components,
                "gfw_status": gfw_status,
                "max_epss": max_epss,
+               "max_epss_percent": max_epss * 100,
                "has_kev": has_kev,
                "has_exploit": has_exploit}
 
@@ -909,8 +911,17 @@ def get_fingerprint_results(request, id):
         fps = ProtocolFingerprint.objects.filter(device_id=id)
         if not fps.exists():
             return HttpResponse(json.dumps([]), content_type="application/json")
-        response_data = serializers.serialize('json', fps)
-        return HttpResponse(response_data, content_type="application/json")
+        # Select only curated fields — exclude raw_output to avoid bloat
+        data = list(fps.values(
+            'id', 'protocol', 'vendor_id', 'project_name',
+            'hardware_version', 'firmware_version', 'serial_number',
+            'module_name', 'slave_id', 'plant_id', 'scan_date',
+        ))
+        # Convert datetimes to strings for JSON serialisation
+        for item in data:
+            if item.get('scan_date'):
+                item['scan_date'] = item['scan_date'].isoformat()
+        return HttpResponse(json.dumps(data), content_type="application/json")
     return HttpResponse(json.dumps([]), content_type="application/json")
 
 
@@ -1030,8 +1041,23 @@ def globe_devices_epss_json(request):
 
     Extends the base globe_devices_json with EPSS scores, KEV status,
     and honeypot probability for enhanced spike coloring.
+    Uses annotate() for O(1) database queries instead of per-device lookups.
     """
-    devices = Device.objects.all()
+    # Subquery for honeypot probability
+    hp_subquery = HoneypotAnalysis.objects.filter(
+        device=OuterRef('pk')
+    ).order_by('-scan_date').values('probability')[:1]
+
+    devices = Device.objects.annotate(
+        max_epss=Coalesce(Max('vulnintelligence__epss_score'), 0.0),
+        has_kev_ann=Exists(
+            VulnIntelligence.objects.filter(device=OuterRef('pk'), kev_listed=True)
+        ),
+        honeypot_prob_ann=Coalesce(
+            Subquery(hp_subquery, output_field=FloatField()), 0.0
+        ),
+    )
+
     records = []
     for d in devices:
         try:
@@ -1048,21 +1074,9 @@ def globe_devices_epss_json(request):
             except (json.JSONDecodeError, ValueError):
                 pass
 
-        # Get EPSS data
-        max_epss = 0.0
-        is_kev = False
-        vuln_intels = VulnIntelligence.objects.filter(device=d)
-        for vi in vuln_intels:
-            if vi.epss_score > max_epss:
-                max_epss = vi.epss_score
-            if vi.kev_listed:
-                is_kev = True
-
-        # Get honeypot data
-        honeypot_prob = 0.0
-        hp = HoneypotAnalysis.objects.filter(device=d).first()
-        if hp:
-            honeypot_prob = hp.probability
+        max_epss = d.max_epss
+        is_kev = d.has_kev_ann
+        honeypot_prob = d.honeypot_prob_ann
 
         # EPSS-based severity (overrides vuln-count severity)
         if is_kev:

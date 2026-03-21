@@ -1950,7 +1950,6 @@ def deep_protocol_scan(device_id, protocol=None):
     """
     device = Device.objects.get(id=device_id)
     ip = device.ip
-    port = device.port or ""
 
     # Determine which protocol(s) to scan
     if protocol and protocol in DEEP_SCAN_SCRIPTS:
@@ -1967,7 +1966,9 @@ def deep_protocol_scan(device_id, protocol=None):
 
     results = {}
     for proto in protocols_to_scan:
-        scan_port = port if port else PROTOCOL_PORTS.get(proto, "")
+        # Use the protocol's expected port for deep scans instead of blindly
+        # reusing device.port, which may refer to an unrelated service.
+        scan_port = PROTOCOL_PORTS.get(proto, "")
         if not scan_port:
             continue
 
@@ -1978,8 +1979,32 @@ def deep_protocol_scan(device_id, protocol=None):
             nm = NmapProcess(ip, options=options, sudo=settings.NMAP_USE_SUDO)
             nm.run_background()
 
+            start_time = time.time()
+            max_runtime = getattr(settings, "NMAP_MAX_RUNTIME", 300)
+            timed_out = False
+
             while nm.is_running():
+                if time.time() - start_time > max_runtime:
+                    timed_out = True
+                    try:
+                        nm.stop()
+                    except Exception as stop_err:
+                        logger.warning(
+                            "Failed to stop timed-out nmap process for %s/%s: %s",
+                            ip, proto, stop_err,
+                        )
+                    logger.warning(
+                        "Deep protocol scan timeout for %s/%s after %s seconds",
+                        ip, proto, max_runtime,
+                    )
+                    results[proto] = {
+                        "error": "Nmap scan timeout after {} seconds".format(max_runtime)
+                    }
+                    break
                 sleep(2)
+
+            if timed_out:
+                continue
 
             if not nm.stdout:
                 continue
@@ -2151,27 +2176,45 @@ def _fetch_epss_scores(cve_ids):
     """Fetch EPSS scores from the FIRST.org EPSS API.
 
     Returns a dict mapping CVE ID to {"epss": float, "percentile": float}.
+    Batches requests in chunks of 100 to respect API limits.
     """
     if not cve_ids:
         return {}
-    try:
-        cve_list = ",".join(cve_ids[:100])
-        url = "https://api.first.org/data/v1/epss"
-        params = {"cve": cve_list}
-        resp = requests.get(url, params=params, timeout=30)
-        if resp.status_code == 200:
+
+    # Deduplicate while preserving order
+    seen = set()
+    unique_cves = []
+    for cve in cve_ids:
+        if cve not in seen:
+            seen.add(cve)
+            unique_cves.append(cve)
+
+    url = "https://api.first.org/data/v1/epss"
+    batch_size = 100
+    results = {}
+
+    for start in range(0, len(unique_cves), batch_size):
+        batch = unique_cves[start:start + batch_size]
+        if not batch:
+            continue
+        try:
+            params = {"cve": ",".join(batch)}
+            resp = requests.get(url, params=params, timeout=30)
+            if resp.status_code != 200:
+                continue
             data = resp.json()
-            result = {}
             for item in data.get("data", []):
                 cve = item.get("cve", "")
-                result[cve] = {
+                if not cve:
+                    continue
+                results[cve] = {
                     "epss": float(item.get("epss", 0.0)),
                     "percentile": float(item.get("percentile", 0.0)),
                 }
-            return result
-    except Exception as e:
-        logger.warning("EPSS API error: %s", e)
-    return {}
+        except Exception as e:
+            logger.warning("EPSS API error (batch %d): %s", start, e)
+
+    return results
 
 
 def _fetch_kev_list():
@@ -2212,12 +2255,34 @@ def honeypot_check(device_id):
     Checks for:
     - Banner density in /24 subnet (>= 500 identical banners indicates honeypot)
     - Conpot/Cowrie signature matching
-    - Suspiciously perfect response times
+    - Response time analysis (suspiciously perfect / static times)
     """
     device = Device.objects.get(id=device_id)
     probability = 0.0
     reasons = []
     banner = (device.data or "").strip()
+    response_time_ms = 0.0
+
+    # Measure response time to the device
+    ip = device.ip
+    port = device.port or "80"
+    try:
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5)
+        start = time.perf_counter()
+        sock.connect((ip, int(port)))
+        response_time_ms = (time.perf_counter() - start) * 1000
+        sock.close()
+
+        # Flag suspiciously perfect response times (honeypot indicators)
+        if response_time_ms > 0 and (response_time_ms % 10 == 0 or response_time_ms < 1.0):
+            probability += 0.15
+            reasons.append(
+                "Suspiciously static response time: {:.3f}ms".format(response_time_ms)
+            )
+    except Exception:
+        pass
 
     # Check banner density in /24 subnet
     ip_parts = device.ip.split(".")
@@ -2272,6 +2337,7 @@ def honeypot_check(device_id):
             "banner_count_in_subnet": subnet_count,
             "is_conpot": is_conpot,
             "is_cowrie": is_cowrie,
+            "response_time_ms": response_time_ms,
         },
     )
 
@@ -2281,6 +2347,7 @@ def honeypot_check(device_id):
         "is_conpot": is_conpot,
         "is_cowrie": is_cowrie,
         "banner_count": subnet_count,
+        "response_time_ms": response_time_ms,
     }
 
 
@@ -2355,12 +2422,15 @@ def sbom_lookup(device_id):
                         "type": "library",
                     })
 
-    # Save components to database
+    # Save components to database — skip empty names, track created-vs-updated
     saved_count = 0
     for comp in components_found:
-        SBOMComponent.objects.update_or_create(
+        name = comp.get("name", "").strip()
+        if not name:
+            continue
+        _, created = SBOMComponent.objects.update_or_create(
             device=device,
-            component_name=comp.get("name", ""),
+            component_name=name,
             defaults={
                 "version": comp.get("version", ""),
                 "component_type": comp.get("type", "library"),
@@ -2368,7 +2438,8 @@ def sbom_lookup(device_id):
                 "source": "known_mapping",
             },
         )
-        saved_count += 1
+        if created:
+            saved_count += 1
 
     return {"status": "ok", "components": saved_count}
 

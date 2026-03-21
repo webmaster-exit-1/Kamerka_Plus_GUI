@@ -869,7 +869,7 @@ new Selectr('#cam', {
             var selects = form.querySelectorAll('select[multiple]');
             var queries = [];
             selects.forEach(function(sel) {
-                var selected = Array.from(sel.selectedOptions).map(function(o) { return o.text || o.value; });
+                var selected = Array.from(sel.selectedOptions).map(function(o) { return o.value; });
                 queries = queries.concat(selected);
             });
             var queryStr = queries.join(', ') || 'search';
