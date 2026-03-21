@@ -903,7 +903,6 @@ new Selectr('#cam', {
     document.getElementById('credit-cost-confirm').addEventListener('click', function() {
         modal.style.display = 'none';
         if (pendingForm) {
-            pendingForm.removeEventListener('submit', arguments.callee);
             pendingForm.submit();
         }
     });
