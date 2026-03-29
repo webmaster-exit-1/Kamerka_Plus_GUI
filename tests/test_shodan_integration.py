@@ -71,7 +71,7 @@ class ShodanFixtureShapeTests(TestCase):
 class ShodanFixtureIngestTests(TestCase):
     """Tests that verify Device record creation from the Shodan fixture."""
 
-    @patch('kamerka.tasks.shodan.Shodan')
+    @patch('kamerka.tasks.Shodan')
     def test_device_created_from_shodan_result(self, mock_shodan_class):
         from app_kamerka.models import Device, Search
 
