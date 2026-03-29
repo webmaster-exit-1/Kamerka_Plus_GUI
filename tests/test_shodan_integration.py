@@ -85,6 +85,7 @@ class ShodanFixtureIngestTests(TestCase):
             country='CN',
             ics='[]',
             coordinates_search='[]',
+            coordinates='0,0',
         )
 
         with patch('kamerka.tasks._get_env_key', return_value='ci-dummy-key'), \
