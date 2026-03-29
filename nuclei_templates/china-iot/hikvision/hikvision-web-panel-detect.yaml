@@ -5,15 +5,28 @@ info:
   author: kamerka-fork
   severity: info
   description: Detects the presence of a Hikvision web management panel.
-  tags: china-iot,hikvision,panel
+  metadata:
+    max-request: 1
+  tags: china-iot,hikvision,panel,ics
 
 requests:
   - method: GET
+    redirects: true
+    max-redirects: 3
     path:
       - "{{BaseURL}}/doc/page/login.asp"
 
+    stop-at-first-match: true
+
     matchers-condition: or
     matchers:
+      - type: word
+        words:
+          - "<title>HIKVISION</title>"
+          - "hikvision-logo"
+          - "app/i18n"
+        condition: or
+
       - type: word
         words:
           - "Hikvision"

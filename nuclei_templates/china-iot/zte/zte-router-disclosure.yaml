@@ -7,10 +7,14 @@ info:
   description: |
     ZTE routers may expose sensitive device information through
     unauthenticated access to configuration endpoints.
-  tags: china-iot,zte,disclosure
+  metadata:
+    max-request: 1
+  tags: china-iot,zte,disclosure,ics
 
 requests:
   - method: GET
+    redirects: true
+    max-redirects: 3
     path:
       - "{{BaseURL}}/getpage.gch?pid=1002&nextpage=status_dev_info_t.gch"
 
@@ -20,8 +24,9 @@ requests:
         status:
           - 200
 
-      - type: word
-        words:
-          - "ZTE"
-          - "Model"
-        condition: and
+      - type: regex
+        regex:
+          - "ZTE[^<]{0,100}(Model|model|ZXHN|F[0-9]{3})"
+          - "(Password|password|passwd)=[^<&]{4,}"
+          - "SerialNumber[^<]{0,50}[A-Z0-9]{8,}"
+        condition: or

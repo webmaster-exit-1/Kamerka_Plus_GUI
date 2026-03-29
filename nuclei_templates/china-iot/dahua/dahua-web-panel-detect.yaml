@@ -5,19 +5,27 @@ info:
   author: kamerka-fork
   severity: info
   description: Detects the presence of a Dahua web management panel.
-  tags: china-iot,dahua,panel
+  metadata:
+    max-request: 1
+  tags: china-iot,dahua,panel,ics
 
 requests:
   - method: GET
+    redirects: true
+    max-redirects: 3
     path:
       - "{{BaseURL}}/"
+
+    stop-at-first-match: true
 
     matchers-condition: or
     matchers:
       - type: word
         words:
+          - "<title>WEB SERVICE</title>"
+          - "loginPage"
+          - "cfg.userName"
           - "DahuaTech"
-          - "dahua"
           - "DHVideoWEB"
         condition: or
 
@@ -27,3 +35,7 @@ requests:
           - "DhWebClientPlugin"
           - "DHVideoWeb"
         condition: or
+
+      - type: dsl
+        dsl:
+          - "contains(tolower(body), 'dahua') && status_code == 200"

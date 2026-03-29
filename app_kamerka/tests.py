@@ -3,7 +3,7 @@ Kamerka tests — test what matters.
 
 Each test here would catch a real bug in the application:
   - shodan_search_worker creates Device records from Shodan banner data
-  - ShodanFixtureFileTest uses .github/workflows/test.json (real shodan.json.gz data)
+  - ShodanFixtureFileTest uses tests/fixtures/shodan_response.json (real shodan.json.gz data)
   - scan() saves results to the device record
   - exploit() routes to the right handler per device type
   - nuclei_scan saves NucleiResult rows
@@ -65,7 +65,7 @@ SHODAN_BANNER_NO_PRODUCT = {
 }
 
 # Real-format banner: no product, no vulns — matches the GoAhead-Webs schema
-# seen in the actual shodan.json.gz output (test.json).
+# seen in the actual shodan.json.gz output (tests/fixtures/shodan_response.json).
 SHODAN_BANNER_GOAHEAD = {
     "hash": -1622739553,
     "asn": "AS37963",
@@ -296,16 +296,16 @@ class ShodanSearchWorkerTest(TestCase):
 
 
 # ---------------------------------------------------------------------------
-# ShodanFixtureFileTest — uses .github/workflows/test.json (real banner data)
+# ShodanFixtureFileTest — uses tests/fixtures/shodan_response.json (real banner data)
 # ---------------------------------------------------------------------------
 _FIXTURE_PATH = os.path.join(
     os.path.dirname(os.path.dirname(__file__)),
-    '.github', 'workflows', 'test.json',
+    'tests', 'fixtures', 'shodan_response.json',
 )
 
 
 def _load_fixture_banners():
-    """Load all banners from .github/workflows/test.json (NDJSON format)."""
+    """Load all banners from tests/fixtures/shodan_response.json (NDJSON format)."""
     banners = []
     with open(_FIXTURE_PATH) as f:
         for line in f:
@@ -316,7 +316,7 @@ def _load_fixture_banners():
 
 
 class ShodanFixtureFileTest(TestCase):
-    """Tests driven by the real Shodan banner data in .github/workflows/test.json.
+    """Tests driven by the real Shodan banner data in tests/fixtures/shodan_response.json.
 
     That file is the NDJSON content of an actual shodan.json.gz download
     (``gunzip -c shodan_results.json.gz > test.json``).  The banners are

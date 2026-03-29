@@ -5,12 +5,18 @@ info:
   author: kamerka-fork
   severity: info
   description: Detects the presence of a Huawei Web Application Firewall.
-  tags: china-iot,huawei,waf
+  metadata:
+    max-request: 1
+  tags: china-iot,huawei,waf,ics
 
 requests:
   - method: GET
+    redirects: true
+    max-redirects: 3
     path:
       - "{{BaseURL}}/"
+
+    stop-at-first-match: true
 
     matchers-condition: or
     matchers:
@@ -19,6 +25,8 @@ requests:
         words:
           - "HWWAFSESID"
           - "huawei"
+          - "X-Huawei-WAF"
+          - "USG"
         condition: or
 
       - type: word

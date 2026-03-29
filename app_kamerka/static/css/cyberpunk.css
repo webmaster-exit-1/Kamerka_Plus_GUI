@@ -548,3 +548,18 @@ pre, code {
 .leaflet-container a.leaflet-popup-close-button {
   color: var(--cp-dim) !important;
 }
+
+/* ── World coverage map — responsive on mobile viewports ────── */
+#dashboard-map-seles,
+.world-coverage-map {
+  width: 100%;
+  height: auto;
+  min-height: 200px;
+}
+
+@media (max-width: 480px) {
+  #dashboard-map-seles,
+  .world-coverage-map {
+    min-height: 160px;
+  }
+}
