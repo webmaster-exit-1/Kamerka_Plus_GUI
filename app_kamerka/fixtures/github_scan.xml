@@ -10,7 +10,7 @@
   <ports>
     <port protocol="tcp" portid="22">
       <state state="open" reason="syn-ack" reason_ttl="57"/>
-      <service name="ssh" product="OpenSSH" version="8.9p1 Ubuntu 3ubuntu0.6" method="probed" conf="10"/>
+      <service name="ssh" product="OpenSSH" version="8.9p1" method="probed" conf="10"/>
     </port>
     <port protocol="tcp" portid="80">
       <state state="open" reason="syn-ack" reason_ttl="57"/>
