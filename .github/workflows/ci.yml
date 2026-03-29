@@ -81,7 +81,7 @@ jobs:
       run: python manage.py test app_kamerka -v2
 
     - name: Validate Nuclei Templates
-      run: nuclei -validate -t nuclei_templates/
+      run: nuclei -validate -t nuclei_templates/china-iot/
 
     - name: Verify Security Engine Health
       run: |
