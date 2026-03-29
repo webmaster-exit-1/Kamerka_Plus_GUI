@@ -5,12 +5,18 @@ info:
   author: kamerka-fork
   severity: info
   description: Detects ZTE ZXHN V8 series carrier gateway devices.
-  tags: china-iot,zte,panel
+  metadata:
+    max-request: 1
+  tags: china-iot,zte,panel,ics
 
 requests:
   - method: GET
+    redirects: true
+    max-redirects: 3
     path:
       - "{{BaseURL}}/"
+
+    stop-at-first-match: true
 
     matchers-condition: or
     matchers:

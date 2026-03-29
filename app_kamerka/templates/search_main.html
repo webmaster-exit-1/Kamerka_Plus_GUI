@@ -323,8 +323,6 @@ font-size: 22px;
 
 <input type="checkbox" id="test1" name="all" /><label for="test1"><span class="ui"></span> <h4>All results </h4></label>
 
-                                <input type="checkbox" id="test2" name="own_database"/><label style="float:right" for="test2"><span class="ui"></span> <h4>Own database</h4></label>
-
 
                                 <br>
                                 <br>
@@ -524,8 +522,6 @@ font-size: 22px;
 <br>
                                                             <input type="checkbox" id="test3" name="all" /><label for="test3"><span class="ui"></span> <h4>All results </h4></label>
 
-                                <input type="checkbox" id="test4" name="own_database"/><label style="float:right" for="test4"><span class="ui"></span> <h4>Own database</h4></label>
-
 
                                 <br>
                                 <br>
@@ -644,8 +640,6 @@ font-size: 22px;
 
 <input type="checkbox" id="test9" name="all" /><label for="test9"><span class="ui"></span> <h4>All results </h4></label>
 
-                                <input type="checkbox" id="test8" name="own_database"/><label style="float:right" for="test8"><span class="ui"></span> <h4>Own database</h4></label>
-
 
                                 <br>
                                 <br>
@@ -710,8 +704,6 @@ font-size: 22px;' class="image-title">
 
 
 <input type="checkbox" id="test7" name="all" /><label for="test7"><span class="ui"></span> <h4>All results </h4></label>
-
-                                <input type="checkbox" id="test10" name="own_database"/><label style="float:right" for="test10"><span class="ui"></span> <h4>Own database</h4></label>
 
 
                                 <br>
@@ -857,9 +849,7 @@ new Selectr('#cam', {
 
     forms.forEach(function(form) {
         form.addEventListener('submit', function(e) {
-            // Skip for file upload forms and own-database searches
-            var ownDbCheckbox = form.querySelector('input[name="own_database"]');
-            if (ownDbCheckbox && ownDbCheckbox.checked) return;
+            // Skip for file upload forms
             if (form.querySelector('input[type="file"]')) return;
 
             e.preventDefault();

@@ -7,10 +7,14 @@ info:
   description: |
     ZTE F460 and F660 cable modems are vulnerable to remote code execution
     through command injection in web management interface parameters.
-  tags: china-iot,zte,rce
+  metadata:
+    max-request: 1
+  tags: china-iot,zte,rce,ics
 
 requests:
   - method: GET
+    redirects: true
+    max-redirects: 3
     path:
       - "{{BaseURL}}/manager_dev_ping_t.gch"
 
@@ -25,3 +29,7 @@ requests:
           - "ZTE"
           - "ping"
         condition: and
+
+      - type: dsl
+        dsl:
+          - "duration >= 5"

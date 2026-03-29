@@ -16,6 +16,21 @@ jobs:
     permissions:
       contents: read
 
+    env:
+      DJANGO_SECRET_KEY: "ci-only-not-a-real-secret-key-do-not-use-in-production"
+      SHODAN_API_KEY: "ci-dummy-key"
+
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -35,7 +50,13 @@ jobs:
     - name: Install System Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y nmap chromium-browser
+        sudo apt-get install -y nmap chromium
+
+    - name: Cache pdtm tools
+      uses: actions/cache@v4
+      with:
+        path: ~/.pdtm/go/bin
+        key: pdtm-nuclei-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
 
     - name: Install ProjectDiscovery Tools (Nuclei)
       run: |
@@ -43,12 +64,12 @@ jobs:
         echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
         echo "$HOME/.pdtm/go/bin" >> $GITHUB_PATH
         export PATH=$PATH:$(go env GOPATH)/bin:$HOME/.pdtm/go/bin
-        pdtm -i nuclei
+        if [ ! -f "$HOME/.pdtm/go/bin/nuclei" ]; then
+          pdtm -i nuclei
+        fi
 
-    - name: Install Python Logic & Wappalyzer
-      run: |
-        pip install -r requirements.txt
-        pip install wappalyzer
+    - name: Install Python Dependencies
+      run: pip install -r requirements.txt
 
     - name: Django System Checks
       run: |
@@ -58,6 +79,9 @@ jobs:
 
     - name: Run Tests
       run: python manage.py test app_kamerka -v2
+
+    - name: Validate Nuclei Templates
+      run: nuclei -validate -t nuclei_templates/
 
     - name: Verify Security Engine Health
       run: |

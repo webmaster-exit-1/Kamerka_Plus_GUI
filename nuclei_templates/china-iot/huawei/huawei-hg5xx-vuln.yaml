@@ -7,10 +7,14 @@ info:
   description: |
     Detects Huawei HG5xx series modems that may be vulnerable to
     known authentication bypass and information disclosure flaws.
-  tags: china-iot,huawei,modem
+  metadata:
+    max-request: 1
+  tags: china-iot,huawei,modem,ics
 
 requests:
   - method: GET
+    redirects: true
+    max-redirects: 3
     path:
       - "{{BaseURL}}/api/system/deviceinfo"
 
