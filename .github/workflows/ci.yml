@@ -12,7 +12,7 @@ defaults:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: archlinux-latest
     container:
       image: archlinux:latest
     permissions:
@@ -58,7 +58,7 @@ jobs:
         fi
 
     - name: Install Python Dependencies
-      run: pip install -r requirements.txt
+      run: pip install -r requirements.txt --break-system-packages
 
     - name: Django System Checks
       run: |
