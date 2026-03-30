@@ -12,7 +12,7 @@ defaults:
 
 jobs:
   test:
-    runs-on: archlinux-latest
+    runs-on: ubuntu-latest
     container:
       image: archlinux:latest
     permissions:
