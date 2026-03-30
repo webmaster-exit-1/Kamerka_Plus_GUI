@@ -36,9 +36,10 @@ jobs:
     steps:
     - name: Install System Dependencies
       run: |
-        pacman -Sy --noconfirm git python go nmap
-        python -m venv -p 3.12 /opt/venv
+        pacman -Syu --noconfirm --needed git python python-pip go nmap
+        python -m venv /opt/venv
         echo "/opt/venv/bin" >> $GITHUB_PATH
+        /opt/venv/bin/python -m pip install --upgrade pip
 
     - name: Checkout repository
       uses: actions/checkout@v4
