@@ -14,7 +14,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     container:
-      image: archlinux/archlinux:latest
+      image: archlinux/archlinux:base
     permissions:
       contents: read
 
