@@ -36,7 +36,7 @@ jobs:
     steps:
     - name: Install System Dependencies
       run: |
-        pacman -Sy --noconfirm git python python-pip go nmap chromium
+        pacman -Sy --noconfirm git python python-pip go nmap
 
     - name: Checkout repository
       uses: actions/checkout@v4
