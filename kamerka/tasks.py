@@ -2243,7 +2243,9 @@ CONPOT_SIGNATURES = [
     "Schneider Electric",
 ]
 
-COWRIE_SIGNATURES = []
+COWRIE_SIGNATURES = [
+    "SSH-2.0-OpenSSH_5.9p1 Arch Linux-1"
+]
 
 
 @shared_task(bind=False)

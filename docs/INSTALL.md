@@ -124,7 +124,7 @@ celery --app kamerka worker --loglevel=info
 In a new window start Redis:
 
 ```bash
-sudo pacman --needed -S redis
+pacman -S redis
 redis-server
 ```
 
