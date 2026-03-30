@@ -36,7 +36,9 @@ jobs:
     steps:
     - name: Install System Dependencies
       run: |
-        pacman -Sy --noconfirm git python python-pip go nmap
+        pacman -Sy --noconfirm git python312 go nmap
+        python3.12 -m venv /opt/venv
+        echo "/opt/venv/bin" >> $GITHUB_PATH
 
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -58,7 +60,7 @@ jobs:
         fi
 
     - name: Install Python Dependencies
-      run: pip install -r requirements.txt --break-system-packages
+      run: pip install -r requirements.txt
 
     - name: Django System Checks
       run: |
