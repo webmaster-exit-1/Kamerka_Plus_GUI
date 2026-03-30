@@ -69,6 +69,9 @@ jobs:
         python manage.py migrate --run-syncdb
         python manage.py collectstatic --noinput
 
+    - name: Run Tests
+      run: python manage.py test app_kamerka tests -v2
+
     - name: Validate Nuclei Templates
       run: nuclei -validate -t nuclei_templates/china-iot/
 
