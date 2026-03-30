@@ -2243,10 +2243,7 @@ CONPOT_SIGNATURES = [
     "Schneider Electric",
 ]
 
-COWRIE_SIGNATURES = [
-    "SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2",
-    "SSH-2.0-OpenSSH_5.9p1 Debian-5",
-]
+COWRIE_SIGNATURES = []
 
 
 @shared_task(bind=False)

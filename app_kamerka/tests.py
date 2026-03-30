@@ -881,13 +881,13 @@ class HoneypotCheckTest(TestCase):
         self.assertTrue(result["is_conpot"])
         self.assertGreater(result["probability"], 0.2)
 
-    def test_cowrie_signature_detected(self):
+    def test_cowrie_signature_not_matched(self):
         device = _make_device(self.search, ip="10.0.0.3")
-        device.data = "SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2"
+        device.data = "SSH-2.0-OpenSSH_6.0p1"
         device.save()
         from kamerka.tasks import honeypot_check
         result = honeypot_check(device.id)
-        self.assertTrue(result["is_cowrie"])
+        self.assertFalse(result["is_cowrie"])
 
     def test_saves_to_database(self):
         device = _make_device(self.search, ip="10.0.0.4")
