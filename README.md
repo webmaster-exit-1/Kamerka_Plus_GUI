@@ -2,8 +2,6 @@
 
 ## Ultimate Internet of Things/Industrial Control Systems reconnaissance tool. Upgraded Edition
 
-[![Kamerka Plus GUI CI](https://github.com/webmaster-exit-1/Kamerka_Plus_GUI/actions/workflows/ci.yml/badge.svg)](https://github.com/webmaster-exit-1/Kamerka_Plus_GUI/actions/workflows/ci.yml)
-
 ![logo](https://www.offensiveosint.io/content/images/2020/07/OffensiveOsint-logo-RGB-2.png)
 
 ### Powered by Shodan
