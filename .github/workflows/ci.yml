@@ -36,8 +36,8 @@ jobs:
     steps:
     - name: Install System Dependencies
       run: |
-        pacman -Sy --noconfirm git python312 go nmap
-        python3.12 -m venv /opt/venv
+        pacman -Sy --noconfirm git python go nmap
+        python -m venv -p 3.12 /opt/venv
         echo "/opt/venv/bin" >> $GITHUB_PATH
 
     - name: Checkout repository
