@@ -1321,7 +1321,7 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150, discovere
             proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
                 text=True,
             )
             import threading as _threading
@@ -1341,10 +1341,10 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150, discovere
                     finding = json.loads(line)
                     NucleiResult(
                         device=device,
-                        template_id=finding.get("template-id", ""),
-                        name=finding.get("info", {}).get("name", ""),
-                        severity=finding.get("info", {}).get("severity", ""),
-                        matched_at=finding.get("matched-at", ""),
+                        template_id=finding.get("template-id", "")[:200],
+                        name=finding.get("info", {}).get("name", "")[:500],
+                        severity=finding.get("info", {}).get("severity", "")[:50],
+                        matched_at=finding.get("matched-at", "")[:500],
                         description=finding.get("info", {}).get("description", ""),
                         raw_output=line[:10000],
                     ).save()
@@ -1353,6 +1353,9 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150, discovere
                     continue
 
             proc.wait()
+            stderr_out = proc.stderr.read().strip() if proc.stderr else ""
+            if stderr_out:
+                logger.warning("nuclei_scan stderr for %s: %s", device.ip, stderr_out)
         except FileNotFoundError:
             return {"error": "Nuclei binary not installed"}
         except Exception as exc:
@@ -1718,8 +1721,16 @@ def whois_ip(id):
     name = org = street = city = netrange = admin_org = admin_email = admin_phone = email = ""
 
     try:
-        raw = subprocess.check_output(["whois", ip], text=True, timeout=30,
-                                      stderr=subprocess.DEVNULL)
+        proc = subprocess.run(
+            ["whois", ip],
+            text=True,
+            timeout=30,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if proc.stderr.strip():
+            logger.warning("whois_ip stderr for %s: %s", ip, proc.stderr.strip())
+        raw = proc.stdout
     except FileNotFoundError:
         return whoisxml(id)
     except Exception as exc:
@@ -1805,9 +1816,10 @@ def whois_domain(id):
         logger.warning("domain whois failed for %s: %s", domain, exc)
         return whoisxml(id)
 
-    wh = Whois(device=device1, org=org, street=street, city=city,
-               admin_org=admin_org, admin_email=admin_email,
-               admin_phone=admin_phone, netrange=netrange, name=name, email=email)
+    wh = Whois(device=device1, org=org[:100], street=street[:100], city=city[:100],
+               admin_org=admin_org[:100], admin_email=admin_email[:100],
+               admin_phone=admin_phone[:100], netrange=netrange[:100],
+               name=name[:100], email=email[:100])
     wh.save()
     return {"domain": domain, "org": org, "name": name, "email": email}
 
@@ -1847,7 +1859,10 @@ def bosch_check(id):
                     return_dict[username] = password
                     Bosch.objects.update_or_create(
                         device=device1,
-                        defaults={"username": username, "password": password},
+                        defaults={
+                            "username": username[:100],
+                            "password": password[:100],
+                        },
                     )
             except Exception:
                 continue
