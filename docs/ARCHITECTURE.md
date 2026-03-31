@@ -65,12 +65,13 @@ variables (e.g. `SHODAN_API_KEY`, `KAMERKA_NUCLEI_BIN`) are naturally inherited:
 
 ```bash
 # Run as root — required for raw-socket scans (Nmap -sS, -O, etc.)
-sudo -E celery --app kamerka worker --loglevel=info
+# Execute this command as the root user (or from a root shell)
+celery --app kamerka worker --loglevel=info
 ```
 
-The `-E` flag (`--preserve-env`) ensures every environment variable you exported in your
-shell (API keys, tool paths, `REDIS_URL`) is passed through to the worker process.
-Without `-E`, `sudo` resets the environment and the worker will start with missing keys.
+All environment variables (API keys, tool paths, `REDIS_URL`) must be exported in the
+root shell before starting the worker.  Because the worker runs directly as root, no
+privilege-escalation wrapper is needed and all exported variables are naturally available.
 
 
 ## Verification Pipeline

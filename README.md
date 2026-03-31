@@ -59,8 +59,8 @@ python3 manage.py migrate
 python3 manage.py create_default_superuser
 python3 manage.py runserver &
 # Run the Celery worker as root — required for Nmap raw-socket scans (-sS, -O)
-# -E preserves your exported env vars (API keys, tool paths) across the sudo boundary
-sudo -E celery --app kamerka worker --loglevel=info
+# Execute this command as the root user (or from a root shell)
+celery --app kamerka worker --loglevel=info
 ```
 
 See [docs/INSTALL.md](docs/INSTALL.md) for the full installation guide.
