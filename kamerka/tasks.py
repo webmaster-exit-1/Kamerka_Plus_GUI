@@ -39,17 +39,6 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-# Warn once at import time when sudo mode is active so operators are reminded
-# to configure sudoers env_keep (see kamerka/tool_settings.py for details).
-if getattr(settings, "NMAP_USE_SUDO", False):
-    logger.warning(
-        "KAMERKA_NMAP_SUDO is enabled.  Nmap will run under sudo.  "
-        "Ensure sudoers preserves required env vars:\n"
-        "  Defaults env_keep += "
-        "\"SHODAN_API_KEY REDIS_URL CELERY_BROKER_URL CELERY_RESULT_BACKEND\"\n"
-        "or start the Celery worker as root so no sudo wrapper is needed."
-    )
-
 healthcare_queries = {"zoll": "http.favicon.hash:-236942626",
                       'dicom': "dicom",
                       "perioperative": "HoF Perioperative",
@@ -1175,13 +1164,14 @@ def wappalyzer_scan(id, discovered_ports=None):
                 "(see KAMERKA_NAABU_BIN) or the host is unreachable".format(device.ip)}
 
     all_technologies = {}
+    wapp_bin = settings.WAPPALYZER_BIN
     for url, is_known_tls in _build_target_urls(device.ip, ports):
         # Extract port number once for use in logging and dict keys.
         port = int(url.rsplit(":", 1)[-1])
 
-        def _try_wappalyzer(target_url):
+        def _try_wappalyzer(target_url, _bin=wapp_bin):
             return subprocess.run(
-                ["wappalyzer", target_url, "-oJ"],
+                [_bin, target_url, "-oJ"],
                 capture_output=True, text=True, timeout=60,
             )
 
@@ -1322,36 +1312,56 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150, discovere
 
         cmd.extend(["-rate-limit", str(rate_limit)])
 
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=nuclei_timeout,
-        )
         findings = []
-        if result.stdout.strip():
-            for line in result.stdout.strip().split("\n"):
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            import threading as _threading
+
+            def _kill_after(proc, timeout):
+                try:
+                    proc.wait(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    logger.warning("nuclei_scan: timeout after %ds for %s — killing", timeout, device.ip)
+                    proc.kill()
+
+            timer = _threading.Thread(target=_kill_after, args=(proc, nuclei_timeout), daemon=True)
+            timer.start()
+
+            for line in proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
                 try:
                     finding = json.loads(line)
-                    nuclei_result = NucleiResult(
+                    NucleiResult(
                         device=device,
-                        template_id=finding.get("template-id", ""),
-                        name=finding.get("info", {}).get("name", ""),
-                        severity=finding.get("info", {}).get("severity", ""),
-                        matched_at=finding.get("matched-at", ""),
+                        template_id=finding.get("template-id", "")[:200],
+                        name=finding.get("info", {}).get("name", "")[:500],
+                        severity=finding.get("info", {}).get("severity", "")[:50],
+                        matched_at=finding.get("matched-at", "")[:500],
                         description=finding.get("info", {}).get("description", ""),
                         raw_output=line[:10000],
-                    )
-                    nuclei_result.save()
+                    ).save()
                     findings.append(finding)
                 except json.JSONDecodeError:
                     continue
 
+            proc.wait()
+            stderr_out = proc.stderr.read().strip() if proc.stderr else ""
+            if stderr_out:
+                logger.warning("nuclei_scan stderr for %s: %s", device.ip, stderr_out)
+        except FileNotFoundError:
+            return {"error": "Nuclei binary not installed"}
+        except Exception as exc:
+            logger.error("nuclei_scan failed for %s: %s", device.ip, exc)
+            return {"error": str(exc)}
+
         return {"findings_count": len(findings), "findings": findings}
-    except FileNotFoundError:
-        return {"error": "Nuclei binary not installed"}
-    except subprocess.TimeoutExpired:
-        return {"error": "Nuclei scan timed out"}
     except Exception as exc:
         return {"error": str(exc)}
     finally:
@@ -1529,8 +1539,7 @@ def scan(id):
     type = device1.type
 
     if type in ics_scan.keys():
-        nm = NmapProcess(ip, options="-p " + str(port) + " " + ics_scan[type],
-                         sudo=settings.NMAP_USE_SUDO)
+        nm = NmapProcess(ip, options="-p " + str(port) + " " + ics_scan[type])
         nm.run_background()
 
         while nm.is_running():
@@ -1567,8 +1576,7 @@ def scan(id):
 
 
     else:
-        nm = NmapProcess(ip, options="-p " + str(port),
-                         sudo=settings.NMAP_USE_SUDO)
+        nm = NmapProcess(ip, options="-p " + str(port))
         nm.run_background()
 
         while nm.is_running():
@@ -1698,6 +1706,143 @@ def whoisxml(id):
     wh.save()
 
 
+@shared_task(bind=False)
+def whois_ip(id):
+    """Perform a WHOIS lookup on the device IP using the system whois command.
+
+    Parses the plain-text output into the structured Whois model fields.
+    Falls back to the RDAP lookup (whoisxml) when the whois binary is not
+    available or produces no parseable output.
+    """
+    device1 = Device.objects.get(id=id)
+    ip = device1.ip
+
+    name = org = street = city = netrange = admin_org = admin_email = admin_phone = email = ""
+
+    try:
+        proc = subprocess.run(
+            ["whois", ip],
+            text=True,
+            timeout=30,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if proc.stderr.strip():
+            logger.warning("whois_ip stderr for %s: %s", ip, proc.stderr.strip())
+        raw = proc.stdout
+    except FileNotFoundError:
+        return whoisxml(id)
+    except Exception as exc:
+        logger.warning("whois_ip subprocess failed for %s: %s", ip, exc)
+        return whoisxml(id)
+
+    for line in raw.splitlines():
+        lower = line.lower()
+        if ":" not in line:
+            continue
+        key, _, val = line.partition(":")
+        val = val.strip()
+        if not val:
+            continue
+        key = key.strip().lower()
+        if key in ("netname", "name", "orgname", "owner") and not name:
+            name = val[:100]
+        elif key in ("org", "organisation", "organization") and not org:
+            org = val[:100]
+        elif key in ("address", "street") and not street:
+            street = val[:100]
+        elif key == "city" and not city:
+            city = val[:100]
+        elif key in ("inetnum", "netrange", "cidr") and not netrange:
+            netrange = val[:100]
+        elif key in ("orgabusehandle", "tech-c") and not admin_org:
+            admin_org = val[:100]
+        elif key in ("orgabuseemail", "abuse-mailbox", "orgtechemail") and not admin_email:
+            if "@" in val:
+                admin_email = val[:100]
+        elif key in ("orgabusephone",) and not admin_phone:
+            admin_phone = val[:100]
+        elif key in ("orgtechhandle",) and not admin_org:
+            admin_org = val[:100]
+        elif key in ("orgtechphone",) and not admin_phone:
+            admin_phone = val[:100]
+        elif "email" in key and not email:
+            if "@" in val:
+                email = val[:100]
+
+    if not any([name, org, street, city, netrange, admin_org, admin_email, admin_phone, email]):
+        return whoisxml(id)
+
+    wh = Whois(device=device1, name=name, org=org, street=street, city=city,
+               netrange=netrange, admin_org=admin_org, admin_email=admin_email,
+               admin_phone=admin_phone, email=email)
+    wh.save()
+    return {"ip": ip, "org": org, "name": name, "netrange": netrange}
+
+
+@shared_task(bind=False)
+def whois_domain(id):
+    """Perform a WHOIS/RDAP lookup for the device and save to the Whois model.
+
+    Delegates to the RDAP-based whoisxml() helper to avoid relying on the
+    undeclared ``python-whois`` dependency.  whoisxml() handles persistence
+    to the Whois model directly.
+    """
+    return whoisxml(id)
+
+
+@shared_task(bind=False)
+def bosch_check(id):
+    """Retrieve Bosch device credentials via the /User.cgi endpoint.
+
+    Only runs when the device product field identifies it as a Bosch device.
+    Decodes the base64-encoded username and password fields returned by the
+    Bosch Security CGI API and persists them to the Bosch model.
+    """
+    device1 = Device.objects.get(id=id)
+
+    if "bosch" not in (device1.product or "").lower():
+        return {"skipped": "Not identified as a Bosch device"}
+
+    ip = device1.ip
+    port = device1.port
+
+    return_dict = {}
+    try:
+        req = requests.get(
+            "http://{}:{}/User.cgi?cmd=get_user".format(ip, port),
+            timeout=10,
+        )
+        doc = xmltodict.parse(req.text)
+        for user_key, user_data in doc.get("USER_SETTING", {}).items():
+            if user_key == "result":
+                continue
+            if not isinstance(user_data, dict):
+                continue
+            try:
+                username = base64.b64decode(user_data.get("USERNAME", "")).decode("utf-8")
+                password = base64.b64decode(user_data.get("PWD", "")).decode("utf-8")
+                if username:
+                    return_dict[username] = password
+                    Bosch.objects.update_or_create(
+                        device=device1,
+                        username=username[:100],
+                        defaults={"password": password[:100]},
+                    )
+            except Exception:
+                continue
+    except Exception as exc:
+        logger.warning("bosch_check failed for %s: %s", ip, exc)
+        return {"error": str(exc)}
+
+    if return_dict:
+        device1.exploit = return_dict
+        device1.exploited_scanned = True
+        device1.save()
+
+    return return_dict
+
+
 def _shodan_convert(download_path, fmt):
     """Run ``shodan convert <download_path> <fmt>`` and return the output path.
 
@@ -1794,7 +1939,7 @@ def nmap_rtsp_scan(id, ports=None, timing=None):
     elif device_type in ("dahua", "amcrest"):
         options += ",http-auth"
 
-    nm = NmapProcess(ip, options=options, sudo=settings.NMAP_USE_SUDO)
+    nm = NmapProcess(ip, options=options)
     nm.run_background()
 
     while nm.is_running():
@@ -1977,7 +2122,7 @@ def deep_protocol_scan(device_id, protocol=None):
         options = "-p {} --script={}".format(scan_port, scripts)
 
         try:
-            nm = NmapProcess(ip, options=options, sudo=settings.NMAP_USE_SUDO)
+            nm = NmapProcess(ip, options=options)
             nm.run_background()
 
             start_time = time.time()
@@ -2253,6 +2398,7 @@ def honeypot_check(device_id):
     """Analyze a device for honeypot characteristics.
 
     Checks for:
+    - Shodan Honeyscore API (authoritative probability score)
     - Banner density in /24 subnet (>= 500 identical banners indicates honeypot)
     - Conpot/Cowrie signature matching
     - Response time analysis (suspiciously perfect / static times)
@@ -2263,8 +2409,27 @@ def honeypot_check(device_id):
     banner = (device.data or "").strip()
     response_time_ms = 0.0
 
-    # Measure response time to the device
+    # Shodan Honeyscore — authoritative honeypot probability (0.0–1.0)
     ip = device.ip
+    api_key = _get_env_key("SHODAN_API_KEY")
+    if api_key:
+        try:
+            resp = requests.get(
+                "https://api.shodan.io/labs/honeyscore/{}".format(ip),
+                params={"key": api_key},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                score = float(resp.text.strip())
+                probability = max(probability, score)
+                if score > 0.5:
+                    reasons.append(
+                        "Shodan Honeyscore: {:.2f} (> 0.5 threshold)".format(score)
+                    )
+        except Exception as exc:
+            logger.warning("Shodan Honeyscore API error for %s: %s", ip, exc)
+
+    # Measure response time to the device
     port = device.port or "80"
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -2478,6 +2643,9 @@ def gfw_check(device_id):
                     report_id = r.get("report_id", "")
                     break
                 report_id = r.get("report_id", report_id)
+        else:
+            reachable = False
+            blocking_type = "api_error_{}".format(resp.status_code)
     except Exception as e:
         logger.warning("OONI API error for %s: %s", ip, e)
 

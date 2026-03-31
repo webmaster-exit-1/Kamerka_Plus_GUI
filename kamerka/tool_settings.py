@@ -78,26 +78,11 @@ NUCLEI_BIN: str = os.environ.get("KAMERKA_NUCLEI_BIN", NUCLEI_DEFAULT)
 NUCLEI_DEFAULT_TIMEOUT: int = int(os.environ.get("KAMERKA_NUCLEI_TIMEOUT", "300"))
 
 # ---------------------------------------------------------------------------
-# Nmap – privilege / sudo handling
+# Wappalyzer
 # ---------------------------------------------------------------------------
-# Some Nmap scan types (SYN scans, OS detection, raw-packet probes) require
-# root/CAP_NET_RAW.  When Celery workers run as a regular user you can either:
-#
-#   Option A – set KAMERKA_NMAP_SUDO=true so python-libnmap prepends ``sudo``
-#              to the nmap command.  In this case the root process does **not**
-#              automatically inherit the user's environment variables, so you
-#              must also configure sudoers to preserve them::
-#
-#                  sudo visudo
-#                  # add inside the Defaults block:
-#                  Defaults env_keep += "SHODAN_API_KEY REDIS_URL CELERY_BROKER_URL CELERY_RESULT_BACKEND"
-#
-#              Or launch nmap with ``sudo -E`` (preserves the calling user's
-#              environment) by setting KAMERKA_NMAP_SUDO_E=true instead.
-#
-#   Option B – run the entire Celery worker as root so no sudo wrapper is
-#              needed and all environment variables are naturally available.
-#
-# Default: False (run nmap as the current user; enough for TCP-connect scans).
 
-NMAP_USE_SUDO: bool = os.environ.get("KAMERKA_NMAP_SUDO", "false").lower() in ("true", "1", "yes")
+#: Default Wappalyzer binary name / path.  Override via ``KAMERKA_WAPPALYZER_BIN``
+#: env var or edit this constant directly.
+WAPPALYZER_DEFAULT: str = "wappalyzer"
+
+WAPPALYZER_BIN: str = os.environ.get("KAMERKA_WAPPALYZER_BIN", WAPPALYZER_DEFAULT)
