@@ -1164,15 +1164,14 @@ def wappalyzer_scan(id, discovered_ports=None):
                 "(see KAMERKA_NAABU_BIN) or the host is unreachable".format(device.ip)}
 
     all_technologies = {}
+    wapp_bin = settings.WAPPALYZER_BIN
     for url, is_known_tls in _build_target_urls(device.ip, ports):
         # Extract port number once for use in logging and dict keys.
         port = int(url.rsplit(":", 1)[-1])
 
-        wapp_bin = _get_env_key("WAPPALYZER_BINARY_PATH") or "wappalyzer"
-
-        def _try_wappalyzer(target_url):
+        def _try_wappalyzer(target_url, _bin=wapp_bin):
             return subprocess.run(
-                [wapp_bin, target_url, "-oJ"],
+                [_bin, target_url, "-oJ"],
                 capture_output=True, text=True, timeout=60,
             )
 
@@ -1259,10 +1258,7 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150, discovere
     # ────────────────────────────────────────────────────────────────────────
 
     from django.conf import settings as django_settings
-    nuclei_bin = (
-        _get_env_key("NUCLEI_BINARY_PATH")
-        or getattr(django_settings, "NUCLEI_BIN", "nuclei")
-    )
+    nuclei_bin = getattr(django_settings, "NUCLEI_BIN", "nuclei")
     nuclei_timeout = getattr(django_settings, "NUCLEI_DEFAULT_TIMEOUT", 300)
 
     device = Device.objects.get(id=id)
@@ -1325,10 +1321,13 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150, discovere
                 text=True,
             )
             import threading as _threading
-            timed_out = [False]
 
             def _kill_after(proc, timeout):
-                proc.wait(timeout=timeout)
+                try:
+                    proc.wait(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    logger.warning("nuclei_scan: timeout after %ds for %s — killing", timeout, device.ip)
+                    proc.kill()
 
             timer = _threading.Thread(target=_kill_after, args=(proc, nuclei_timeout), daemon=True)
             timer.start()
@@ -1756,23 +1755,23 @@ def whois_ip(id):
             city = val[:100]
         elif key in ("inetnum", "netrange", "cidr") and not netrange:
             netrange = val[:100]
-        elif key in ("orgabusehandle", "abuse-mailbox") and not admin_org:
+        elif key in ("orgabusehandle", "tech-c") and not admin_org:
             admin_org = val[:100]
-        elif key in ("orgabuseemail", "abuse-mailbox") and not admin_email:
+        elif key in ("orgabuseemail", "abuse-mailbox", "orgtechemail") and not admin_email:
             if "@" in val:
                 admin_email = val[:100]
         elif key in ("orgabusephone",) and not admin_phone:
             admin_phone = val[:100]
-        elif key in ("orgtechhandle", "tech-c") and not admin_org:
+        elif key in ("orgtechhandle",) and not admin_org:
             admin_org = val[:100]
-        elif key in ("orgtechemail",) and not admin_email:
-            if "@" in val:
-                admin_email = val[:100]
         elif key in ("orgtechphone",) and not admin_phone:
             admin_phone = val[:100]
         elif "email" in key and not email:
             if "@" in val:
                 email = val[:100]
+
+    if not any([name, org, street, city, netrange, admin_org, admin_email, admin_phone, email]):
+        return whoisxml(id)
 
     wh = Whois(device=device1, name=name, org=org, street=street, city=city,
                netrange=netrange, admin_org=admin_org, admin_email=admin_email,
@@ -1783,45 +1782,13 @@ def whois_ip(id):
 
 @shared_task(bind=False)
 def whois_domain(id):
-    """Perform a WHOIS lookup on the device hostname/domain and save to the Whois model.
+    """Perform a WHOIS/RDAP lookup for the device and save to the Whois model.
 
-    Falls back to an IP-based RDAP lookup via whoisxml() when no hostname is
-    available or the domain lookup fails.
+    Delegates to the RDAP-based whoisxml() helper to avoid relying on the
+    undeclared ``python-whois`` dependency.  whoisxml() handles persistence
+    to the Whois model directly.
     """
-    device1 = Device.objects.get(id=id)
-
-    hostnames = device1.hostnames or ""
-    domain = ""
-    if hostnames:
-        candidates = [h.strip() for h in hostnames.split(",") if h.strip()]
-        if candidates:
-            domain = candidates[0]
-
-    if not domain:
-        return whoisxml(id)
-
-    name = org = street = city = netrange = admin_org = admin_email = admin_phone = email = ""
-
-    try:
-        import whois as python_whois
-        w = python_whois.whois(domain)
-        name = w.get("name", "") or ""
-        org = w.get("org", "") or ""
-        emails = w.get("emails", []) or []
-        email = emails[0] if isinstance(emails, list) and emails else str(emails or "")
-        registrar = w.get("registrar", "") or ""
-        if not org:
-            org = registrar
-    except Exception as exc:
-        logger.warning("domain whois failed for %s: %s", domain, exc)
-        return whoisxml(id)
-
-    wh = Whois(device=device1, org=org[:100], street=street[:100], city=city[:100],
-               admin_org=admin_org[:100], admin_email=admin_email[:100],
-               admin_phone=admin_phone[:100], netrange=netrange[:100],
-               name=name[:100], email=email[:100])
-    wh.save()
-    return {"domain": domain, "org": org, "name": name, "email": email}
+    return whoisxml(id)
 
 
 @shared_task(bind=False)
@@ -1859,10 +1826,8 @@ def bosch_check(id):
                     return_dict[username] = password
                     Bosch.objects.update_or_create(
                         device=device1,
-                        defaults={
-                            "username": username[:100],
-                            "password": password[:100],
-                        },
+                        username=username[:100],
+                        defaults={"password": password[:100]},
                     )
             except Exception:
                 continue

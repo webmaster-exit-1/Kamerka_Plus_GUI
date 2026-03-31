@@ -76,3 +76,13 @@ NUCLEI_BIN: str = os.environ.get("KAMERKA_NUCLEI_BIN", NUCLEI_DEFAULT)
 
 #: Nuclei subprocess timeout in seconds.
 NUCLEI_DEFAULT_TIMEOUT: int = int(os.environ.get("KAMERKA_NUCLEI_TIMEOUT", "300"))
+
+# ---------------------------------------------------------------------------
+# Wappalyzer
+# ---------------------------------------------------------------------------
+
+#: Default Wappalyzer binary name / path.  Override via ``KAMERKA_WAPPALYZER_BIN``
+#: env var or edit this constant directly.
+WAPPALYZER_DEFAULT: str = "wappalyzer"
+
+WAPPALYZER_BIN: str = os.environ.get("KAMERKA_WAPPALYZER_BIN", WAPPALYZER_DEFAULT)

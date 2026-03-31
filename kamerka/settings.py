@@ -150,7 +150,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # External tool binary paths
 # Imported from kamerka/tool_settings.py so every component (Celery tasks,
 # verification pipeline, GUI) reads from a single authoritative source.
-# To override, set KAMERKA_NAABU_BIN / KAMERKA_NUCLEI_BIN env vars or edit
+# To override, set KAMERKA_NAABU_BIN / KAMERKA_NUCLEI_BIN / KAMERKA_WAPPALYZER_BIN env vars or edit
 # kamerka/tool_settings.py directly.
 # ---------------------------------------------------------------------------
 from kamerka.tool_settings import (  # noqa: E402
@@ -161,6 +161,7 @@ from kamerka.tool_settings import (  # noqa: E402
     NAABU_DISCOVERY_TIMEOUT,
     NUCLEI_BIN,
     NUCLEI_DEFAULT_TIMEOUT,
+    WAPPALYZER_BIN,
 )
 
 # ---------------------------------------------------------------------------

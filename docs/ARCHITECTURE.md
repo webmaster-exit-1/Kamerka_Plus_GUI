@@ -59,14 +59,19 @@ Additional tunables in `kamerka/tool_settings.py`:
 ### Nmap and root privileges
 
 Some Nmap scan types (SYN scans `-sS`, OS detection `-O`, raw-packet probes) require
-`CAP_NET_RAW` / root privileges.  Run the Celery worker as root so all
-environment variables (including `SHODAN_API_KEY`) are naturally available:
+`CAP_NET_RAW` / root privileges.  The Celery worker **must be started as root** so that
+Nmap, Nuclei, and Wappalyzer all run with the required permissions and all environment
+variables (e.g. `SHODAN_API_KEY`, `KAMERKA_NUCLEI_BIN`) are naturally inherited:
 
 ```bash
-celery --app kamerka worker --loglevel=info
+# Run as root — required for raw-socket scans (Nmap -sS, -O, etc.)
+sudo -E celery --app kamerka worker --loglevel=info
 ```
 
----
+The `-E` flag (`--preserve-env`) ensures every environment variable you exported in your
+shell (API keys, tool paths, `REDIS_URL`) is passed through to the worker process.
+Without `-E`, `sudo` resets the environment and the worker will start with missing keys.
+
 
 ## Verification Pipeline
 
