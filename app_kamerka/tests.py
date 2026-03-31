@@ -569,11 +569,11 @@ class NucleiScanSavesResultTest(TestCase):
                 "description": "Unauthenticated RCE",
             },
         })
-        mock_result = MagicMock()
-        mock_result.stdout = finding
-        mock_result.returncode = 0
+        mock_proc = MagicMock()
+        mock_proc.stdout = iter([finding + "\n"])
+        mock_proc.wait.return_value = 0
 
-        with patch("kamerka.tasks.subprocess.run", return_value=mock_result), \
+        with patch("kamerka.tasks.subprocess.Popen", return_value=mock_proc), \
              patch("kamerka.tasks._resolve_open_ports", return_value=[80]):
             from kamerka.tasks import nuclei_scan
             nuclei_scan(self.device.id)
@@ -584,11 +584,11 @@ class NucleiScanSavesResultTest(TestCase):
         self.assertEqual(saved.first().severity, "critical")
 
     def test_no_findings_saves_nothing(self):
-        mock_result = MagicMock()
-        mock_result.stdout = ""
-        mock_result.returncode = 0
+        mock_proc = MagicMock()
+        mock_proc.stdout = iter([])
+        mock_proc.wait.return_value = 0
 
-        with patch("kamerka.tasks.subprocess.run", return_value=mock_result), \
+        with patch("kamerka.tasks.subprocess.Popen", return_value=mock_proc), \
              patch("kamerka.tasks._resolve_open_ports", return_value=[80]):
             from kamerka.tasks import nuclei_scan
             nuclei_scan(self.device.id)
