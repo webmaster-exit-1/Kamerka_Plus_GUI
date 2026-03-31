@@ -23,8 +23,6 @@ import base64
 import xmltodict
 
 from libnmap.process import NmapProcess
-from libnmap.parser import NmapParser
-import xmltodict
 
 import urllib.parse
 import urllib.request
