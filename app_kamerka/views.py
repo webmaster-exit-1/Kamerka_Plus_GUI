@@ -3,7 +3,6 @@ import json
 import logging
 import os
 from collections import Counter
-import requests
 from django.conf import settings
 from django.core.files.storage import FileSystemStorage
 from .forms import UploadFileForm
@@ -15,8 +14,6 @@ from django.db.models.functions import Coalesce
 from django.http import HttpResponse, JsonResponse
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
-from libnmap.parser import NmapParserException
-
 from app_kamerka import forms
 from app_kamerka.models import Search, Device, DeviceNearby, ShodanScan, Whois, \
     Bosch, WappalyzerResult, NucleiResult, ProtocolFingerprint, VulnIntelligence, \

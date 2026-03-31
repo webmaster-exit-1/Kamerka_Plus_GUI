@@ -28,5 +28,9 @@ keys.json
 package.json
 package-lock.json
 
+# virtual environments
+venv/
+.venv/
+
 # collectstatic output
 staticfiles/
