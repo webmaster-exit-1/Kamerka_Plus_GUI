@@ -55,48 +55,16 @@ Additional tunables in `kamerka/tool_settings.py`:
 | `NAABU_DEFAULT_PORTS` | `KAMERKA_NAABU_PORTS` | `top-100` | Port spec for liveness checks |
 | `NAABU_DEFAULT_TIMEOUT` | `KAMERKA_NAABU_TIMEOUT` | `60` | Naabu subprocess timeout (s) |
 | `NUCLEI_DEFAULT_TIMEOUT` | `KAMERKA_NUCLEI_TIMEOUT` | `300` | Nuclei subprocess timeout (s) |
-| `NMAP_USE_SUDO` | `KAMERKA_NMAP_SUDO` | `false` | Run Nmap under sudo (see below) |
 
-### Nmap and sudo
+### Nmap and root privileges
 
 Some Nmap scan types (SYN scans `-sS`, OS detection `-O`, raw-packet probes) require
-`CAP_NET_RAW` / root privileges.  There are two ways to grant them:
-
-**Option A — run the Celery worker as root**
-
-This is the simplest approach.  All environment variables (including
-`SHODAN_API_KEY`) are naturally available because root inherits the environment
-you set before starting the worker.
+`CAP_NET_RAW` / root privileges.  Run the Celery worker as root so all
+environment variables (including `SHODAN_API_KEY`) are naturally available:
 
 ```bash
-sudo -E celery --app kamerka worker --loglevel=info
-# -E preserves the calling user's environment including SHODAN_API_KEY
+celery --app kamerka worker --loglevel=info
 ```
-
-**Option B — enable the `KAMERKA_NMAP_SUDO` flag**
-
-```bash
-export KAMERKA_NMAP_SUDO=true
-```
-
-With this flag set, every `NmapProcess` call is wrapped with `sudo`.
-**Important:** `sudo` strips the user's environment by default, so `SHODAN_API_KEY`
-(and other variables) will **not** be visible to the Celery task unless you
-configure sudoers to preserve them:
-
-```bash
-sudo visudo
-# Add inside the Defaults block (one line per variable, or use a list):
-Defaults env_keep += "SHODAN_API_KEY REDIS_URL CELERY_BROKER_URL CELERY_RESULT_BACKEND"
-```
-
-Alternatively, use `sudo -E` (preserve entire environment) by starting the worker with:
-
-```bash
-sudo -E celery --app kamerka worker --loglevel=info
-```
-
-and leave `KAMERKA_NMAP_SUDO` unset (Nmap will already run as root).
 
 ---
 

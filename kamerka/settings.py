@@ -161,7 +161,6 @@ from kamerka.tool_settings import (  # noqa: E402
     NAABU_DISCOVERY_TIMEOUT,
     NUCLEI_BIN,
     NUCLEI_DEFAULT_TIMEOUT,
-    NMAP_USE_SUDO,
 )
 
 # ---------------------------------------------------------------------------
