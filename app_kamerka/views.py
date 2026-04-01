@@ -59,6 +59,7 @@ from kamerka.tasks import (
     NSE_SCRIPT_CATALOG,
     exploitdb_search,
     capture_screenshot,
+    coordinates_queries,
 )
 
 _views_logger = logging.getLogger(__name__)
@@ -706,6 +707,7 @@ def device(request, id, device_id, ip):
         "has_kev": has_kev,
         "has_exploit": has_exploit,
         "nse_scripts": nse_scripts,
+        "nearby_queries": coordinates_queries,
     }
 
     return render(request, "device.html", context)
