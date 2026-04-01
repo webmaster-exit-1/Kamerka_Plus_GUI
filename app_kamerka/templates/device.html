@@ -1359,7 +1359,15 @@ $('#deep_probe_btn').on('click', function(){
         success: function (data) {
             if (data.task_id != null) {
                 pgrbar_deep.css('display', 'inline-block');
-                get_task_info(data.task_id, pgrbar_deep);
+                get_task_info(data.task_id, pgrbar_deep, 0, function() {
+                    noty({text: "Deep probe complete — refreshing…", layout: 'topRight', type: 'success', timeout: 2000});
+                    setTimeout(function(){
+                        // Reload and jump back to the Hardware tab
+                        var url = window.location.pathname + '#tab_hw';
+                        window.location.href = url;
+                        window.location.reload();
+                    }, 1500);
+                });
                 noty({text: "Deep protocol scan started", layout: 'topRight', type: 'success', timeout: 3000});
             } else if (data.Error) {
                 noty({text: data.Error, layout: 'topRight', type: 'error', timeout: 3000});
@@ -1605,6 +1613,15 @@ $('#cve-modal-close, #cve-modal-overlay').on('click', function(e){
 $(document).on('keydown', function(e){
     if (e.key === 'Escape') { $('#cve-modal-overlay').css('display', 'none'); }
 });
+
+// Activate the correct tab if the URL has a hash (e.g. #tab_hw after deep probe reload)
+(function() {
+    var hash = window.location.hash;
+    if (hash) {
+        var tabLink = $('a[href="' + hash + '"][data-toggle="tab"]');
+        if (tabLink.length) { tabLink.tab('show'); }
+    }
+})();
 </script>
 
     </body>
