@@ -85,26 +85,6 @@ body {
   color: #c8d6e5 !important;
 }
 
-/* ── Scanline overlay (pseudo-element on body) ──────────────── */
-body::after {
-  content: '';
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  pointer-events: none;
-  z-index: 9999;
-  background: repeating-linear-gradient(
-    0deg,
-    rgba(0, 0, 0, 0) 0px,
-    rgba(0, 0, 0, 0) 1px,
-    rgba(0, 0, 0, 0.08) 1px,
-    rgba(0, 0, 0, 0.08) 2px
-  );
-  animation: scanlines 8s linear infinite;
-}
-@keyframes scanlines {
-  0%   { background-position: 0 0; }
-  100% { background-position: 0 100vh; }
-}
 
 /* ── Sidebar ────────────────────────────────────────────────── */
 .page-sidebar {

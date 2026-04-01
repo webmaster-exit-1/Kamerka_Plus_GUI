@@ -16,83 +16,23 @@
         <link rel="stylesheet" type="text/css" href="{% static 'css/cyberpunk.css' %}"/>
         <link rel="stylesheet" type="text/css" href="{% static 'css/leaflet.css' %}"/>
         <link rel="stylesheet" href="{% static 'css/pretty-print-json.dark-mode.css' %}">
-        <link href="{% static 'css/selectr.min.css' %}" rel="stylesheet" type="text/css">
         <style>
-        /* Selectr dropdown – cyberpunk theme overrides */
-        .selectr-container {
-            width: 100% !important;
-            max-width: 500px;
-        }
-        .selectr-selected {
-            position: relative;
-            padding: 7px 28px 7px 14px;
-            border: 1px solid #0064d7;
+        /* Native select – cyberpunk theme */
+        select#nearby_search,
+        select#nuclei_template_select {
             background: #0a0a1a;
             color: #c8d6e5;
+            border: 1px solid #0064d7;
             font-family: 'Share Tech Mono', monospace;
             font-size: 14px;
-            min-height: 38px;
+            padding: 7px 14px;
             border-radius: 0;
-            z-index: 1;
+            appearance: auto;
         }
-        .selectr-selected::before {
-            border-color: #00e1ff transparent transparent !important;
-        }
-        .selectr-container.open .selectr-selected::before {
-            border-color: transparent transparent #00e1ff !important;
-        }
-        .selectr-label {
-            color: #c8d6e5 !important;
-        }
-        .selectr-placeholder {
-            color: #6c7a86;
-        }
-        .selectr-options-container {
-            background: #0a0a1a !important;
-            border: 1px solid #0064d7 !important;
-            border-top: none !important;
-            z-index: 10001 !important;
-        }
-        .selectr-input {
-            background: #111 !important;
-            color: #c8d6e5 !important;
-            border: 1px solid #333 !important;
-            font-family: 'Share Tech Mono', monospace !important;
-        }
-        .selectr-option {
+        select#nearby_search option,
+        select#nuclei_template_select option {
+            background: #0a0a1a;
             color: #c8d6e5;
-            padding: 6px 14px;
-        }
-        .selectr-option.active,
-        .selectr-option:hover {
-            background: #0064d7 !important;
-            color: #fff !important;
-        }
-        .selectr-option.selected {
-            background: rgba(0, 100, 215, 0.3) !important;
-            color: #00e1ff !important;
-        }
-        .selectr-notice {
-            background: #0a0a1a !important;
-            color: #6c7a86 !important;
-            border-color: #333 !important;
-        }
-        .selectr-tags {
-            padding: 5px;
-        }
-        .selectr-tag {
-            background: #1caf9a;
-        }
-        /* Elevate the panel when its Selectr dropdown is open */
-        .selectr-container.open {
-            z-index: 10001;
-        }
-        .panel:has(.selectr-container.open) {
-            z-index: 10002;
-            position: relative;
-        }
-        .panel .panel-body {
-            overflow: visible;
         }
 
         /* ── Responsive layout ──────────────────────────────────── */
@@ -942,7 +882,6 @@ mapEl.appendChild(heatBtn);
         <script type='text/javascript' src="{% static 'js/plugins/bootstrap/bootstrap-datepicker.js' %}"></script>
         <script type="text/javascript" src="{% static 'js/plugins/owl/owl.carousel.min.js' %}"></script>
         <script type="text/javascript" src="{% static 'js/plugins/datatables/jquery.dataTables.min.js' %}"></script>
-        <script src="{% static 'js/plugins/selectr.min.js' %}" type="text/javascript"></script>
         <!-- END THIS PAGE PLUGINS-->
 
 
@@ -1592,18 +1531,6 @@ $('#exploitdb_search_btn').on('click', function(){
 
 
         <script type="text/javascript" src="{% static 'js/actions.js' %}"></script>
-        <script>
-        (function() {
-            var sel = new Selectr('#nearby_search', { searchable: true });
-            var panel = document.getElementById('nearby_search').closest('.panel');
-            sel.on('selectr.open', function() {
-                if (panel) panel.style.zIndex = '9998';
-            });
-            sel.on('selectr.close', function() {
-                if (panel) panel.style.zIndex = '';
-            });
-        })();
-        </script>
 
         <script type="text/javascript" src="{% static 'js/index_charts.js' %}"></script>
         <!-- END TEMPLATE -->
