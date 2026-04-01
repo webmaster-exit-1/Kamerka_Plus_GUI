@@ -30,436 +30,439 @@ import xml.etree.ElementTree as et
 
 from app_kamerka import exploits
 
-from app_kamerka.models import Device, DeviceNearby, Search, ShodanScan, \
-    Whois, Bosch, WappalyzerResult, NucleiResult, ProtocolFingerprint, \
-    VulnIntelligence, HoneypotAnalysis, SBOMComponent, GFWStatus
+from app_kamerka.models import (
+    Device,
+    DeviceNearby,
+    Search,
+    ShodanScan,
+    Whois,
+    Bosch,
+    WappalyzerResult,
+    NucleiResult,
+    ProtocolFingerprint,
+    VulnIntelligence,
+    HoneypotAnalysis,
+    SBOMComponent,
+    GFWStatus,
+)
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-healthcare_queries = {"zoll": "http.favicon.hash:-236942626",
-                      'dicom': "dicom",
-                      "perioperative": "HoF Perioperative",
-                      "wall_of_analytics": "title:'Wall of Analytics'",
-                      "viztek_exa": "X-Super-Powered-By: VIZTEK EXA",
-                      "medweb": "html:'DBA Medweb. All rights reserved.'",
-                      "intuitim": "http.favicon.hash:159662640",
-                      "medcon_archiving_system": "http.favicon.hash:-897903496",
-                      "orthanc_explorer": "title:'Orthanc Explorer'",
-                      "Marco Pacs": "title:'Marco pacs'",
-                      "osirix": "title:OsiriX",
-                      "clari_pacs": "title:ClariPACS",
-                      "siste_lab": "http.html:SisteLAB",
-                      "opalweb": "html:opalweb",
-                      "neuropro": "title:'EEG Laboratory'",
-                      "tmw_document_imaging": "title:'TMW Document Imaging'",
-                      "erez": "title:'eRez Imaging'",
-                      "gluco_care": "html:'GlucoCare igc'",
-                      "glucose_guide": "title:'glucose guide'",
-                      "grandmed_glucose": "title:'Grandmed Glucose'",
-                      "philips_digital_pathology": "title:'Philips Digital Pathology'",
-                      "tricore_pathology": "title:'TriCore Pathology'",
-                      "appsmart_ophthalmology": "title:'Appsmart Ophthalmology'",
-                      "chs_ophthalmology": "title:'CHS Ophthalmology'",
-                      "ram_soft": "html:powerreader",
-                      "xnat": "http.favicon.hash:-230640598",
-                      "iris_emr": "title:'Iris EMR'",
-                      "eclinicalworks_emr": "title:'Web EMR Login Page'",
-                      "open_emr": "http.favicon.hash:1971268439",
-                      "oscar_emr": "title:'OSCAR EMR'",
-                      "wm_emr": "http.favicon.hash:1617804812",
-                      "doctors_partner_emr": "title:'DoctorsPartner'",
-                      "mckesson_radiology": "title:'McKesson Radiology'",
-                      "kodak_carestream": "title:'Carestream PACS'",
-                      "meded": "title:meded",
-                      "centricity_radiology": "http.favicon.hash:-458315012",
-                      "openeyes": "http.favicon.hash:-885931907",
-                      "orthanc": "orthanc",
-                      "horos": "http.favicon.hash:398467600",
-                      "open_mrs": "title:openmrs",
-                      "mirth_connect": "http.favicon.hash:1502215759",
-                      "acuity_logic": "title:AcuityLogic",
-                      "optical_coherence_tomography": "title:'OCT Webview'",
-                      "philips_intellispace": "title:INTELLISPACE",
-                      "vitrea_intelligence": "title:'Vitrea intelligence'",
-                      "phenom_electron_microscope": "title:'Phenom-World'",
-                      "meddream_dicom_viewer": "html:Softneta",
-                      "merge_pacs": "http.favicon.hash:-74870968",
-                      "synapse_3d": "http.favicon.hash:394706326",
-                      "navify": "title:navify",
-                      "telemis_tmp": "http.favicon.hash:220883165",
-                      "brainlab": "title:'Brainlab Origin Server'",
-                      "nexus360": "http.favicon.hash:125825464",
-                      "brain_scope": "title:BrainScope",
-                      "omero_microscopy": "http.favicon.hash:2140687598",
-                      "meditech": "Meditech",
-                      "cynetics": "cynetics",
-                      "promed": "Promed",
-                      "carestream": "Carestream",
-                      "carestream_web": "title:Carestream",
-                      "vet_rocket": "http.html:'Vet Rocket'",
-                      "planmeca": "Planmeca",
-                      "vet_view": "http.favicon.hash:1758472204",
-                      "lumed": "http.html:'LUMED'",
-                      "infinitt": "http.favicon.hash:-255936262",
-                      "labtech": "labtech",
-                      "progetti": "http.html:'Progetti S.r.l.'",
-                      "qt_medical": "http.html:'QT Medical'",
-                      "aspel": "ASPEL",
-                      "huvitz_optometric": "http.html:'Huvitz'",
-                      "optovue": "Optovue",
-                      "optos_advance": "http.title:'OptosAdvance'",
-                      "asthma_monitoring_adamm": "http.title:'HCO Telemedicine'",
-                      "pregnabit": "http.html:'Pregnabit'",
-                      "prime_clinical_systems": "http.html:'Prime Clinical Systems'",
-                      "omni_explorer": "http.title:OmniExplorer",
-                      "avizia": "http.html:'Avizia'",
-                      "operamed": "Operamed",
-                      "early_sense": "http.favicon.hash:-639764351",
-                      "tunstall": "http.html:'Tunstall'",
-                      "clini_net": "http.html:'CliniNet®'",
-                      "intelesens": "title:'zensoronline)) - online monitoring'",
-                      "kb_port": "http.html:'KbPort'",
-                      "nursecall_message_service": "http.title:'N.M.S. - Nursecall Message Service'",
-                      "image_information_systems": "http.html:'IMAGE Information Systems'",
-                      "agilent_technologies": "Agilent Technologies port:5025",
-                      "praxis_portal2": "http.html:'Medigration'",
-                      "xero_viewer": "http.title:'XERO Viewer'"}
+healthcare_queries = {
+    "zoll": "http.favicon.hash:-236942626",
+    "dicom": "dicom",
+    "perioperative": "HoF Perioperative",
+    "wall_of_analytics": "title:'Wall of Analytics'",
+    "viztek_exa": "X-Super-Powered-By: VIZTEK EXA",
+    "medweb": "html:'DBA Medweb. All rights reserved.'",
+    "intuitim": "http.favicon.hash:159662640",
+    "medcon_archiving_system": "http.favicon.hash:-897903496",
+    "orthanc_explorer": "title:'Orthanc Explorer'",
+    "Marco Pacs": "title:'Marco pacs'",
+    "osirix": "title:OsiriX",
+    "clari_pacs": "title:ClariPACS",
+    "siste_lab": "http.html:SisteLAB",
+    "opalweb": "html:opalweb",
+    "neuropro": "title:'EEG Laboratory'",
+    "tmw_document_imaging": "title:'TMW Document Imaging'",
+    "erez": "title:'eRez Imaging'",
+    "gluco_care": "html:'GlucoCare igc'",
+    "glucose_guide": "title:'glucose guide'",
+    "grandmed_glucose": "title:'Grandmed Glucose'",
+    "philips_digital_pathology": "title:'Philips Digital Pathology'",
+    "tricore_pathology": "title:'TriCore Pathology'",
+    "appsmart_ophthalmology": "title:'Appsmart Ophthalmology'",
+    "chs_ophthalmology": "title:'CHS Ophthalmology'",
+    "ram_soft": "html:powerreader",
+    "xnat": "http.favicon.hash:-230640598",
+    "iris_emr": "title:'Iris EMR'",
+    "eclinicalworks_emr": "title:'Web EMR Login Page'",
+    "open_emr": "http.favicon.hash:1971268439",
+    "oscar_emr": "title:'OSCAR EMR'",
+    "wm_emr": "http.favicon.hash:1617804812",
+    "doctors_partner_emr": "title:'DoctorsPartner'",
+    "mckesson_radiology": "title:'McKesson Radiology'",
+    "kodak_carestream": "title:'Carestream PACS'",
+    "meded": "title:meded",
+    "centricity_radiology": "http.favicon.hash:-458315012",
+    "openeyes": "http.favicon.hash:-885931907",
+    "orthanc": "orthanc",
+    "horos": "http.favicon.hash:398467600",
+    "open_mrs": "title:openmrs",
+    "mirth_connect": "http.favicon.hash:1502215759",
+    "acuity_logic": "title:AcuityLogic",
+    "optical_coherence_tomography": "title:'OCT Webview'",
+    "philips_intellispace": "title:INTELLISPACE",
+    "vitrea_intelligence": "title:'Vitrea intelligence'",
+    "phenom_electron_microscope": "title:'Phenom-World'",
+    "meddream_dicom_viewer": "html:Softneta",
+    "merge_pacs": "http.favicon.hash:-74870968",
+    "synapse_3d": "http.favicon.hash:394706326",
+    "navify": "title:navify",
+    "telemis_tmp": "http.favicon.hash:220883165",
+    "brainlab": "title:'Brainlab Origin Server'",
+    "nexus360": "http.favicon.hash:125825464",
+    "brain_scope": "title:BrainScope",
+    "omero_microscopy": "http.favicon.hash:2140687598",
+    "meditech": "Meditech",
+    "cynetics": "cynetics",
+    "promed": "Promed",
+    "carestream": "Carestream",
+    "carestream_web": "title:Carestream",
+    "vet_rocket": "http.html:'Vet Rocket'",
+    "planmeca": "Planmeca",
+    "vet_view": "http.favicon.hash:1758472204",
+    "lumed": "http.html:'LUMED'",
+    "infinitt": "http.favicon.hash:-255936262",
+    "labtech": "labtech",
+    "progetti": "http.html:'Progetti S.r.l.'",
+    "qt_medical": "http.html:'QT Medical'",
+    "aspel": "ASPEL",
+    "huvitz_optometric": "http.html:'Huvitz'",
+    "optovue": "Optovue",
+    "optos_advance": "http.title:'OptosAdvance'",
+    "asthma_monitoring_adamm": "http.title:'HCO Telemedicine'",
+    "pregnabit": "http.html:'Pregnabit'",
+    "prime_clinical_systems": "http.html:'Prime Clinical Systems'",
+    "omni_explorer": "http.title:OmniExplorer",
+    "avizia": "http.html:'Avizia'",
+    "operamed": "Operamed",
+    "early_sense": "http.favicon.hash:-639764351",
+    "tunstall": "http.html:'Tunstall'",
+    "clini_net": "http.html:'CliniNet®'",
+    "intelesens": "title:'zensoronline)) - online monitoring'",
+    "kb_port": "http.html:'KbPort'",
+    "nursecall_message_service": "http.title:'N.M.S. - Nursecall Message Service'",
+    "image_information_systems": "http.html:'IMAGE Information Systems'",
+    "agilent_technologies": "Agilent Technologies port:5025",
+    "praxis_portal2": "http.html:'Medigration'",
+    "xero_viewer": "http.title:'XERO Viewer'",
+}
 
-ics_queries = {"niagara": "port:1911,4911 product:Niagara",
-               'bacnet': '"Instance ID:" "Object Name:"',
-               'modbus': "Unit ID: 0",
-               'siemens': 'Original Siemens Equipment Basic Firmware:',
-               'dnp3': "port:20000 source address",
-               "ethernetip": '"Product name:" "Vendor ID:"',
-               "gestrip": 'port:18245,18246 product:"general electric"',
-               'hart': "port:5094 hart-ip",
-               'pcworx': "port:1962 PLC",
-               "mitsubishi": "port:5006,5007 product:mitsubishi",
-               "omron": "port:9600 response code",
-               "redlion": 'port:789 product:"Red Lion Controls"',
-               'codesys': 'product:"3S-Smart Software Solutions"',
-               "iec": "port:2404 asdu address",
-               'proconos': "port:20547 PLC",
+ics_queries = {
+    "niagara": "port:1911,4911 product:Niagara",
+    "bacnet": '"Instance ID:" "Object Name:"',
+    "modbus": "Unit ID: 0",
+    "siemens": "Original Siemens Equipment Basic Firmware:",
+    "dnp3": "port:20000 source address",
+    "ethernetip": '"Product name:" "Vendor ID:"',
+    "gestrip": 'port:18245,18246 product:"general electric"',
+    "hart": "port:5094 hart-ip",
+    "pcworx": "port:1962 PLC",
+    "mitsubishi": "port:5006,5007 product:mitsubishi",
+    "omron": "port:9600 response code",
+    "redlion": 'port:789 product:"Red Lion Controls"',
+    "codesys": 'product:"3S-Smart Software Solutions"',
+    "iec": "port:2404 asdu address",
+    "proconos": "port:20547 PLC",
+    "plantvisor": "Server: CarelDataServer",
+    "iologik": "iologik",
+    "moxa": "Moxa",
+    "akcp": "Server: AKCP Embedded Web Server",
+    "spidercontrol": "powered by SpiderControl TM",
+    "tank": "port:10001 tank",
+    "iq3": "Server: IQ3",
+    "is2": "IS2 Web Server",
+    "vtscada": "Server: VTScada",
+    "zworld": "Z-World Rabbit 200 OK",
+    "nordex": "html:nordex",
+    "sailor": "title:Sailor title:VSAT",
+    "nmea": "$GPGGA",
+    "axc": "PLC Type: AXC",
+    "modicon": "modicon",
+    "xp277": "HMI, XP277",
+    "vxworks": "vxworks",
+    "eig": "EIG Embedded Web Server",
+    "digi": "TransPort WR21",
+    "windweb": "server: WindWeb",
+    "moxahttp": "MoxaHttp",
+    "lantronix": "lantronix",
+    "entelitouch": "Server: DELTA enteliTOUCH",
+    "energyict_rtu": "EnergyICT RTU",
+    "crestron": "crestron",
+    "saphir": 'Server: "Microsoft-WinCE" "Content-Length: 12581"',
+    "ipc@chip": "IPC@CHIP",
+    "addup": "addUPI",
+    "anybus": '"anybus-s"',
+    "windriver": "WindRiver-WebServer",
+    "wago": "wago",
+    "niagara_audit": "niagara_audit",
+    "niagara_web_server": "Niagara Web Server",
+    "trendnet": "trendnet",
+    "stulz_klimatechnik": "Stulz GmbH Klimatechnik",
+    "somfy": "title:Somfy",
+    "scalance": "scalance",
+    "simatic": "simatic",
+    "simatic_s7": "Portal0000",
+    "schneider_electric": "Schneider Electric",
+    "power_measurement": "Power Measurement Ltd",
+    "power_logic": "title:PowerLogic",
+    "telemecanique_bxm": "TELEMECANIQUE BMX",
+    "schneider_web": "Schneider-WEB",
+    "fujitsu_serverview": "serverview",
+    "eiportal": "eiPortal",
+    "ilon": "i.LON",
+    "webvisu": "Webvisu",
+    "total_access": "ta gen3 port:2000",
+    "vantage_infusion": "http.html:'InFusion Controller'",
+    "sensoteq": "title:'sensoteq'",
+    "sicon-8": "sicon-8",
+    "automation_direct_hmi": "Server: EA-HTTP/1.0",
+    "flotrac": "FloTrac",
+    "innotech_bms": "http.title:'Innotech BMS'",
+    "skylog": "http.title:skylog",
+    "miele@home": "title:Miele@home",
+    "alphacom": "http.title:Alphacom",
+    "simplex_grinnell": "http.html:SimplexGrinnell title:login",
+    "bosch_security": "http.html:'Bosch Security'",
+    "other_hmi": "html:hmiBody",
+    "fronius": "title:fronius",
+    "webview": "http.favicon.hash:207964650",
+    "Siemens Sm@rtClient": "title:'Siemens Sm@rtClient'",
+    "WAGO": "title:'wago ethernet'",
+    "sensatronics": "html:sensatronics",
+    "extron": "Extron Electronics",
+    "mikrotik_streetlighs": "mikrotik streetlight",
+    "kesseltronics": "Kesseltronics",
+    "unitronics": "title:'Unitronics PLC'",
+    "atvise": "Server: atvise",
+    "clearSCADA": "ClearSCADA",
+    "youless": "title:YouLess",
+    "DLILPC": "DLILPC",
+    "intelliSlot": "title:IntelliSlot",
+    "temperature_monitor": "title:'Temperature Monitor' !title:avtech",
+    "CirCarLife": "CirCarLife -ASUSTeK",
+    "web_scada": "title:'web scada'",
+    "kaco": "kaco",
+    "indect_parkway": "title:indect",
+    "intuitive_Controller": "http.favicon.hash:1434282111",
+    "intuitive_controller_2": "http.favicon.hash:-1011909571",
+    "homeLYnk": "homeLYnk",
+    "APC": "Location: home.htm Content-Length: 0 WebServer",
+    "netio": "title:netio",
+    "asi_controls": "title:'ASI Controls'",
+    "myscada": "title:myscada",
+    "iB-COM": "title:iB-COM",
+    "building_operation_webstation": "title:'building operation'",
+    "ftp_scada": "scada login",
+    "apc_ftp": "APC FTP server",
+    "network_management_card": "Network Management Card",
+    "wemo_insight": "Belkin WeMo",
+    "connect_ups": "title:ConnectUPS",
+    "upshttpd": "Server: upshttpd",
+    "poweragent": "PowerAgent",
+    "CS121": "title:'CS121 SNMP/Web Adapter'",
+    "ab_ethernet": "cspv4",
+    "climatix": "Siemens Building Technologies Climatix",
+    "bas_scada": "BAS SCADA Service",
+    "watt_router": "SOLAR controls product server",
+    "doors": '"HID VertX" port:4070',
+    "saferoads": "Saferoads VMS",
+    "xzeres": 'title:"XZERES Wind"',
+    "doorbird": "html:DoorBird",
+    "jeedom": 'title:"Jeedom"',
+    "pwrctrl": '"NET-PwrCtrl"',
+    "heatmiser_thermostat": 'title:"Heatmiser Wifi Thermostat"',
+    "xpanel": "title:xpanel",
+    "c4_max": "[1m[35mWelcome on console",
+    "universal_devices": "ucos",
+    "dasdec": "dasdec",
+    "brightsign": 'title:"BrightSign&reg;"',
+    "leica": "title:leica title:interface",
+    "hughesnet": "html:hughesnet",
+    "skyline": "'server: skyline'",
+    "beward_door": "'DS06A(P) SIP Door Station'",
+    "wallbox": "title:wallbox",
+    "acadia": "acadia",
+    "walchem": "html:walchem",
+    "gnss": "'NTRIP' 'SOURCETABLE'",
+    "traccar": "title:traccar",
+    "trimble": 'html:"trimble Navigation"',
+    "spacelynk": "title:spaceLYnk",
+}
 
-               "plantvisor": "Server: CarelDataServer",
-               "iologik": "iologik",
-               "moxa": "Moxa",
-               "akcp": "Server: AKCP Embedded Web Server",
-               "spidercontrol": "powered by SpiderControl TM",
-               "tank": "port:10001 tank",
-               "iq3": "Server: IQ3",
-               "is2": "IS2 Web Server",
-               "vtscada": "Server: VTScada",
-               'zworld': "Z-World Rabbit 200 OK",
-               "nordex": "html:nordex",
-               "sailor": 'title:Sailor title:VSAT',
-               'nmea': "$GPGGA",
+coordinates_queries = {
+    "videoiq": 'title:"VideoIQ Camera Login"',
+    "hikvision": 'product:"Hikvision IP Camera"',
+    "webcam": "device:webcam",
+    "webcamxp": "webcamxp",
+    "vivotek": "vivotek",
+    "netwave": 'product:"Netwave IP camera http config"',
+    "techwin": "techwin",
+    "lutron": "html:<h1>LUTRON</h1>",
+    "mobotix": "mobotix",
+    "iqinvision": "iqinvision",
+    "grandstream": 'ssl:"Grandstream" "Set-Cookie: TRACKID"',
+    "amcrest": 'html:"@WebVersion@" html:amcrest',
+    "contec": '"content/smarthome.php"',
+    "printer": "device:printer",
+    "mqtt": "product:mqtt",
+    "rtsp": "port:'554'",
+    "ipcamera": "IPCamera_Logo",
+    "yawcam": "yawcam",
+    "blueiris": "http.favicon.hash:-520888198",
+    "ubnt": "UBNT Streaming Server",
+    "go1984": "go1984",
+    "dlink": "Server: Camera Web Server",
+    "avtech": "linux upnp avtech",
+    "adh": "ADH-web",
+    "axis": 'http.title:"axis" http.html:live',
+    "rdp": "has_screenshot:true port:3389",
+    "vnc": "has_screenshot:true port:5901",
+    "screenshot": "has_screenshot:true !port:3389 !port:3388 !port:5900",
+    "bbvs": "Server: BBVS",
+    "baudisch": "http.favicon.hash:746882768",
+    "loxone_intercom": "title:'Loxone Intercom Video'",
+    "idss": "Intelligent Digital Security System",
+    "webiopi": "webiopi 200 ok",
+    "iobroker": "ioBroker.admin",
+    "comelit": "html:comelit",
+    "niagara": "port:1911,4911 product:Niagara",
+    "bacnet": '"Instance ID:" "Object Name:"',
+    "modbus": "Unit ID: 0",
+    "siemens": "Original Siemens Equipment Basic Firmware:",
+    "dnp3": "port:20000 source address",
+    "ethernetip": '"Product name:" "Vendor ID:"',
+    "gestrip": 'port:18245,18246 product:"general electric"',
+    "hart": "port:5094 hart-ip",
+    "pcworx": "port:1962 PLC",
+    "mitsubishi": "port:5006,5007 product:mitsubishi",
+    "omron": "port:9600 response code",
+    "redlion": 'port:789 product:"Red Lion Controls"',
+    "codesys": "port:2455 operating system",
+    "iec": "port:2404 asdu address",
+    "proconos": "port:20547 PLC",
+    "plantvisor": "Server: CarelDataServer",
+    "iologik": "iologik",
+    "moxa": "Moxa",
+    "akcp": "Server: AKCP Embedded Web Server",
+    "spidercontrol": "powered by SpiderControl TM",
+    "tank": "port:10001 tank",
+    "iq3": "Server: IQ3",
+    "is2": "IS2 Web Server",
+    "vtscada": "Server: VTScada",
+    "zworld": "Z-World Rabbit",
+    "nordex": "html:nordex",
+    "axc": "PLC Type: AXC",
+    "modicon": "modicon",
+    "xp277": "HMI, XP277",
+    "vxworks": "vxworks",
+    "eig": "EIG Embedded Web Server",
+    "digi": "TransPort WR21",
+    "windweb": "server: WindWeb",
+    "moxahttp": "MoxaHttp",
+    "lantronix": "lantronix",
+    "entelitouch": "Server: DELTA enteliTOUCH",
+    "energyict_rtu": "EnergyICT RTU",
+    "crestron": "crestron",
+    "wince": 'Server: "Microsoft-WinCE"',
+    "ipc@chip": "IPC@CHIP",
+    "addup": "addUPI",
+    "anybus": '"anybus-s"',
+    "windriver": "WindRiver-WebServer",
+    "wago": "wago",
+    "niagara_audit": "niagara_audit",
+    "niagara_web_server": "Niagara Web Server",
+    "trendnet": "trendnet",
+    "stulz_klimatechnik": "Stulz GmbH Klimatechnik",
+    "somfy": "title:Somfy",
+    "scalance": "scalance",
+    "simatic": "simatic",
+    "simatic_s7": "Portal0000",
+    "schneider_electric": "Schneider Electric",
+    "power_measurement": "Power Measurement Ltd",
+    "power_logic": "title:PowerLogic",
+    "telemecanique_bxm": "TELEMECANIQUE BMX",
+    "schneider_web": "Schneider-WEB",
+    "fujitsu_serverview": "serverview",
+    "eiportal": "eiPortal",
+    "ilon": "i.LON",
+    "Webvisu": "Webvisu",
+    "total_access": "ta gen3 port:2000",
+    "vantage_infusion": "http.html:'InFusion Controller'",
+    "sensoteq": "title:'sensoteq'",
+    "sicon-8": "sicon-8",
+    "automation_direct_hmi": "Server: EA-HTTP/1.0",
+    "flotrac": "FloTrac",
+    "innotech_bms": "http.title:'Innotech BMS'",
+    "skylog": "http.title:skylog",
+    "miele@home": "title:Miele@home",
+    "alphacom": "http.title:Alphacom",
+    "simplex_grinnell": "http.html:SimplexGrinnell title:login",
+    "bosch_security": "http.html:'Bosch Security'",
+    "fronius": "title:fronius",
+    "webview": "http.favicon.hash:207964650",
+    "siemens_Sm@rtClient": "title:'Siemens Sm@rtClient'",
+    "WAGO": "title:'wago ethernet'",
+    "sensatronics": "html:sensatronics",
+    "extron": "Extron Electronics",
+    "mikrotik_streetlighs": "mikrotik streetlight",
+    "kesseltronics": "Kesseltronics",
+    "unitronics": "title:'Unitronics PLC'",
+    "atvise": "Server: atvise",
+    "clearSCADA": "ClearSCADA",
+    "youless": "title:YouLess",
+    "DLILPC": "DLILPC",
+    "intelliSlot": "title:IntelliSlot",
+    "temperature_monitor": "title:'Temperature Monitor' !title:avtech",
+    "CirCarLife": "CirCarLife",
+    "web_scada": "title:'web scada'",
+    "kaco": "kaco",
+    "indect_parkway": "title:indect",
+    "intuitive_Controller": "http.favicon.hash:1434282111",
+    "intuitive_controller_2": "http.favicon.hash:-1011909571",
+    "homeLYnk": "homeLYnk",
+    "APC": "Location: home.htm Content-Length: 0 WebServer",
+    "netio": "title:netio",
+    "asi_controls": "title:'ASI Controls'",
+    "myscada": "title:myscada",
+    "iB-COM": "title:iB-COM",
+    "building_operation_webstation": "title:'building operation'",
+    "ftp_scada": "scada login",
+    "apc_ftp": "APC FTP server",
+    "network_management_card": "Network Management Card",
+    "wemo_insight": "Belkin WeMo",
+    "connect_ups": "title:ConnectUPS",
+    "upshttpd": "Server: upshttpd",
+    "poweragent": "PowerAgent",
+    "CS121": "title:'CS121 SNMP/Web Adapter'",
+    "ab_ethernet": "cspv4",
+    "climatix": "Siemens Building Technologies Climatix",
+    "bas_scada": "BAS SCADA Service",
+    "watt_router": "SOLAR controls product server",
+    "doors": '"HID VertX" port:4070',
+    "saferoads": "Saferoads VMS",
+    "xzeres": 'title:"XZERES Wind"',
+    "doorbird": "html:DoorBird",
+    "jeedom": 'title:"Jeedom"',
+    "pwrctrl": "NET-PwrCtrl",
+    "heatmiser_thermostat": 'title:"Heatmiser Wifi Thermostat"',
+    "xpanel": "title:xpanel",
+    "c4_max": "[1m[35mWelcome on console",
+    "universal_devices": "ucos",
+    "dasdec": "dasdec",
+    "brightsign": 'title:"BrightSign&reg;"',
+    "leica": "title:leica title:interface",
+    "hughesnet": "html:hughesnet",
+    "skyline": "server: skyline",
+    "beward_door": "DS06A(P) SIP Door Station",
+    "wallbox": "http.title:wallbox",
+    "acadia": "acadia",
+    "walchem": "html:walchem",
+    "GNSS": "NTRIP" "SOURCETABLE",
+    "traccar": "title:traccar",
+    "trimble": 'html:"trimble Navigation"',
+    "spacelynk": "title:spaceLYnk",
+}
 
-               "axc": "PLC Type: AXC",
-               "modicon": "modicon",
-               "xp277": "HMI, XP277",
-               "vxworks": "vxworks",
-               "eig": "EIG Embedded Web Server",
-               "digi": "TransPort WR21",
-               "windweb": "server: WindWeb",
-               "moxahttp": "MoxaHttp",
-               "lantronix": "lantronix",
-               "entelitouch": "Server: DELTA enteliTOUCH",
-               "energyict_rtu": "EnergyICT RTU",
-               "crestron": "crestron",
-               "saphir": 'Server: "Microsoft-WinCE" "Content-Length: 12581"',
-               "ipc@chip": "IPC@CHIP",
-               "addup": "addUPI",
-               "anybus": '"anybus-s"',
-               "windriver": "WindRiver-WebServer",
-               "wago": "wago",
-               "niagara_audit": "niagara_audit",
-               "niagara_web_server": "Niagara Web Server",
-               "trendnet": "trendnet",
-               "stulz_klimatechnik": "Stulz GmbH Klimatechnik",
-               "somfy": "title:Somfy",
-               "scalance": "scalance",
-               "simatic": "simatic",
-               "simatic_s7": "Portal0000",
-               "schneider_electric": "Schneider Electric",
-               "power_measurement": "Power Measurement Ltd",
-               "power_logic": "title:PowerLogic",
-               "telemecanique_bxm": "TELEMECANIQUE BMX",
-               "schneider_web": "Schneider-WEB",
-               "fujitsu_serverview": "serverview",
-               "eiportal": "eiPortal",
-               "ilon": "i.LON",
-               "webvisu": "Webvisu",
-               "total_access": 'ta gen3 port:2000',
-               "vantage_infusion": "http.html:'InFusion Controller'",
-               "sensoteq": "title:'sensoteq'",
-               "sicon-8": "sicon-8",
-               "automation_direct_hmi": "Server: EA-HTTP/1.0",
-               "flotrac": "FloTrac",
-               "innotech_bms": "http.title:'Innotech BMS'",
-               "skylog": "http.title:skylog",
-               "miele@home": "title:Miele@home",
-               "alphacom": "http.title:Alphacom",
-               "simplex_grinnell": "http.html:SimplexGrinnell title:login",
-               "bosch_security": "http.html:'Bosch Security'",
-
-               "other_hmi": "html:hmiBody",
-               "fronius": "title:fronius",
-               "webview": "http.favicon.hash:207964650",
-               "Siemens Sm@rtClient": "title:'Siemens Sm@rtClient'",
-               "WAGO": "title:'wago ethernet'",
-               "sensatronics": "html:sensatronics",
-               "extron": "Extron Electronics",
-               "mikrotik_streetlighs": "mikrotik streetlight",
-               "kesseltronics": "Kesseltronics",
-               "unitronics": "title:'Unitronics PLC'",
-               "atvise": "Server: atvise",
-               "clearSCADA": "ClearSCADA",
-               "youless": "title:YouLess",
-               "DLILPC": "DLILPC",
-               "intelliSlot": "title:IntelliSlot",
-               "temperature_monitor": "title:'Temperature Monitor' !title:avtech",
-               "CirCarLife": "CirCarLife -ASUSTeK",
-               "web_scada": "title:'web scada'",
-               "kaco": "kaco",
-               "indect_parkway": "title:indect",
-               "intuitive_Controller": "http.favicon.hash:1434282111",
-               "intuitive_controller_2": "http.favicon.hash:-1011909571",
-               "homeLYnk": "homeLYnk",
-               "APC": "Location: home.htm Content-Length: 0 WebServer",
-               "netio": "title:netio",
-               "asi_controls": "title:'ASI Controls'",
-               "myscada": "title:myscada",
-               "iB-COM": "title:iB-COM",
-               "building_operation_webstation": "title:'building operation'",
-               "ftp_scada": "scada login",
-               "apc_ftp": "APC FTP server",
-               "network_management_card": "Network Management Card",
-               "wemo_insight": "Belkin WeMo",
-               "connect_ups": "title:ConnectUPS",
-               "upshttpd": "Server: upshttpd",
-               "poweragent": "PowerAgent",
-               "CS121": "title:'CS121 SNMP/Web Adapter'",
-               "ab_ethernet": "cspv4",
-
-               "climatix": "Siemens Building Technologies Climatix",
-               "bas_scada": "BAS SCADA Service",
-               "watt_router": "SOLAR controls product server",
-               "doors": '"HID VertX" port:4070',
-               "saferoads": "Saferoads VMS",
-               "xzeres": 'title:"XZERES Wind"',
-               "doorbird": "html:DoorBird",
-
-               "jeedom": 'title:"Jeedom"',
-               "pwrctrl": '"NET-PwrCtrl"',
-               "heatmiser_thermostat": 'title:"Heatmiser Wifi Thermostat"',
-               "xpanel": "title:xpanel",
-               "c4_max": "[1m[35mWelcome on console",
-               "universal_devices": "ucos",
-               "dasdec": "dasdec",
-               "brightsign": 'title:"BrightSign&reg;"',
-               "leica": "title:leica title:interface",
-               "hughesnet": "html:hughesnet",
-               "skyline": "'server: skyline'",
-               "beward_door": "'DS06A(P) SIP Door Station'",
-               "wallbox": "title:wallbox",
-               "acadia": "acadia",
-               "walchem": "html:walchem",
-               "gnss": "'NTRIP' 'SOURCETABLE'",
-               "traccar": "title:traccar",
-               "trimble": 'html:"trimble Navigation"',
-               "spacelynk": "title:spaceLYnk",
-               }
-
-coordinates_queries = {"videoiq": 'title:"VideoIQ Camera Login"',
-                       "hikvision":'product:"Hikvision IP Camera"',
-                       "webcam": "device:webcam",
-                       "webcamxp": "webcamxp",
-                       "vivotek": "vivotek",
-                       "netwave": 'product:"Netwave IP camera http config"',
-                       "techwin": "techwin",
-                       "lutron": 'html:<h1>LUTRON</h1>',
-                       "mobotix": "mobotix",
-                       "iqinvision": "iqinvision",
-                       "grandstream": 'ssl:"Grandstream" "Set-Cookie: TRACKID"',
-                       "amcrest": 'html:"@WebVersion@" html:amcrest',
-                       "contec": '"content/smarthome.php"',
-                       'printer': "device:printer",
-                       'mqtt': 'product:mqtt',
-                       'rtsp': "port:'554'",
-                       "ipcamera": "IPCamera_Logo",
-                       "yawcam": "yawcam",
-                       "blueiris": "http.favicon.hash:-520888198",
-                       'ubnt': "UBNT Streaming Server",
-                       "go1984": "go1984",
-                       "dlink": "Server: Camera Web Server",
-                       "avtech": "linux upnp avtech",
-                       "adh": "ADH-web",
-                       "axis": 'http.title:"axis" http.html:live',
-                       "rdp": "has_screenshot:true port:3389",
-                       "vnc": "has_screenthos:true port:5901",
-                       "screenshot": "has_screenshot:true !port:3389 !port:3388 !port:5900",
-                       "bbvs": "Server: BBVS",
-                       "baudisch": "http.favicon.hash:746882768",
-                       "loxone_intercom": "title:'Loxone Intercom Video'",
-
-                       "idss": "Intelligent Digital Security System",
-                       "webiopi": 'webiopi 200 ok',
-                       "iobroker": "ioBroker.admin",
-                       "comelit": "html:comelit",
-
-                       "niagara": "port:1911,4911 product:Niagara",
-                       'bacnet': '"Instance ID:" "Object Name:"',
-                       'modbus': "Unit ID: 0",
-                       'siemens': 'Original Siemens Equipment Basic Firmware:',
-                       'dnp3': "port:20000 source address",
-                       "ethernetip": '"Product name:" "Vendor ID:"',
-                       "gestrip": 'port:18245,18246 product:"general electric"',
-                       'hart': "port:5094 hart-ip",
-                       'pcworx': "port:1962 PLC",
-                       "mitsubishi": "port:5006,5007 product:mitsubishi",
-                       "omron": "port:9600 response code",
-                       "redlion": 'port:789 product:"Red Lion Controls"',
-                       'codesys': "port:2455 operating system",
-                       "iec": "port:2404 asdu address",
-                       'proconos': "port:20547 PLC",
-
-                       "plantvisor": "Server: CarelDataServer",
-                       "iologik": "iologik",
-                       "moxa": "Moxa",
-                       "akcp": "Server: AKCP Embedded Web Server",
-                       "spidercontrol": "powered by SpiderControl TM",
-                       "tank": "port:10001 tank",
-                       "iq3": "Server: IQ3",
-                       "is2": "IS2 Web Server",
-                       "vtscada": "Server: VTScada",
-                       'zworld': "Z-World Rabbit",
-                       "nordex": "html:nordex",
-
-                       "axc": "PLC Type: AXC",
-                       "modicon": "modicon",
-                       "xp277": "HMI, XP277",
-                       "vxworks": "vxworks",
-                       "eig": "EIG Embedded Web Server",
-                       "digi": "TransPort WR21",
-                       "windweb": "server: WindWeb",
-                       "moxahttp": "MoxaHttp",
-                       "lantronix": "lantronix",
-                       "entelitouch": "Server: DELTA enteliTOUCH",
-                       "energyict_rtu": "EnergyICT RTU",
-                       "crestron": "crestron",
-                       "wince": 'Server: "Microsoft-WinCE"',
-                       "ipc@chip": "IPC@CHIP",
-                       "addup": "addUPI",
-                       "anybus": '"anybus-s"',
-                       "windriver": "WindRiver-WebServer",
-                       "wago": "wago",
-                       "niagara_audit": "niagara_audit",
-                       "niagara_web_server": "Niagara Web Server",
-                       "trendnet": "trendnet",
-                       "stulz_klimatechnik": "Stulz GmbH Klimatechnik",
-                       "somfy": "title:Somfy",
-                       "scalance": "scalance",
-                       "simatic": "simatic",
-                       "simatic_s7": "Portal0000",
-                       "schneider_electric": "Schneider Electric",
-                       "power_measurement": "Power Measurement Ltd",
-                       "power_logic": "title:PowerLogic",
-                       "telemecanique_bxm": "TELEMECANIQUE BMX",
-                       "schneider_web": "Schneider-WEB",
-                       "fujitsu_serverview": "serverview",
-                       "eiportal": "eiPortal",
-                       "ilon": "i.LON",
-                       "Webvisu": "Webvisu",
-                       "total_access": 'ta gen3 port:2000',
-                       "vantage_infusion": "http.html:'InFusion Controller'",
-                       "sensoteq": "title:'sensoteq'",
-                       "sicon-8": "sicon-8",
-                       "automation_direct_hmi": "Server: EA-HTTP/1.0",
-                       "flotrac": "FloTrac",
-                       "innotech_bms": "http.title:'Innotech BMS'",
-                       "skylog": "http.title:skylog",
-                       "miele@home": "title:Miele@home",
-                       "alphacom": "http.title:Alphacom",
-                       "simplex_grinnell": "http.html:SimplexGrinnell title:login",
-                       "bosch_security": "http.html:'Bosch Security'",
-
-                       "fronius": "title:fronius",
-                       "webview": "http.favicon.hash:207964650",
-                       "siemens_Sm@rtClient": "title:'Siemens Sm@rtClient'",
-                       "WAGO": "title:'wago ethernet'",
-                       "sensatronics": "html:sensatronics",
-                       "extron": "Extron Electronics",
-                       "mikrotik_streetlighs": "mikrotik streetlight",
-                       "kesseltronics": "Kesseltronics",
-                       "unitronics": "title:'Unitronics PLC'",
-                       "atvise": "Server: atvise",
-                       "clearSCADA": "ClearSCADA",
-                       "youless": "title:YouLess",
-                       "DLILPC": "DLILPC",
-                       "intelliSlot": "title:IntelliSlot",
-                       "temperature_monitor": "title:'Temperature Monitor' !title:avtech",
-                       "CirCarLife": "CirCarLife",
-                       "web_scada": "title:'web scada'",
-                       "kaco": "kaco",
-                       "indect_parkway": "title:indect",
-                       "intuitive_Controller": "http.favicon.hash:1434282111",
-                       "intuitive_controller_2": "http.favicon.hash:-1011909571",
-                       "homeLYnk": "homeLYnk",
-                       "APC": "Location: home.htm Content-Length: 0 WebServer",
-                       "netio": "title:netio",
-                       "asi_controls": "title:'ASI Controls'",
-                       "myscada": "title:myscada",
-                       "iB-COM": "title:iB-COM",
-                       "building_operation_webstation": "title:'building operation'",
-                       "ftp_scada": "scada login",
-
-                       "apc_ftp": "APC FTP server",
-                       "network_management_card": "Network Management Card",
-                       "wemo_insight": "Belkin WeMo",
-                       "connect_ups": "title:ConnectUPS",
-                       "upshttpd": "Server: upshttpd",
-                       "poweragent": "PowerAgent",
-                       "CS121": "title:'CS121 SNMP/Web Adapter'",
-                       "ab_ethernet": "cspv4",
-
-                       "climatix": "Siemens Building Technologies Climatix",
-                       "bas_scada": "BAS SCADA Service",
-                       "watt_router": "SOLAR controls product server",
-                       "doors": '"HID VertX" port:4070',
-                       "saferoads": "Saferoads VMS",
-                       "xzeres": 'title:"XZERES Wind"',
-                       "doorbird": "html:DoorBird",
-
-                       "jeedom": 'title:"Jeedom"',
-                       "pwrctrl": "NET-PwrCtrl",
-                       "heatmiser_thermostat": 'title:"Heatmiser Wifi Thermostat"',
-                       "xpanel": "title:xpanel",
-                       "c4_max": "[1m[35mWelcome on console",
-                       "universal_devices": "ucos",
-                       "dasdec": "dasdec",
-                       "brightsign": 'title:"BrightSign&reg;"',
-                       "leica": "title:leica title:interface",
-                       "hughesnet": "html:hughesnet",
-                       "skyline": "server: skyline",
-                       "beward_door": "DS06A(P) SIP Door Station",
-                       "wallbox": "http.title:wallbox",
-                       "acadia": "acadia",
-                       "walchem": "html:walchem",
-                       "GNSS": "NTRIP" "SOURCETABLE",
-                       "traccar": "title:traccar",
-                       "trimble": 'html:"trimble Navigation"',
-                       "spacelynk": "title:spaceLYnk",
-                       }
-
-attackers_infra_queries = {"cobaltstrike": 'product:"Cobalt Strike Beacon"',
-                           "msf": 'ssl:MetasploitSelfSignedCA',
-                           "covenant": 'ssl:”Covenant” http.component:”Blazor”',
-                           "mythic": 'ssl:"Mythic" port:7443',
-                           "bruteratel": "http.html_hash:-1957161625",
-                           }
-
+attackers_infra_queries = {
+    "cobaltstrike": 'product:"Cobalt Strike Beacon"',
+    "msf": "ssl:MetasploitSelfSignedCA",
+    "covenant": "ssl:”Covenant” http.component:”Blazor”",
+    "mythic": 'ssl:"Mythic" port:7443',
+    "bruteratel": "http.html_hash:-1957161625",
+}
 
 
 def _get_env_key(name, *, required=False):
@@ -486,15 +489,15 @@ def _get_env_key(name, *, required=False):
             "Features that depend on it will fail at runtime. "
             "Set it in your shell (e.g. 'export %s=...') and restart "
             "the Celery worker, or add it to ~/.bashrc for persistence.",
-            name, name,
+            name,
+            name,
         )
     return value
 
 
-
 @shared_task(bind=False)
 def devices_nearby(lat, lon, id, query):
-    SHODAN_API_KEY = _get_env_key('SHODAN_API_KEY', required=True)
+    SHODAN_API_KEY = _get_env_key("SHODAN_API_KEY", required=True)
 
     device = Device.objects.get(id=id)
 
@@ -515,28 +518,48 @@ def devices_nearby(lat, lon, id, query):
             logger.warning("devices_nearby: Shodan search failed (attempt 2): %s", e)
 
     try:  # Show the results
-        total = len(results['matches'])
-        for counter, result in enumerate(results['matches']):
-            if 'product' in result:
-                product = result['product']
+        total = len(results["matches"])
+        for counter, result in enumerate(results["matches"]):
+            if "product" in result:
+                product = result["product"]
             else:
                 product = ""
-            current_task.update_state(state='PROGRESS',
-                                      meta={'current': counter, 'total': total,
-                                            'percent': int((float(counter) / total) * 100)})
-            device1 = DeviceNearby(device=device, ip=result['ip_str'], product=product, org=result['org'],
-                                   port=str(result['port']), lat=str(result['location']['latitude']),
-                                   lon=str(result['location']['longitude']))
+            current_task.update_state(
+                state="PROGRESS",
+                meta={
+                    "current": counter,
+                    "total": total,
+                    "percent": int((float(counter) / total) * 100),
+                },
+            )
+            device1 = DeviceNearby(
+                device=device,
+                ip=result["ip_str"],
+                product=product,
+                org=result["org"],
+                port=str(result["port"]),
+                lat=str(result["location"]["latitude"]),
+                lon=str(result["location"]["longitude"]),
+            )
             device1.save()
 
-        return {'current': total, 'total': total, 'percent': 100}
+        return {"current": total, "total": total, "percent": 100}
     except Exception as e:
         logger.warning("%s", e)
 
 
 @shared_task(bind=True)
-def shodan_search(self, fk, country=None, coordinates=None, ics=None, healthcare=None, coordinates_search=None,
-                  all_results=False, infra=None):
+def shodan_search(
+    self,
+    fk,
+    country=None,
+    coordinates=None,
+    ics=None,
+    healthcare=None,
+    coordinates_search=None,
+    all_results=False,
+    infra=None,
+):
     progress_recorder = ProgressRecorder(self)
     result = 0
     if country:
@@ -547,9 +570,14 @@ def shodan_search(self, fk, country=None, coordinates=None, ics=None, healthcare
                     print(i)
                     try:
                         result += c
-                        shodan_search_worker(country=country, fk=fk, query=healthcare_queries[i], search_type=i,
-                                             category="healthcare",
-                                             all_results=all_results)
+                        shodan_search_worker(
+                            country=country,
+                            fk=fk,
+                            query=healthcare_queries[i],
+                            search_type=i,
+                            category="healthcare",
+                            all_results=all_results,
+                        )
                         progress_recorder.set_progress(c + 1, total=total)
                     except Exception:
                         pass
@@ -558,9 +586,14 @@ def shodan_search(self, fk, country=None, coordinates=None, ics=None, healthcare
                 if i in ics_queries:
                     try:
                         result += c
-                        shodan_search_worker(country=country, fk=fk, query=ics_queries[i], search_type=i,
-                                             category="ics",
-                                             all_results=all_results)
+                        shodan_search_worker(
+                            country=country,
+                            fk=fk,
+                            query=ics_queries[i],
+                            search_type=i,
+                            category="ics",
+                            all_results=all_results,
+                        )
                         progress_recorder.set_progress(c + 1, total=total)
                     except Exception:
                         pass
@@ -568,9 +601,14 @@ def shodan_search(self, fk, country=None, coordinates=None, ics=None, healthcare
                 if i in attackers_infra_queries:
                     try:
                         result += c
-                        shodan_search_worker(country=country, fk=fk, query=attackers_infra_queries[i], search_type=i,
-                                             category="infra",
-                                             all_results=all_results)
+                        shodan_search_worker(
+                            country=country,
+                            fk=fk,
+                            query=attackers_infra_queries[i],
+                            search_type=i,
+                            category="infra",
+                            all_results=all_results,
+                        )
                         progress_recorder.set_progress(c + 1, total=total)
                     except Exception as e:
                         logger.warning("%s", e)
@@ -582,8 +620,14 @@ def shodan_search(self, fk, country=None, coordinates=None, ics=None, healthcare
             if i in coordinates_queries:
                 try:
                     result += c
-                    shodan_search_worker(fk=fk, query=coordinates_queries[i], search_type=i, category="coordinates",
-                                         coordinates=coordinates, all_results=all_results)
+                    shodan_search_worker(
+                        fk=fk,
+                        query=coordinates_queries[i],
+                        search_type=i,
+                        category="coordinates",
+                        coordinates=coordinates,
+                        all_results=all_results,
+                    )
                     progress_recorder.set_progress(c + 1, total=total)
                 except Exception:
                     pass
@@ -593,7 +637,7 @@ def shodan_search(self, fk, country=None, coordinates=None, ics=None, healthcare
 def check_credits():
     keys_list = []
     try:
-        SHODAN_API_KEY = _get_env_key('SHODAN_API_KEY', required=True)
+        SHODAN_API_KEY = _get_env_key("SHODAN_API_KEY", required=True)
         if not SHODAN_API_KEY:
             logger.warning(
                 "check_credits: SHODAN_API_KEY is empty — cannot check credits. "
@@ -603,7 +647,7 @@ def check_credits():
 
         api = Shodan(SHODAN_API_KEY)
         a = api.info()
-        keys_list.append(a['query_credits'])
+        keys_list.append(a["query_credits"])
     except Exception as e:
         logger.warning("check_credits: Shodan API call failed: %s", e)
 
@@ -620,15 +664,18 @@ def _shodan_download_path(search_id):
     The directory is created on first use so callers do not need to check.
     """
     from django.conf import settings
-    downloads_dir = os.path.join(settings.BASE_DIR, 'shodan_downloads')
+
+    downloads_dir = os.path.join(settings.BASE_DIR, "shodan_downloads")
     os.makedirs(downloads_dir, exist_ok=True)
-    return os.path.join(downloads_dir, '{}.json.gz'.format(search_id))
+    return os.path.join(downloads_dir, "{}.json.gz".format(search_id))
 
 
-def shodan_search_worker(fk, query, search_type, category, country=None, coordinates=None, all_results=False):
+def shodan_search_worker(
+    fk, query, search_type, category, country=None, coordinates=None, all_results=False
+):
     results = True
     page = 1
-    SHODAN_API_KEY = _get_env_key('SHODAN_API_KEY', required=True)
+    SHODAN_API_KEY = _get_env_key("SHODAN_API_KEY", required=True)
     screenshot = ""
     print(query)
 
@@ -662,8 +709,8 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
             shodan_helpers.write_banner(fout, result)
 
             # ── Parse into Device record (existing app logic) ──────────
-            lat = str(result['location']['latitude'])
-            lon = str(result['location']['longitude'])
+            lat = str(result["location"]["latitude"])
+            lon = str(result["location"]["longitude"])
             city = ""
             indicator = []
 
@@ -671,40 +718,40 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
             # http.server (e.g. "GoAhead-Webs", "Apache", "nginx") so that
             # banners without an explicit product still get a meaningful name.
             try:
-                product = result['product']
+                product = result["product"]
             except Exception:
-                product = result.get('http', {}).get('server', '') or ""
+                product = result.get("http", {}).get("server", "") or ""
 
-            if 'vulns' in result:
-                vulns = [*result['vulns']]
+            if "vulns" in result:
+                vulns = [*result["vulns"]]
             else:
                 vulns = ""
 
             # isp: often differs from org (e.g. org="Aliyun" isp="Alibaba Ad Co")
-            isp = result.get('isp', '') or ""
+            isp = result.get("isp", "") or ""
 
             # cpe: first CPE 2.3 string from the cpe23 list, e.g.
             # "cpe:2.3:a:embedthis:goahead" — useful for CVE correlation.
-            cpe_list = result.get('cpe23') or result.get('cpe') or []
+            cpe_list = result.get("cpe23") or result.get("cpe") or []
             cpe = cpe_list[0] if cpe_list else ""
 
-            if result['location']['city'] is not None:
-                city = result['location']['city']
+            if result["location"]["city"] is not None:
+                city = result["location"]["city"]
 
             hostnames = ""
             try:
-                if 'hostnames' in result:
-                    hostnames = result['hostnames'][0]
+                if "hostnames" in result:
+                    hostnames = result["hostnames"][0]
             except Exception:
                 pass
 
             try:
-                if 'SAILOR' in result['http']['title']:
-                    html = result['http']['html']
+                if "SAILOR" in result["http"]["title"]:
+                    html = result["http"]["html"]
                     soup = BeautifulSoup(html)
                     for gps in soup.find_all("span", {"id": "gnss_position"}):
                         _coord = gps.contents[0]
-                        space = _coord.split(' ')
+                        space = _coord.split(" ")
                         if "W" in space:
                             lon = "-" + space[2][:-1]
                         else:
@@ -713,26 +760,31 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
             except Exception:
                 pass
 
-            if 'opts' in result:
+            if "opts" in result:
                 try:
-                    screenshot = result['opts']['screenshot']['data']
-                    with open("app_kamerka/static/images/screens/" + result['ip_str'] + ".jpg", "wb") as fh:
+                    screenshot = result["opts"]["screenshot"]["data"]
+                    with open(
+                        "app_kamerka/static/images/screens/"
+                        + result["ip_str"]
+                        + ".jpg",
+                        "wb",
+                    ) as fh:
                         fh.write(base64.b64decode(screenshot))
-                    for i in result['opts']['screenshot']['labels']:
+                    for i in result["opts"]["screenshot"]["labels"]:
                         indicator.append(i)
                 except Exception:
                     pass
 
             if query == "Niagara Web Server":
                 try:
-                    soup = BeautifulSoup(result['http']['html'], features="html.parser")
+                    soup = BeautifulSoup(result["http"]["html"], features="html.parser")
                     nws = soup.find("div", {"class": "top"})
                     indicator.append(nws.contents[0])
                 except Exception:
                     pass
 
             if "SOURCETABLE" in query:
-                data = result['data'].split(";")
+                data = result["data"].split(";")
                 try:
                     if re.match(r"^((\-?|\+?)?\d+(\.\d+)?)$", data[9]):
                         indicator.append(data[9] + "," + data[10])
@@ -742,9 +794,9 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                     pass
 
             # get indicator from niagara fox
-            if result['port'] == 1911 or result['port'] == 4911:
+            if result["port"] == 1911 or result["port"] == 4911:
                 try:
-                    fox_data_splitted = result['data'].split("\n")
+                    fox_data_splitted = result["data"].split("\n")
                     for i in fox_data_splitted:
                         if "station.name" in i:
                             splitted = i.split(":")
@@ -753,31 +805,31 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                     pass
 
             # get indicator from tank
-            if result['port'] == 10001 and "Siemens" not in query:
+            if result["port"] == 10001 and "Siemens" not in query:
                 try:
-                    tank_info = result['data'].split("\r\n\r\n")
+                    tank_info = result["data"].split("\r\n\r\n")
                     indicator.append(tank_info[1])
                 except Exception:
                     pass
 
-            if result['port'] == 2000:
+            if result["port"] == 2000:
                 try:
-                    ta_data = result['data'].split("\\n")
+                    ta_data = result["data"].split("\\n")
                     indicator.append(ta_data[1][:-3])
                 except Exception:
                     pass
 
-            if result['port'] == 502:
+            if result["port"] == 502:
                 try:
-                    sch_el = result['data'].split('\n')
+                    sch_el = result["data"].split("\n")
                     if sch_el[4].startswith("-- Project"):
                         indicator.append(sch_el[4].split(": ")[1])
                 except Exception:
                     pass
 
-            if "GPGGA" in result['data']:
+            if "GPGGA" in result["data"]:
                 try:
-                    splitted_data = result['data'].split('\n')
+                    splitted_data = result["data"].split("\n")
                     for i in splitted_data:
                         if "GPGGA" in i:
                             msg = pynmea2.parse(i)
@@ -787,9 +839,9 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                 except Exception:
                     pass
 
-            if result['port'] == 102:
+            if result["port"] == 102:
                 try:
-                    s7_data = result['data'].split("\n")
+                    s7_data = result["data"].split("\n")
                     for i in s7_data:
                         if i.startswith("Plant"):
                             indicator.append(i.split(":")[1])
@@ -801,9 +853,9 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                     pass
 
             # get indicator from bacnet
-            if result['port'] == 47808:
+            if result["port"] == 47808:
                 try:
-                    bacnet_data_splitted = result['data'].split("\n")
+                    bacnet_data_splitted = result["data"].split("\n")
                     for i in bacnet_data_splitted:
                         if "Description" in i:
                             splitted1 = i.split(":")
@@ -817,17 +869,36 @@ def shodan_search_worker(fk, query, search_type, category, country=None, coordin
                 except Exception:
                     pass
 
-            device = Device(search=search, ip=result['ip_str'], product=product, org=result['org'],
-                            data=result['data'], port=str(result['port']), type=search_type, city=city,
-                            lat=lat, lon=lon,
-                            country_code=result['location']['country_code'], query=search_type, category=category,
-                            vulns=vulns, indicator=indicator, hostnames=hostnames, screenshot=screenshot,
-                            isp=isp, cpe=cpe)
+            device = Device(
+                search=search,
+                ip=result["ip_str"],
+                product=product,
+                org=result["org"],
+                data=result["data"],
+                port=str(result["port"]),
+                type=search_type,
+                city=city,
+                lat=lat,
+                lon=lon,
+                country_code=result["location"]["country_code"],
+                query=search_type,
+                category=category,
+                vulns=vulns,
+                indicator=indicator,
+                hostnames=hostnames,
+                screenshot=screenshot,
+                isp=isp,
+                cpe=cpe,
+            )
             device.save()
 
         fout.close()
     except Exception as exc:
-        logger.warning("shodan_search_worker: error during search/download for '%s': %s", query_string, exc)
+        logger.warning(
+            "shodan_search_worker: error during search/download for '%s': %s",
+            query_string,
+            exc,
+        )
 
 
 def nmap_host_worker(host_arg, max_reader, search):
@@ -838,28 +909,43 @@ def nmap_host_worker(host_arg, max_reader, search):
     if a is None:
         logger.warning("MaxMind lookup returned no result for IP: %s", host_arg.address)
         a = {}
-    location = a.get('location') or {}
-    lat = location.get('latitude')
-    lon = location.get('longitude')
+    location = a.get("location") or {}
+    lat = location.get("latitude")
+    lon = location.get("longitude")
     if lat is None or lon is None:
-        logger.warning("Missing latitude/longitude in MaxMind data for IP: %s", host_arg.address)
-    country = a.get('country') or {}
-    country_code = country.get('iso_code', '')
+        logger.warning(
+            "Missing latitude/longitude in MaxMind data for IP: %s", host_arg.address
+        )
+    country = a.get("country") or {}
+    country_code = country.get("iso_code", "")
     logger.debug("lat=%s lon=%s", lat, lon)
     for ports in host_arg.services:
-        if ports.state == 'open':
+        if ports.state == "open":
             ports_list.append(ports.port)
         else:
             ports_list.append("None")
 
-    ports_string = ', '.join(str(e) for e in ports_list)
+    ports_string = ", ".join(str(e) for e in ports_list)
     logger.debug("ports_string length=%d", len(ports_string))
-    device = Device(search=search, ip=host_arg.address, product="", org="",
-                    data="", port=ports_string, type="NMAP", city="NMAP",
-                    lat=lat if lat is not None else "",
-                    lon=lon if lon is not None else "",
-                    country_code=country_code, query="NMAP SCAN", category="NMAP",
-                    vulns="", indicator="", hostnames=hostname, screenshot="")
+    device = Device(
+        search=search,
+        ip=host_arg.address,
+        product="",
+        org="",
+        data="",
+        port=ports_string,
+        type="NMAP",
+        city="NMAP",
+        lat=lat if lat is not None else "",
+        lon=lon if lon is not None else "",
+        country_code=country_code,
+        query="NMAP SCAN",
+        category="NMAP",
+        vulns="",
+        indicator="",
+        hostnames=hostname,
+        screenshot="",
+    )
     device.save()
 
 
@@ -869,7 +955,7 @@ def validate_nmap(file):
 
 def validate_maxmind():
     try:
-        maxminddb.open_database('GeoLite2-City.mmdb')
+        maxminddb.open_database("GeoLite2-City.mmdb")
     except FileNotFoundError:
         raise FileNotFoundError(
             "GeoLite2-City.mmdb not found in the project root. "
@@ -885,7 +971,7 @@ def nmap_scan(self, file, fk):
     result = 0
     print(file)
     search = Search.objects.get(id=fk)
-    max_reader = maxminddb.open_database('GeoLite2-City.mmdb')
+    max_reader = maxminddb.open_database("GeoLite2-City.mmdb")
     nmap_report = NmapParser.parse_fromfile(file)
     total = len(nmap_report.hosts)
     for c, i in enumerate(nmap_report.hosts):
@@ -894,7 +980,7 @@ def nmap_scan(self, file, fk):
         progress_recorder.set_progress(c + 1, total=total)
 
     # Chain Shodan enrichment for each device discovered by the NMAP scan
-    if _get_env_key('SHODAN_API_KEY'):
+    if _get_env_key("SHODAN_API_KEY"):
         for device in Device.objects.filter(search=search):
             shodan_scan_task.delay(device.id)
 
@@ -909,6 +995,7 @@ def _validate_target(ip, port):
     call ``_resolve_open_ports()`` first.
     """
     import ipaddress
+
     try:
         ipaddress.ip_address(ip)
     except ValueError:
@@ -984,13 +1071,16 @@ def _rate_limit_check(ip, window_seconds=60, max_scans=10):
           should be rejected.
     """
     from django.core.cache import cache
+
     cache_key = "ratelimit:scan:{}".format(ip)
     try:
         count = cache.get(cache_key, 0)
         if count >= max_scans:
             logger.warning(
                 "_rate_limit_check: IP %s has exceeded %d scans in %ds — scan rejected",
-                ip, max_scans, window_seconds,
+                ip,
+                max_scans,
+                window_seconds,
             )
             return False
         # Increment; set TTL only on first write so the window resets naturally.
@@ -1002,7 +1092,8 @@ def _rate_limit_check(ip, window_seconds=60, max_scans=10):
     except Exception as exc:
         logger.warning(
             "_rate_limit_check: cache unavailable (%s) — allowing scan for %s",
-            exc, ip,
+            exc,
+            ip,
         )
         return True  # fail open to avoid blocking legitimate scans
 
@@ -1032,7 +1123,7 @@ def _resolve_open_ports(device):
     existing = str(device.port).strip() if device.port else ""
     if existing:
         ports = []
-        for part in re.split(r'[,\s]+', existing):
+        for part in re.split(r"[,\s]+", existing):
             part = part.strip()
             if part.isdigit():
                 p = int(part)
@@ -1052,26 +1143,29 @@ def _resolve_open_ports(device):
         )
         return []
 
-    discovery_ports = getattr(_s, 'NAABU_DISCOVERY_PORTS', '1-65535')
-    discovery_timeout = getattr(_s, 'NAABU_DISCOVERY_TIMEOUT', 120)
+    discovery_ports = getattr(_s, "NAABU_DISCOVERY_PORTS", "1-65535")
+    discovery_timeout = getattr(_s, "NAABU_DISCOVERY_TIMEOUT", 120)
     logger.info(
         "_resolve_open_ports: running Naabu discovery against %s (ports: %s)",
-        device.ip, discovery_ports,
+        device.ip,
+        discovery_ports,
     )
     results = run_naabu(device.ip, ports=discovery_ports, timeout=discovery_timeout)
     if results:
-        open_ports = sorted(set(r['port'] for r in results if r.get('port')))
-        device.port = ', '.join(str(p) for p in open_ports)
-        device.save(update_fields=['port'])
+        open_ports = sorted(set(r["port"] for r in results if r.get("port")))
+        device.port = ", ".join(str(p) for p in open_ports)
+        device.save(update_fields=["port"])
         logger.info(
             "_resolve_open_ports: discovered ports %s on %s",
-            device.port, device.ip,
+            device.port,
+            device.ip,
         )
         return open_ports
 
     logger.warning(
         "_resolve_open_ports: no open ports found on %s "
-        "(host may be unreachable or all ports filtered)", device.ip
+        "(host may be unreachable or all ports filtered)",
+        device.ip,
     )
     return []
 
@@ -1147,19 +1241,29 @@ def wappalyzer_scan(id, discovered_ports=None):
     device = Device.objects.get(id=id)
 
     try:
-        ipaddress_mod = __import__('ipaddress')
+        ipaddress_mod = __import__("ipaddress")
         ipaddress_mod.ip_address(device.ip)  # basic SSRF guard
     except ValueError:
         return {"error": "Invalid IP address: {}".format(device.ip)}
 
     # Rate limiting — abort if this IP is being scanned too aggressively.
     if not _rate_limit_check(device.ip):
-        return {"error": "Rate limit exceeded for {} — try again in 60 seconds".format(device.ip)}
+        return {
+            "error": "Rate limit exceeded for {} — try again in 60 seconds".format(
+                device.ip
+            )
+        }
 
-    ports = discovered_ports if discovered_ports is not None else _resolve_open_ports(device)
+    ports = (
+        discovered_ports
+        if discovered_ports is not None
+        else _resolve_open_ports(device)
+    )
     if not ports:
-        return {"error": "No open ports discovered on {} — Naabu may not be installed "
-                "(see KAMERKA_NAABU_BIN) or the host is unreachable".format(device.ip)}
+        return {
+            "error": "No open ports discovered on {} — Naabu may not be installed "
+            "(see KAMERKA_NAABU_BIN) or the host is unreachable".format(device.ip)
+        }
 
     all_technologies = {}
     wapp_bin = settings.WAPPALYZER_BIN
@@ -1170,14 +1274,18 @@ def wappalyzer_scan(id, discovered_ports=None):
         def _try_wappalyzer(target_url, _bin=wapp_bin):
             return subprocess.run(
                 [_bin, target_url, "-oJ"],
-                capture_output=True, text=True, timeout=60,
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
 
         try:
             result = _try_wappalyzer(url)
             # Two-pass: if we used http:// and got an SSL error, retry with https://
-            if not is_known_tls and result.returncode != 0 and (
-                "ssl" in result.stderr.lower() or "tls" in result.stderr.lower()
+            if (
+                not is_known_tls
+                and result.returncode != 0
+                and ("ssl" in result.stderr.lower() or "tls" in result.stderr.lower())
             ):
                 https_url = url.replace("http://", "https://", 1)
                 logger.info("wappalyzer_scan: retrying %s with HTTPS", url)
@@ -1196,15 +1304,23 @@ def wappalyzer_scan(id, discovered_ports=None):
         except subprocess.TimeoutExpired:
             logger.warning("wappalyzer_scan: timed out on %s:%s", device.ip, port)
         except json.JSONDecodeError:
-            logger.warning("wappalyzer_scan: JSON parse error on %s:%s", device.ip, port)
+            logger.warning(
+                "wappalyzer_scan: JSON parse error on %s:%s", device.ip, port
+            )
         except Exception as exc:
             logger.warning("wappalyzer_scan: error on %s:%s — %s", device.ip, port, exc)
 
-    return all_technologies if all_technologies else {"error": "No output from Wappalyzer on any port"}
+    return (
+        all_technologies
+        if all_technologies
+        else {"error": "No output from Wappalyzer on any port"}
+    )
 
 
 @shared_task(bind=False)
-def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150, discovered_ports=None):
+def nuclei_scan(
+    id, templates_dir=None, severity=None, rate_limit=150, discovered_ports=None
+):
     """Run Nuclei against all open ports of a device.
 
     Chaining
@@ -1244,8 +1360,11 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150, discovere
     if severity is not None:
         severity = str(severity).strip().lower()
         if severity not in _VALID_SEVERITIES:
-            return {"error": "Invalid severity '{}'. Must be one of: {}".format(
-                severity, ", ".join(sorted(_VALID_SEVERITIES)))}
+            return {
+                "error": "Invalid severity '{}'. Must be one of: {}".format(
+                    severity, ", ".join(sorted(_VALID_SEVERITIES))
+                )
+            }
 
     try:
         rate_limit = int(rate_limit)
@@ -1256,25 +1375,36 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150, discovere
     # ────────────────────────────────────────────────────────────────────────
 
     from django.conf import settings as django_settings
+
     nuclei_bin = getattr(django_settings, "NUCLEI_BIN", "nuclei")
     nuclei_timeout = getattr(django_settings, "NUCLEI_DEFAULT_TIMEOUT", 300)
 
     device = Device.objects.get(id=id)
 
     try:
-        ipaddress_mod = __import__('ipaddress')
+        ipaddress_mod = __import__("ipaddress")
         ipaddress_mod.ip_address(device.ip)
     except ValueError:
         return {"error": "Invalid IP address: {}".format(device.ip)}
 
     # Rate limiting.
     if not _rate_limit_check(device.ip):
-        return {"error": "Rate limit exceeded for {} — try again in 60 seconds".format(device.ip)}
+        return {
+            "error": "Rate limit exceeded for {} — try again in 60 seconds".format(
+                device.ip
+            )
+        }
 
-    ports = discovered_ports if discovered_ports is not None else _resolve_open_ports(device)
+    ports = (
+        discovered_ports
+        if discovered_ports is not None
+        else _resolve_open_ports(device)
+    )
     if not ports:
-        return {"error": "No open ports discovered on {} — Naabu may not be installed "
-                "(see KAMERKA_NAABU_BIN) or the host is unreachable".format(device.ip)}
+        return {
+            "error": "No open ports discovered on {} — Naabu may not be installed "
+            "(see KAMERKA_NAABU_BIN) or the host is unreachable".format(device.ip)
+        }
 
     # Build target URLs — both http:// and https:// variants for non-TLS ports
     # so Nuclei can probe both.  Well-known TLS ports get https:// directly.
@@ -1286,10 +1416,10 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150, discovere
 
     targets_file = None
     try:
-        fd, targets_file = _tmp.mkstemp(suffix='.txt', text=True)
+        fd, targets_file = _tmp.mkstemp(suffix=".txt", text=True)
         try:
-            with os.fdopen(fd, 'w') as tf:
-                tf.write('\n'.join(target_urls) + '\n')
+            with os.fdopen(fd, "w") as tf:
+                tf.write("\n".join(target_urls) + "\n")
         except Exception:
             os.close(fd)
             raise
@@ -1324,10 +1454,16 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150, discovere
                 try:
                     proc.wait(timeout=timeout)
                 except subprocess.TimeoutExpired:
-                    logger.warning("nuclei_scan: timeout after %ds for %s — killing", timeout, device.ip)
+                    logger.warning(
+                        "nuclei_scan: timeout after %ds for %s — killing",
+                        timeout,
+                        device.ip,
+                    )
                     proc.kill()
 
-            timer = _threading.Thread(target=_kill_after, args=(proc, nuclei_timeout), daemon=True)
+            timer = _threading.Thread(
+                target=_kill_after, args=(proc, nuclei_timeout), daemon=True
+            )
             timer.start()
 
             for line in proc.stdout:
@@ -1369,7 +1505,11 @@ def nuclei_scan(id, templates_dir=None, severity=None, rate_limit=150, discovere
 
 def paste_login(username, password, key):
     login_url = "https://pastebin.com/api/api_login.php"
-    login_payload = {"api_dev_key": key, "api_user_name": username, "api_user_password": password}
+    login_payload = {
+        "api_dev_key": key,
+        "api_user_name": username,
+        "api_user_password": password,
+    }
 
     login = requests.post(login_url, data=login_payload)
     user_key = login.text
@@ -1380,12 +1520,10 @@ def retrieve_pastes(key, user_key):
     url = "http://pastebin.com/api/api_post.php"
     paste_dict = {}
 
-    values_list = {'api_option': 'list',
-                   'api_dev_key': key,
-                   'api_user_key': user_key}
+    values_list = {"api_option": "list", "api_dev_key": key, "api_user_key": user_key}
 
     data = urllib.parse.urlencode(values_list)
-    data = data.encode('utf-8')  # data should be bytes
+    data = data.encode("utf-8")  # data should be bytes
     req = urllib.request.Request(url, data)
     with urllib.request.urlopen(req) as response:
         the_page = response.read()
@@ -1409,13 +1547,15 @@ def retrieve_pastes(key, user_key):
 def delete_paste(key, user_key, paste_code):
     url = "http://pastebin.com/api/api_post.php"
 
-    values_list = {'api_option': 'delete',
-                   'api_dev_key': key,
-                   'api_user_key': user_key,
-                   "api_paste_key": paste_code}
+    values_list = {
+        "api_option": "delete",
+        "api_dev_key": key,
+        "api_user_key": user_key,
+        "api_paste_key": paste_code,
+    }
 
     data = urllib.parse.urlencode(values_list)
-    data = data.encode('utf-8')  # data should be bytes
+    data = data.encode("utf-8")  # data should be bytes
     req = urllib.request.Request(url, data)
     urllib.request.urlopen(req)
 
@@ -1423,15 +1563,17 @@ def delete_paste(key, user_key, paste_code):
 def create_paste(key, user_key, filename, text):
     url = "http://pastebin.com/api/api_post.php"
 
-    values = {'api_option': 'paste',
-              'api_dev_key': key,
-              'api_paste_code': text,
-              'api_paste_private': '2',
-              'api_paste_name': filename,
-              'api_user_key': user_key}
+    values = {
+        "api_option": "paste",
+        "api_dev_key": key,
+        "api_paste_code": text,
+        "api_paste_private": "2",
+        "api_paste_name": filename,
+        "api_user_key": user_key,
+    }
 
     data = urllib.parse.urlencode(values)
-    data = data.encode('utf-8')  # data should be bytes
+    data = data.encode("utf-8")  # data should be bytes
     req = urllib.request.Request(url, data)
     with urllib.request.urlopen(req) as response:
         the_page = response.read()
@@ -1452,12 +1594,18 @@ def send_to_field_agent_task(id, notes):
         if af.indicator:
             indicator = af.indicator[2:][:-2]
     except Exception:
-        logger.warning("send_to_field_agent_task: ShodanScan record not found for device %s — skipping enrichment", id)
+        logger.warning(
+            "send_to_field_agent_task: ShodanScan record not found for device %s — skipping enrichment",
+            id,
+        )
 
-    user_key = paste_login(_get_env_key('PASTEBIN_USER'), _get_env_key('PASTEBIN_PASSWORD'),
-                           _get_env_key('PASTEBIN_DEV_KEY'))
+    user_key = paste_login(
+        _get_env_key("PASTEBIN_USER"),
+        _get_env_key("PASTEBIN_PASSWORD"),
+        _get_env_key("PASTEBIN_DEV_KEY"),
+    )
 
-    pastes = retrieve_pastes(_get_env_key('PASTEBIN_DEV_KEY'), user_key=user_key)
+    pastes = retrieve_pastes(_get_env_key("PASTEBIN_DEV_KEY"), user_key=user_key)
 
     ip = af.ip
     lat = af.lat
@@ -1467,20 +1615,46 @@ def send_to_field_agent_task(id, notes):
 
     notes = af.notes
 
-    merge_string = "ꓘ;" + lat + ";" + lon + ";" + ip + ";" + ports + ";" + org + ";" + type + ";" + cve + ";" + indicator + ";" + notes
+    merge_string = (
+        "ꓘ;"
+        + lat
+        + ";"
+        + lon
+        + ";"
+        + ip
+        + ";"
+        + ports
+        + ";"
+        + org
+        + ";"
+        + type
+        + ";"
+        + cve
+        + ";"
+        + indicator
+        + ";"
+        + notes
+    )
 
     print("\\xea\\x93\\x98amerka_" + af.ip)
     if "\\xea\\x93\\x98amerka_" + af.ip in pastes.keys():
-        delete_paste(_get_env_key('PASTEBIN_DEV_KEY'), user_key, pastes["\\xea\\x93\\x98amerka_" + af.ip])
-        create_paste(_get_env_key('PASTEBIN_DEV_KEY'), user_key, "ꓘamerka_" + af.ip, merge_string)
+        delete_paste(
+            _get_env_key("PASTEBIN_DEV_KEY"),
+            user_key,
+            pastes["\\xea\\x93\\x98amerka_" + af.ip],
+        )
+        create_paste(
+            _get_env_key("PASTEBIN_DEV_KEY"), user_key, "ꓘamerka_" + af.ip, merge_string
+        )
     else:
-        create_paste(_get_env_key('PASTEBIN_DEV_KEY'), user_key, "ꓘamerka_" + af.ip, merge_string)
-
+        create_paste(
+            _get_env_key("PASTEBIN_DEV_KEY"), user_key, "ꓘamerka_" + af.ip, merge_string
+        )
 
 
 @shared_task(bind=False)
 def shodan_scan_task(id):
-    SHODAN_API_KEY = _get_env_key('SHODAN_API_KEY', required=True)
+    SHODAN_API_KEY = _get_env_key("SHODAN_API_KEY", required=True)
     device = Device.objects.get(id=id)
     api = Shodan(SHODAN_API_KEY)
     product = []
@@ -1490,46 +1664,217 @@ def shodan_scan_task(id):
         # Search Shodan
         results = api.host(device.ip)
         # Show the results
-        total = len(results['ports'])
+        total = len(results["ports"])
         print(total)
-        for counter, i in enumerate(results['data']):
+        for counter, i in enumerate(results["data"]):
 
-            if 'product' in i:
-                product.append(i['product'])
+            if "product" in i:
+                product.append(i["product"])
 
-            if 'tags' in i:
-                for j in i['tags']:
+            if "tags" in i:
+                for j in i["tags"]:
                     tags.append(j)
 
-            current_task.update_state(state='PROGRESS',
-                                      meta={'current': counter, 'total': total,
+            current_task.update_state(
+                state="PROGRESS",
+                meta={
+                    "current": counter,
+                    "total": total,
+                    "percent": int((float(counter) / total) * 100),
+                },
+            )
+        if "vulns" in results:
+            vulns = results["vulns"]
 
-                                            'percent': int((float(counter) / total) * 100)})
-        if 'vulns' in results:
-            vulns = results['vulns']
-
-        ports = results['ports']
-        device1 = ShodanScan(device=device, products=product,
-                             ports=ports, tags=tags, vulns=vulns)
+        ports = results["ports"]
+        device1 = ShodanScan(
+            device=device, products=product, ports=ports, tags=tags, vulns=vulns
+        )
         device1.save()
-        print(results['ports'])
+        print(results["ports"])
 
-        return {'current': total, 'total': total, 'percent': 100}
+        return {"current": total, "total": total, "percent": 100}
 
     except Exception as e:
         print(e.args)
 
 
-ics_scan = {"dnp3": "--script=nmap_scripts/dnp3-info.nse", "niagara": "--script=nmap_scripts/fox-info.nse",
-            "siemens": "--script=nmap_scripts/s7-info.nse", "proconos": "--script=nmap_scripts/proconos-info.nse",
-            "pcworx": "--script=nmap_scripts/pcworx-info.nse", "omron": "--script=nmap_scripts/omron-info.nse",
-            "modbus": "--script=nmap_scripts/modbus-discover.nse", "ethernetip": "--script=nmap_scripts/enip-info.nse",
-            "codesys": "--script=nmap_scripts/codesys.nse", "ab_ethernet": "--script=nmap_scripts/cspv4-info.nse",
-            "tank": "--script=nmap_scripts/atg-info.nse", "modicon": "--script=nmap_scripts/modicon-info.nse"}
+ics_scan = {
+    "dnp3": "--script=nmap_scripts/dnp3-info.nse",
+    "niagara": "--script=nmap_scripts/fox-info.nse",
+    "siemens": "--script=nmap_scripts/s7-info.nse",
+    "proconos": "--script=nmap_scripts/proconos-info.nse",
+    "pcworx": "--script=nmap_scripts/pcworx-info.nse",
+    "omron": "--script=nmap_scripts/omron-info.nse",
+    "modbus": "--script=nmap_scripts/modbus-discover.nse",
+    "ethernetip": "--script=nmap_scripts/enip-info.nse",
+    "codesys": "--script=nmap_scripts/codesys.nse",
+    "ab_ethernet": "--script=nmap_scripts/cspv4-info.nse",
+    "tank": "--script=nmap_scripts/atg-info.nse",
+    "modicon": "--script=nmap_scripts/modicon-info.nse",
+}
+
+
+# Map of all available NSE scripts for the dropdown UI.  Keys are
+# human-readable labels; values are file paths relative to project root.
+NSE_SCRIPT_CATALOG = {
+    "DNP3 Info": "nmap_scripts/dnp3-info.nse",
+    "Fox / Niagara Info": "nmap_scripts/fox-info.nse",
+    "S7 Info (Siemens)": "nmap_scripts/s7-info.nse",
+    "S7 Enumerate (Siemens)": "nmap_scripts/s7-enumerate.nse",
+    "ProConOS Info": "nmap_scripts/proconos-info.nse",
+    "PC Worx Info": "nmap_scripts/pcworx-info.nse",
+    "Omron Info": "nmap_scripts/omron-info.nse",
+    "Modbus Discover": "nmap_scripts/modbus-discover.nse",
+    "EtherNet/IP (ENIP) Info": "nmap_scripts/enip-info.nse",
+    "CODESYS": "nmap_scripts/codesys.nse",
+    "CIPv4 (CSPv4) Info": "nmap_scripts/cspv4-info.nse",
+    "ATG Info (Tank Gauge)": "nmap_scripts/atg-info.nse",
+    "Modicon Info": "nmap_scripts/modicon-info.nse",
+    "BACnet Info": "nmap_scripts/bacnet-info.nse",
+}
+
+
+@shared_task(bind=True)
+def nmap_device_scan(self, device_id, nse_script=None):
+    """Run an Nmap scan against a device with optional NSE script.
+
+    When *nse_script* is provided it must be a path relative to the project
+    root (e.g. ``nmap_scripts/s7-info.nse``).  The path is validated to
+    prevent directory-traversal attacks.
+
+    Results are stored on ``device.scan`` and returned as a dict.
+    """
+    progress_recorder = ProgressRecorder(self)
+    progress_recorder.set_progress(0, 4, description="Resolving device…")
+
+    device = Device.objects.get(id=device_id)
+    ip = device.ip
+    port = device.port or ""
+
+    import ipaddress as _ipa
+
+    try:
+        _ipa.ip_address(ip)
+    except ValueError:
+        return {"Error": "Invalid IP address: {}".format(ip)}
+
+    # Determine scan port spec — fall back to common ICS/IoT ports.
+    if port and str(port).strip():
+        port_spec = str(port).strip().split(",")[0].strip()
+    else:
+        port_spec = "21,22,23,80,102,443,502,1911,4911,8080,9600,20000,44818,47808"
+
+    # Build Nmap options
+    if nse_script:
+        # Security: validate path stays within nmap_scripts/
+        safe_base = os.path.realpath(os.path.join(settings.BASE_DIR, "nmap_scripts"))
+        script_abs = os.path.realpath(os.path.join(settings.BASE_DIR, nse_script))
+        if not script_abs.startswith(safe_base + os.sep) and script_abs != safe_base:
+            return {"Error": "Invalid script path"}
+        if not os.path.isfile(script_abs):
+            return {"Error": "NSE script not found: {}".format(nse_script)}
+        options = "-p {} --script={}".format(port_spec, nse_script)
+    elif device.type in ics_scan:
+        options = "-p {} {}".format(port_spec, ics_scan[device.type])
+    else:
+        options = "-p {} -sV".format(port_spec)
+
+    progress_recorder.set_progress(
+        1, 4, description="Starting Nmap scan on {}…".format(ip)
+    )
+
+    return_dict = {}
+    try:
+        nm = NmapProcess(ip, options=options)
+        nm.run_background()
+
+        # Wait for the scan with a timeout
+        start_time = time.time()
+        max_runtime = getattr(settings, "NMAP_MAX_RUNTIME", 300)
+        while nm.is_running():
+            elapsed = time.time() - start_time
+            if elapsed > max_runtime:
+                try:
+                    nm.stop()
+                except Exception:
+                    pass
+                return {
+                    "Error": "Nmap scan timed out after {} seconds".format(max_runtime)
+                }
+            progress_recorder.set_progress(
+                2, 4, description="Scanning… {:.0f}s elapsed".format(elapsed)
+            )
+            sleep(2)
+
+        progress_recorder.set_progress(3, 4, description="Processing results…")
+
+        if not nm.stdout:
+            return_dict["Error"] = "No Nmap output — nmap may not be installed"
+            if nm.stderr:
+                return_dict["stderr"] = nm.stderr[:500]
+            device.scan = str(return_dict)
+            device.exploited_scanned = True
+            device.save()
+            return return_dict
+
+        u = xmltodict.parse(nm.stdout)
+
+        # Extract script output if present
+        try:
+            host = u.get("nmaprun", {}).get("host", {})
+            ports_data = host.get("ports", {}).get("port", {})
+
+            if isinstance(ports_data, list):
+                for p in ports_data:
+                    port_id = p.get("@portid", "")
+                    state = p.get("state", {}).get("@state", "")
+                    return_dict["port_{}".format(port_id)] = state
+                    scripts = p.get("script", {})
+                    if isinstance(scripts, dict):
+                        return_dict[scripts.get("@id", "script")] = scripts.get(
+                            "@output", ""
+                        )
+                    elif isinstance(scripts, list):
+                        for s in scripts:
+                            return_dict[s.get("@id", "script")] = s.get("@output", "")
+            elif isinstance(ports_data, dict):
+                port_id = ports_data.get("@portid", "")
+                state = ports_data.get("state", {}).get("@state", "")
+                return_dict["port_{}".format(port_id)] = state
+                scripts = ports_data.get("script", {})
+                if isinstance(scripts, dict):
+                    return_dict[scripts.get("@id", "script")] = scripts.get(
+                        "@output", ""
+                    )
+                elif isinstance(scripts, list):
+                    for s in scripts:
+                        return_dict[s.get("@id", "script")] = s.get("@output", "")
+
+            if not return_dict:
+                return_dict["State"] = "No script output"
+                return_dict["raw"] = nm.stdout[:2000]
+
+        except Exception as e:
+            logger.warning("nmap_device_scan parse error: %s", e)
+            return_dict["State"] = "Parse error: {}".format(str(e))
+            return_dict["raw"] = nm.stdout[:2000]
+
+        device.scan = str(return_dict)
+        device.exploited_scanned = True
+        device.save()
+
+        progress_recorder.set_progress(4, 4, description="Scan complete")
+        return return_dict
+
+    except Exception as e:
+        logger.warning("nmap_device_scan error for %s: %s", ip, e)
+        return {"Error": str(e)}
 
 
 @shared_task(bind=False)
 def scan(id):
+    """Legacy synchronous Nmap scan — prefer nmap_device_scan() Celery task."""
     return_dict = {}
     device1 = Device.objects.get(id=id)
     ip = device1.ip
@@ -1541,52 +1886,60 @@ def scan(id):
         nm.run_background()
 
         while nm.is_running():
-            print("Nmap Scan running: ETC: {0} DONE: {1}%".format(nm.etc,
-                                                                  nm.progress))
+            print("Nmap Scan running: ETC: {0} DONE: {1}%".format(nm.etc, nm.progress))
             sleep(2)
 
         u = xmltodict.parse(nm.stdout)
-        print(u['nmaprun'])
+        print(u["nmaprun"])
 
         try:
-            for i in u['nmaprun']['host']['ports']['port']['script']:
+            for i in u["nmaprun"]["host"]["ports"]["port"]["script"]:
                 print(i)
 
                 if i == "@output":
-                    return_dict["ID"] = u['nmaprun']['host']['ports']['port']['script']["@id"]
-                    return_dict["Output"] = u['nmaprun']['host']['ports']['port']['script']["@output"]
+                    return_dict["ID"] = u["nmaprun"]["host"]["ports"]["port"]["script"][
+                        "@id"
+                    ]
+                    return_dict["Output"] = u["nmaprun"]["host"]["ports"]["port"][
+                        "script"
+                    ]["@output"]
 
             device1.scan = return_dict
             device1.exploited_scanned = True
             device1.save()
             return return_dict
-
 
         except Exception as e:
             logger.warning("%s", e)
-            return_dict["State"] = u['nmaprun']['host']['ports']['port']['state']["@state"]
-            return_dict["Reason"] = u['nmaprun']['host']['ports']['port']['state']["@reason"]
+            return_dict["State"] = u["nmaprun"]["host"]["ports"]["port"]["state"][
+                "@state"
+            ]
+            return_dict["Reason"] = u["nmaprun"]["host"]["ports"]["port"]["state"][
+                "@reason"
+            ]
             device1.scan = return_dict
             device1.exploited_scanned = True
 
             device1.save()
             return return_dict
-
 
     else:
         nm = NmapProcess(ip, options="-p " + str(port))
         nm.run_background()
 
         while nm.is_running():
-            print("Nmap Scan running: ETC: {0} DONE: {1}%".format(nm.etc,
-                                                                  nm.progress))
+            print("Nmap Scan running: ETC: {0} DONE: {1}%".format(nm.etc, nm.progress))
             sleep(2)
 
         u = xmltodict.parse(nm.stdout)
 
         try:
-            return_dict["State"] = u['nmaprun']['host']['ports']['port']['state']['@state']
-            return_dict["Reason"] = u['nmaprun']['host']['ports']['port']['state']['@reason']
+            return_dict["State"] = u["nmaprun"]["host"]["ports"]["port"]["state"][
+                "@state"
+            ]
+            return_dict["Reason"] = u["nmaprun"]["host"]["ports"]["port"]["state"][
+                "@reason"
+            ]
             device1.scan = return_dict
             device1.exploited_scanned = True
             device1.save()
@@ -1635,6 +1988,7 @@ def exploit(id):
 def whoisxml(id):
     """Perform a WHOIS lookup for the device IP using the FOSS ipwhois library."""
     from ipwhois import IPWhois
+
     device1 = Device.objects.get(id=id)
 
     netrange = ""
@@ -1651,27 +2005,27 @@ def whoisxml(id):
         obj = IPWhois(device1.ip)
         result = obj.lookup_rdap(depth=1)
 
-        network = result.get('network', {})
-        netrange = network.get('cidr', "")
+        network = result.get("network", {})
+        netrange = network.get("cidr", "")
 
-        entities = result.get('objects', {})
+        entities = result.get("objects", {})
         for key, entity in entities.items():
-            roles = entity.get('roles', [])
-            contact = entity.get('contact') or {}
+            roles = entity.get("roles", [])
+            contact = entity.get("contact") or {}
 
-            entity_name = contact.get('name', "") or ""
-            entity_org = (contact.get('org') or [{}])[0].get('value', "")
-            entity_email = (contact.get('email') or [{}])[0].get('value', "")
-            entity_phone = (contact.get('phone') or [{}])[0].get('value', "")
-            address_parts = contact.get('address') or []
-            entity_street = address_parts[0].get('value', "") if address_parts else ""
+            entity_name = contact.get("name", "") or ""
+            entity_org = (contact.get("org") or [{}])[0].get("value", "")
+            entity_email = (contact.get("email") or [{}])[0].get("value", "")
+            entity_phone = (contact.get("phone") or [{}])[0].get("value", "")
+            address_parts = contact.get("address") or []
+            entity_street = address_parts[0].get("value", "") if address_parts else ""
             entity_city = ""
-            if entity_street and '\n' in entity_street:
-                lines = [l.strip() for l in entity_street.split('\n') if l.strip()]
+            if entity_street and "\n" in entity_street:
+                lines = [l.strip() for l in entity_street.split("\n") if l.strip()]
                 entity_street = lines[0] if lines else entity_street
                 entity_city = lines[1] if len(lines) > 1 else ""
 
-            if 'registrant' in roles or 'abuse' in roles:
+            if "registrant" in roles or "abuse" in roles:
                 if not org:
                     org = entity_org or entity_name
                 if not name:
@@ -1683,7 +2037,7 @@ def whoisxml(id):
                 if not city:
                     city = entity_city
 
-            if 'administrative' in roles or 'technical' in roles:
+            if "administrative" in roles or "technical" in roles:
                 if not admin_org:
                     admin_org = entity_org or entity_name
                 if not admin_email:
@@ -1694,12 +2048,18 @@ def whoisxml(id):
     except Exception as e:
         logger.warning("ipwhois lookup failed for %s: %s", device1.ip, e)
 
-    wh = Whois(device=device1, org=org,
-               street=street,
-               city=city,
-               admin_org=admin_org,
-               admin_email=admin_email,
-               admin_phone=admin_phone, netrange=netrange, name=name, email=email)
+    wh = Whois(
+        device=device1,
+        org=org,
+        street=street,
+        city=city,
+        admin_org=admin_org,
+        admin_email=admin_email,
+        admin_phone=admin_phone,
+        netrange=netrange,
+        name=name,
+        email=email,
+    )
 
     wh.save()
 
@@ -1715,7 +2075,9 @@ def whois_ip(id):
     device1 = Device.objects.get(id=id)
     ip = device1.ip
 
-    name = org = street = city = netrange = admin_org = admin_email = admin_phone = email = ""
+    name = org = street = city = netrange = admin_org = admin_email = admin_phone = (
+        email
+    ) = ""
 
     try:
         proc = subprocess.run(
@@ -1755,7 +2117,10 @@ def whois_ip(id):
             netrange = val[:100]
         elif key in ("orgabusehandle", "tech-c") and not admin_org:
             admin_org = val[:100]
-        elif key in ("orgabuseemail", "abuse-mailbox", "orgtechemail") and not admin_email:
+        elif (
+            key in ("orgabuseemail", "abuse-mailbox", "orgtechemail")
+            and not admin_email
+        ):
             if "@" in val:
                 admin_email = val[:100]
         elif key in ("orgabusephone",) and not admin_phone:
@@ -1768,12 +2133,23 @@ def whois_ip(id):
             if "@" in val:
                 email = val[:100]
 
-    if not any([name, org, street, city, netrange, admin_org, admin_email, admin_phone, email]):
+    if not any(
+        [name, org, street, city, netrange, admin_org, admin_email, admin_phone, email]
+    ):
         return whoisxml(id)
 
-    wh = Whois(device=device1, name=name, org=org, street=street, city=city,
-               netrange=netrange, admin_org=admin_org, admin_email=admin_email,
-               admin_phone=admin_phone, email=email)
+    wh = Whois(
+        device=device1,
+        name=name,
+        org=org,
+        street=street,
+        city=city,
+        netrange=netrange,
+        admin_org=admin_org,
+        admin_email=admin_email,
+        admin_phone=admin_phone,
+        email=email,
+    )
     wh.save()
     return {"ip": ip, "org": org, "name": name, "netrange": netrange}
 
@@ -1818,7 +2194,9 @@ def bosch_check(id):
             if not isinstance(user_data, dict):
                 continue
             try:
-                username = base64.b64decode(user_data.get("USERNAME", "")).decode("utf-8")
+                username = base64.b64decode(user_data.get("USERNAME", "")).decode(
+                    "utf-8"
+                )
                 password = base64.b64decode(user_data.get("PWD", "")).decode("utf-8")
                 if username:
                     return_dict[username] = password
@@ -1854,12 +2232,19 @@ def _shodan_convert(download_path, fmt):
     ``data.geo.json``).  Returns the path to that file.
     """
     from django.conf import settings
-    downloads_dir = os.path.realpath(os.path.join(settings.BASE_DIR, 'shodan_downloads'))
+
+    downloads_dir = os.path.realpath(
+        os.path.join(settings.BASE_DIR, "shodan_downloads")
+    )
     safe_path = os.path.realpath(download_path)
     if not safe_path.startswith(downloads_dir + os.sep):
-        raise ValueError("download_path is outside the shodan_downloads directory: {}".format(download_path))
-    subprocess.run(['shodan', 'convert', safe_path, fmt], check=True)
-    return safe_path.replace('.json.gz', '.{}'.format(fmt))
+        raise ValueError(
+            "download_path is outside the shodan_downloads directory: {}".format(
+                download_path
+            )
+        )
+    subprocess.run(["shodan", "convert", safe_path, fmt], check=True)
+    return safe_path.replace(".json.gz", ".{}".format(fmt))
 
 
 def shodan_csv_export(search_id, output_path):
@@ -1871,12 +2256,14 @@ def shodan_csv_export(search_id, output_path):
     """
     download_path = _shodan_download_path(search_id)
     if os.path.exists(download_path):
-        converted = _shodan_convert(download_path, 'csv')
+        converted = _shodan_convert(download_path, "csv")
         shutil.copy(converted, output_path)
     else:
-        with open(output_path, 'w', encoding='utf-8') as fout:
-            fout.write("ip_str,port,org,location.country_code,location.city,"
-                       "location.latitude,location.longitude,product,vulns\n")
+        with open(output_path, "w", encoding="utf-8") as fout:
+            fout.write(
+                "ip_str,port,org,location.country_code,location.city,"
+                "location.latitude,location.longitude,product,vulns\n"
+            )
     return output_path
 
 
@@ -1889,13 +2276,15 @@ def shodan_kml_export(search_id, output_path):
     """
     download_path = _shodan_download_path(search_id)
     if os.path.exists(download_path):
-        converted = _shodan_convert(download_path, 'kml')
+        converted = _shodan_convert(download_path, "kml")
         shutil.copy(converted, output_path)
     else:
-        with open(output_path, 'w', encoding='utf-8') as fout:
-            fout.write('<?xml version="1.0" encoding="UTF-8"?>\n'
-                       '<kml xmlns="http://www.opengis.net/kml/2.2">'
-                       '<Document></Document></kml>')
+        with open(output_path, "w", encoding="utf-8") as fout:
+            fout.write(
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<kml xmlns="http://www.opengis.net/kml/2.2">'
+                "<Document></Document></kml>"
+            )
     return output_path
 
 
@@ -1909,8 +2298,8 @@ def shodan_json_export(search_id):
     """
     download_path = _shodan_download_path(search_id)
     if os.path.exists(download_path):
-        converted = _shodan_convert(download_path, 'geo.json')
-        with open(converted, 'r', encoding='utf-8') as f:
+        converted = _shodan_convert(download_path, "geo.json")
+        with open(converted, "r", encoding="utf-8") as f:
             return f.read()
     return '{"type":"FeatureCollection","features":[]}'
 
@@ -1951,7 +2340,11 @@ def nmap_rtsp_scan(id, ports=None, timing=None):
                     "state": svc.state,
                     "service": svc.service,
                     "banner": svc.banner or "",
-                    "scripts": {s['id']: s['output'] for s in svc.scripts_results} if svc.scripts_results else {}
+                    "scripts": (
+                        {s["id"]: s["output"] for s in svc.scripts_results}
+                        if svc.scripts_results
+                        else {}
+                    ),
                 }
 
         device1.scan = json.dumps(return_dict)
@@ -1975,6 +2368,14 @@ PROTOCOL_PORTS = {
     "dnp3": "20000",
     "ethernetip": "44818",
     "niagara": "1911",
+    "fox": "1911",
+    "codesys": "2455",
+    "cspv4": "2222",
+    "atg": "10001",
+    "modicon": "502",
+    "omron": "9600",
+    "pcworx": "1962",
+    "proconos": "20547",
 }
 
 # NSE scripts used for deep protocol fingerprinting.
@@ -1982,6 +2383,16 @@ DEEP_SCAN_SCRIPTS = {
     "modbus": "nmap_scripts/modbus-discover.nse",
     "s7": "nmap_scripts/s7-enumerate.nse,nmap_scripts/s7-info.nse",
     "bacnet": "nmap_scripts/bacnet-info.nse",
+    "dnp3": "nmap_scripts/dnp3-info.nse",
+    "ethernetip": "nmap_scripts/enip-info.nse",
+    "fox": "nmap_scripts/fox-info.nse",
+    "codesys": "nmap_scripts/codesys.nse",
+    "cspv4": "nmap_scripts/cspv4-info.nse",
+    "atg": "nmap_scripts/atg-info.nse",
+    "modicon": "nmap_scripts/modicon-info.nse",
+    "omron": "nmap_scripts/omron-info.nse",
+    "pcworx": "nmap_scripts/pcworx-info.nse",
+    "proconos": "nmap_scripts/proconos-info.nse",
 }
 
 
@@ -1992,25 +2403,31 @@ def _parse_modbus_output(raw_output):
     """
     result = {}
     # Match patterns like "Slave ID data: \xab\x..." or readable text
-    sid_match = re.search(r'Slave ID data:\s*(.+?)(?:\n|$)', raw_output)
+    sid_match = re.search(r"Slave ID data:\s*(.+?)(?:\n|$)", raw_output)
     if sid_match:
-        result['slave_id'] = sid_match.group(1).strip()
+        result["slave_id"] = sid_match.group(1).strip()
 
-    device_id_match = re.search(r'Device Identification:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    device_id_match = re.search(
+        r"Device Identification:\s*(.+?)(?:\n|$)", raw_output, re.IGNORECASE
+    )
     if device_id_match:
-        result['vendor_id'] = device_id_match.group(1).strip()
+        result["vendor_id"] = device_id_match.group(1).strip()
 
-    vendor_match = re.search(r'Vendor Name:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    vendor_match = re.search(r"Vendor Name:\s*(.+?)(?:\n|$)", raw_output, re.IGNORECASE)
     if vendor_match:
-        result['vendor_id'] = vendor_match.group(1).strip()
+        result["vendor_id"] = vendor_match.group(1).strip()
 
-    product_match = re.search(r'Product Code:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    product_match = re.search(
+        r"Product Code:\s*(.+?)(?:\n|$)", raw_output, re.IGNORECASE
+    )
     if product_match:
-        result['project_name'] = product_match.group(1).strip()
+        result["project_name"] = product_match.group(1).strip()
 
-    version_match = re.search(r'(?:Revision|Major Minor Revision):\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    version_match = re.search(
+        r"(?:Revision|Major Minor Revision):\s*(.+?)(?:\n|$)", raw_output, re.IGNORECASE
+    )
     if version_match:
-        result['firmware_version'] = version_match.group(1).strip()
+        result["firmware_version"] = version_match.group(1).strip()
 
     return result
 
@@ -2021,35 +2438,49 @@ def _parse_s7_output(raw_output):
     Extracts Module, Plant ID, Serial Number, Hardware/Firmware Version.
     """
     result = {}
-    module_match = re.search(r'Module(?:\s+name)?:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    module_match = re.search(
+        r"Module(?:\s+name)?:\s*(.+?)(?:\n|$)", raw_output, re.IGNORECASE
+    )
     if module_match:
-        result['module_name'] = module_match.group(1).strip()
+        result["module_name"] = module_match.group(1).strip()
 
-    plant_match = re.search(r'Plant(?:\s+identification)?:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    plant_match = re.search(
+        r"Plant(?:\s+identification)?:\s*(.+?)(?:\n|$)", raw_output, re.IGNORECASE
+    )
     if plant_match:
-        result['plant_id'] = plant_match.group(1).strip()
+        result["plant_id"] = plant_match.group(1).strip()
 
-    serial_match = re.search(r'Serial(?:\s+number)?:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    serial_match = re.search(
+        r"Serial(?:\s+number)?:\s*(.+?)(?:\n|$)", raw_output, re.IGNORECASE
+    )
     if serial_match:
-        result['serial_number'] = serial_match.group(1).strip()
+        result["serial_number"] = serial_match.group(1).strip()
 
-    hw_match = re.search(r'Hardware(?:\s+version)?:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    hw_match = re.search(
+        r"Hardware(?:\s+version)?:\s*(.+?)(?:\n|$)", raw_output, re.IGNORECASE
+    )
     if hw_match:
-        result['hardware_version'] = hw_match.group(1).strip()
+        result["hardware_version"] = hw_match.group(1).strip()
 
-    fw_match = re.search(r'Firmware(?:\s+version)?:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    fw_match = re.search(
+        r"Firmware(?:\s+version)?:\s*(.+?)(?:\n|$)", raw_output, re.IGNORECASE
+    )
     if fw_match:
-        result['firmware_version'] = fw_match.group(1).strip()
+        result["firmware_version"] = fw_match.group(1).strip()
 
-    name_match = re.search(r'(?:PLC\s+name|Module\s+type):\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    name_match = re.search(
+        r"(?:PLC\s+name|Module\s+type):\s*(.+?)(?:\n|$)", raw_output, re.IGNORECASE
+    )
     if name_match:
-        result['project_name'] = name_match.group(1).strip()
+        result["project_name"] = name_match.group(1).strip()
 
-    vendor_match = re.search(r'(?:Copyright|Vendor):\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    vendor_match = re.search(
+        r"(?:Copyright|Vendor):\s*(.+?)(?:\n|$)", raw_output, re.IGNORECASE
+    )
     if vendor_match:
-        result['vendor_id'] = vendor_match.group(1).strip()
-    elif 'siemens' in raw_output.lower() or 's7' in raw_output.lower():
-        result['vendor_id'] = 'Siemens'
+        result["vendor_id"] = vendor_match.group(1).strip()
+    elif "siemens" in raw_output.lower() or "s7" in raw_output.lower():
+        result["vendor_id"] = "Siemens"
 
     return result
 
@@ -2057,21 +2488,29 @@ def _parse_s7_output(raw_output):
 def _parse_bacnet_output(raw_output):
     """Parse BACnet NSE script output for protocol metadata."""
     result = {}
-    vendor_match = re.search(r'Vendor(?:\s+(?:Name|ID))?:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    vendor_match = re.search(
+        r"Vendor(?:\s+(?:Name|ID))?:\s*(.+?)(?:\n|$)", raw_output, re.IGNORECASE
+    )
     if vendor_match:
-        result['vendor_id'] = vendor_match.group(1).strip()
+        result["vendor_id"] = vendor_match.group(1).strip()
 
-    model_match = re.search(r'(?:Model\s+Name|Object\s+Name):\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    model_match = re.search(
+        r"(?:Model\s+Name|Object\s+Name):\s*(.+?)(?:\n|$)", raw_output, re.IGNORECASE
+    )
     if model_match:
-        result['project_name'] = model_match.group(1).strip()
+        result["project_name"] = model_match.group(1).strip()
 
-    fw_match = re.search(r'(?:Firmware|Application Software)(?:\s+Version)?:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    fw_match = re.search(
+        r"(?:Firmware|Application Software)(?:\s+Version)?:\s*(.+?)(?:\n|$)",
+        raw_output,
+        re.IGNORECASE,
+    )
     if fw_match:
-        result['firmware_version'] = fw_match.group(1).strip()
+        result["firmware_version"] = fw_match.group(1).strip()
 
-    desc_match = re.search(r'Description:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+    desc_match = re.search(r"Description:\s*(.+?)(?:\n|$)", raw_output, re.IGNORECASE)
     if desc_match:
-        result['module_name'] = desc_match.group(1).strip()
+        result["module_name"] = desc_match.group(1).strip()
 
     return result
 
@@ -2082,6 +2521,35 @@ _PROTOCOL_PARSERS = {
     "s7": _parse_s7_output,
     "bacnet": _parse_bacnet_output,
 }
+
+
+def _parse_generic_nse_output(raw_output):
+    """Generic parser for NSE script output — extracts common key:value pairs."""
+    result = {}
+    for line in raw_output.splitlines():
+        line = line.strip().lstrip("|").strip()
+        if ":" in line:
+            key, _, val = line.partition(":")
+            key = key.strip().lower().replace(" ", "_")
+            val = val.strip()
+            if val and key:
+                if "vendor" in key:
+                    result["vendor_id"] = val
+                elif "version" in key or "firmware" in key:
+                    result["firmware_version"] = val
+                elif "serial" in key:
+                    result["serial_number"] = val
+                elif "module" in key or "model" in key:
+                    result["module_name"] = val
+                elif "product" in key or "name" in key or "project" in key:
+                    result["project_name"] = val
+                elif "hardware" in key:
+                    result["hardware_version"] = val
+                elif "plant" in key or "location" in key:
+                    result["plant_id"] = val
+                elif "slave" in key or "unit" in key:
+                    result["slave_id"] = val
+    return result
 
 
 @shared_task(bind=False)
@@ -2135,14 +2603,20 @@ def deep_protocol_scan(device_id, protocol=None):
                     except Exception as stop_err:
                         logger.warning(
                             "Failed to stop timed-out nmap process for %s/%s: %s",
-                            ip, proto, stop_err,
+                            ip,
+                            proto,
+                            stop_err,
                         )
                     logger.warning(
                         "Deep protocol scan timeout for %s/%s after %s seconds",
-                        ip, proto, max_runtime,
+                        ip,
+                        proto,
+                        max_runtime,
                     )
                     results[proto] = {
-                        "error": "Nmap scan timeout after {} seconds".format(max_runtime)
+                        "error": "Nmap scan timeout after {} seconds".format(
+                            max_runtime
+                        )
                     }
                     break
                 sleep(2)
@@ -2159,23 +2633,23 @@ def deep_protocol_scan(device_id, protocol=None):
             # Extract script output from nmap XML
             raw_output = ""
             try:
-                host = parsed_data.get('nmaprun', {}).get('host', {})
-                ports = host.get('ports', {}).get('port', {})
+                host = parsed_data.get("nmaprun", {}).get("host", {})
+                ports = host.get("ports", {}).get("port", {})
                 if isinstance(ports, list):
                     for p in ports:
-                        scripts_data = p.get('script', {})
+                        scripts_data = p.get("script", {})
                         if isinstance(scripts_data, list):
                             for s in scripts_data:
-                                raw_output += s.get('@output', '') + "\n"
+                                raw_output += s.get("@output", "") + "\n"
                         elif isinstance(scripts_data, dict):
-                            raw_output += scripts_data.get('@output', '') + "\n"
+                            raw_output += scripts_data.get("@output", "") + "\n"
                 elif isinstance(ports, dict):
-                    scripts_data = ports.get('script', {})
+                    scripts_data = ports.get("script", {})
                     if isinstance(scripts_data, list):
                         for s in scripts_data:
-                            raw_output += s.get('@output', '') + "\n"
+                            raw_output += s.get("@output", "") + "\n"
                     elif isinstance(scripts_data, dict):
-                        raw_output += scripts_data.get('@output', '') + "\n"
+                        raw_output += scripts_data.get("@output", "") + "\n"
             except Exception as e:
                 logger.warning("Error extracting NSE output: %s", e)
                 raw_output = raw_xml
@@ -2184,27 +2658,27 @@ def deep_protocol_scan(device_id, protocol=None):
                 continue
 
             # Parse protocol-specific metadata
-            parser = _PROTOCOL_PARSERS.get(proto)
+            parser = _PROTOCOL_PARSERS.get(proto, _parse_generic_nse_output)
             metadata = parser(raw_output) if parser else {}
 
             # Save fingerprint to database
             fp = ProtocolFingerprint(
                 device=device,
                 protocol=proto,
-                vendor_id=metadata.get('vendor_id', ''),
-                project_name=metadata.get('project_name', ''),
-                hardware_version=metadata.get('hardware_version', ''),
-                firmware_version=metadata.get('firmware_version', ''),
-                serial_number=metadata.get('serial_number', ''),
-                module_name=metadata.get('module_name', ''),
-                slave_id=metadata.get('slave_id', ''),
-                plant_id=metadata.get('plant_id', ''),
+                vendor_id=metadata.get("vendor_id", ""),
+                project_name=metadata.get("project_name", ""),
+                hardware_version=metadata.get("hardware_version", ""),
+                firmware_version=metadata.get("firmware_version", ""),
+                serial_number=metadata.get("serial_number", ""),
+                module_name=metadata.get("module_name", ""),
+                slave_id=metadata.get("slave_id", ""),
+                plant_id=metadata.get("plant_id", ""),
                 raw_output=raw_output[:10000],
             )
             fp.save()
 
             results[proto] = metadata
-            results[proto]['raw_output'] = raw_output[:500]
+            results[proto]["raw_output"] = raw_output[:500]
 
         except Exception as e:
             logger.warning("Deep protocol scan error for %s/%s: %s", ip, proto, e)
@@ -2228,6 +2702,7 @@ def nvd_lookup(device_id):
     if device.vulns:
         try:
             import ast
+
             vulns_list = ast.literal_eval(device.vulns)
             if isinstance(vulns_list, list):
                 cve_ids.extend(vulns_list)
@@ -2261,17 +2736,30 @@ def nvd_lookup(device_id):
     kev_set = _fetch_kev_list()
 
     results = []
-    for cve_id in cve_ids:
+    nvd_api_key = _get_env_key("NVD_API_KEY", "")
+    # NVD rate limits: 5 req/30s without key, 50 req/30s with key
+    rate_delay = 0.7 if nvd_api_key else 6.5
+
+    for idx, cve_id in enumerate(cve_ids):
         epss_data = epss_scores.get(cve_id, {})
         is_kev = cve_id in kev_set
 
         # Fetch individual CVE detail from NVD for CVSS score
         cvss = 0.0
         description = ""
+        exploit_available = is_kev  # KEV implies exploited
+        exploit_refs_list = []
         try:
             url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
             params = {"cveId": cve_id}
-            resp = requests.get(url, params=params, timeout=30)
+            headers = {}
+            if nvd_api_key:
+                headers["apiKey"] = nvd_api_key
+            resp = requests.get(url, params=params, headers=headers, timeout=30)
+            if resp.status_code == 403:
+                logger.warning("NVD rate limited on %s, sleeping 30s", cve_id)
+                sleep(30)
+                resp = requests.get(url, params=params, headers=headers, timeout=30)
             if resp.status_code == 200:
                 data = resp.json()
                 vulns = data.get("vulnerabilities", [])
@@ -2279,10 +2767,16 @@ def nvd_lookup(device_id):
                     cve_data = vulns[0].get("cve", {})
                     # Get CVSS score
                     metrics = cve_data.get("metrics", {})
-                    for version_key in ("cvssMetricV31", "cvssMetricV30", "cvssMetricV2"):
+                    for version_key in (
+                        "cvssMetricV31",
+                        "cvssMetricV30",
+                        "cvssMetricV2",
+                    ):
                         metric_list = metrics.get(version_key, [])
                         if metric_list:
-                            cvss = metric_list[0].get("cvssData", {}).get("baseScore", 0.0)
+                            cvss = (
+                                metric_list[0].get("cvssData", {}).get("baseScore", 0.0)
+                            )
                             break
                     # Get description
                     descs = cve_data.get("descriptions", [])
@@ -2290,8 +2784,37 @@ def nvd_lookup(device_id):
                         if d.get("lang") == "en":
                             description = d.get("value", "")
                             break
+                    # Check references for exploit-db links and exploit tags
+                    for ref in cve_data.get("references", []):
+                        ref_url = ref.get("url", "")
+                        ref_tags = ref.get("tags", [])
+                        if "Exploit" in ref_tags:
+                            exploit_available = True
+                        if "exploit-db.com" in ref_url:
+                            exploit_available = True
+                            exploit_refs_list.append(
+                                {
+                                    "url": ref_url,
+                                    "title": "ExploitDB: " + ref_url.split("/")[-1],
+                                }
+                            )
+                        elif "Exploit" in ref_tags and ref_url:
+                            exploit_refs_list.append(
+                                {
+                                    "url": ref_url,
+                                    "title": ref.get("source", "Exploit"),
+                                }
+                            )
+            elif resp.status_code != 404:
+                logger.warning("NVD returned %d for %s", resp.status_code, cve_id)
         except Exception as e:
             logger.warning("NVD detail lookup error for %s: %s", cve_id, e)
+
+        # Rate limit between NVD requests
+        if idx < len(cve_ids) - 1:
+            sleep(rate_delay)
+
+        exploit_refs_json = json.dumps(exploit_refs_list) if exploit_refs_list else ""
 
         # Save to database
         VulnIntelligence.objects.update_or_create(
@@ -2302,16 +2825,21 @@ def nvd_lookup(device_id):
                 "epss_score": epss_data.get("epss", 0.0),
                 "epss_percentile": epss_data.get("percentile", 0.0),
                 "kev_listed": is_kev,
+                "exploit_available": exploit_available,
+                "exploit_refs": exploit_refs_json,
                 "description": description[:2000],
                 "source": "nvd",
             },
         )
-        results.append({
-            "cve_id": cve_id,
-            "cvss": cvss,
-            "epss": epss_data.get("epss", 0.0),
-            "kev": is_kev,
-        })
+        results.append(
+            {
+                "cve_id": cve_id,
+                "cvss": cvss,
+                "epss": epss_data.get("epss", 0.0),
+                "kev": is_kev,
+                "exploit_available": exploit_available,
+            }
+        )
 
     return {"status": "ok", "cve_count": len(results), "results": results}
 
@@ -2338,7 +2866,7 @@ def _fetch_epss_scores(cve_ids):
     results = {}
 
     for start in range(0, len(unique_cves), batch_size):
-        batch = unique_cves[start:start + batch_size]
+        batch = unique_cves[start : start + batch_size]
         if not batch:
             continue
         try:
@@ -2386,9 +2914,7 @@ CONPOT_SIGNATURES = [
     "Schneider Electric",
 ]
 
-COWRIE_SIGNATURES = [
-    "SSH-2.0-OpenSSH_5.9p1 Arch Linux-1"
-]
+COWRIE_SIGNATURES = ["SSH-2.0-OpenSSH_5.9p1 Arch Linux-1"]
 
 
 @shared_task(bind=False)
@@ -2530,10 +3056,18 @@ def sbom_lookup(device_id):
     # Known firmware component mappings (common ICS/IoT firmware stacks)
     KNOWN_COMPONENTS = {
         "goahead": [
-            {"name": "GoAhead WebServer", "type": "framework", "cpe": "cpe:2.3:a:embedthis:goahead"},
+            {
+                "name": "GoAhead WebServer",
+                "type": "framework",
+                "cpe": "cpe:2.3:a:embedthis:goahead",
+            },
         ],
         "lighttpd": [
-            {"name": "lighttpd", "type": "framework", "cpe": "cpe:2.3:a:lighttpd:lighttpd"},
+            {
+                "name": "lighttpd",
+                "type": "framework",
+                "cpe": "cpe:2.3:a:lighttpd:lighttpd",
+            },
         ],
         "busybox": [
             {"name": "BusyBox", "type": "os", "cpe": "cpe:2.3:a:busybox:busybox"},
@@ -2577,13 +3111,17 @@ def sbom_lookup(device_id):
         techs = wap.technologies
         if isinstance(techs, list):
             for entry in techs:
-                tech_list = entry.get("technologies", []) if isinstance(entry, dict) else []
+                tech_list = (
+                    entry.get("technologies", []) if isinstance(entry, dict) else []
+                )
                 for tech in tech_list:
-                    components_found.append({
-                        "name": tech.get("name", ""),
-                        "version": tech.get("version", ""),
-                        "type": "library",
-                    })
+                    components_found.append(
+                        {
+                            "name": tech.get("name", ""),
+                            "version": tech.get("version", ""),
+                            "type": "library",
+                        }
+                    )
 
     # Save components to database — skip empty names, track created-vs-updated
     saved_count = 0
@@ -2670,7 +3208,7 @@ def check_search_cost(query, country=None):
     search credits, allowing the UI to show a confirmation dialog.
     Returns dict with 'count' and 'credits_cost'.
     """
-    SHODAN_API_KEY = _get_env_key('SHODAN_API_KEY')
+    SHODAN_API_KEY = _get_env_key("SHODAN_API_KEY")
     if not SHODAN_API_KEY:
         return {"count": 0, "credits_cost": 0, "error": "No API key configured"}
 
@@ -2694,3 +3232,158 @@ def check_search_cost(query, country=None):
     except Exception as e:
         logger.warning("Shodan count error: %s", e)
         return {"count": 0, "credits_cost": 0, "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# ExploitDB Search — uses searchsploit CLI or NVD reference parsing
+# ---------------------------------------------------------------------------
+
+
+@shared_task(bind=True)
+def exploitdb_search(self, device_id):
+    """Search ExploitDB for exploits matching device CVEs.
+
+    Uses searchsploit CLI (if available) and NVD reference data already
+    stored in VulnIntelligence. Results are stored back to exploit_refs.
+    """
+    progress_recorder = ProgressRecorder(self)
+    progress_recorder.set_progress(0, 3, description="Loading device CVEs…")
+
+    device = Device.objects.get(id=device_id)
+    vuln_intels = VulnIntelligence.objects.filter(device=device)
+
+    if not vuln_intels.exists():
+        return {"exploits": [], "message": "No CVEs found. Run CVE Intelligence first."}
+
+    cve_ids = [vi.cve_id for vi in vuln_intels if vi.cve_id]
+    all_exploits = []
+
+    # Check if searchsploit is available
+    import shutil
+
+    searchsploit_bin = shutil.which("searchsploit")
+
+    progress_recorder.set_progress(1, 3, description="Searching ExploitDB…")
+
+    for vi in vuln_intels:
+        if not vi.cve_id:
+            continue
+
+        exploit_refs_list = []
+
+        # Parse existing exploit_refs from NVD data
+        if vi.exploit_refs:
+            try:
+                existing = json.loads(vi.exploit_refs)
+                if isinstance(existing, list):
+                    exploit_refs_list.extend(existing)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # Try searchsploit CLI
+        if searchsploit_bin:
+            try:
+                import subprocess
+
+                result = subprocess.run(
+                    [searchsploit_bin, "--cve", vi.cve_id, "-j"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if result.returncode == 0 and result.stdout:
+                    ss_data = json.loads(result.stdout)
+                    for exp in ss_data.get("RESULTS_EXPLOIT", []):
+                        edb_id = exp.get("EDB-ID", "")
+                        title = exp.get("Title", "Unknown")
+                        url = "https://www.exploit-db.com/exploits/{}".format(edb_id)
+                        if not any(r.get("url") == url for r in exploit_refs_list):
+                            exploit_refs_list.append(
+                                {
+                                    "url": url,
+                                    "title": title,
+                                    "edb_id": str(edb_id),
+                                }
+                            )
+            except Exception as e:
+                logger.warning("searchsploit error for %s: %s", vi.cve_id, e)
+
+        if exploit_refs_list:
+            vi.exploit_available = True
+            vi.exploit_refs = json.dumps(exploit_refs_list)
+            vi.save()
+            for ref in exploit_refs_list:
+                ref["cve_id"] = vi.cve_id
+                all_exploits.append(ref)
+
+    progress_recorder.set_progress(3, 3, description="Search complete")
+    return {"exploits": all_exploits, "count": len(all_exploits)}
+
+
+# ---------------------------------------------------------------------------
+# Screenshot Capture — uses Selenium headless Chrome
+# ---------------------------------------------------------------------------
+
+
+@shared_task(bind=True)
+def capture_screenshot(self, device_id):
+    """Capture a screenshot of the device's web interface using Selenium.
+
+    Stores the screenshot as base64 PNG in device.screenshot and returns it.
+    Falls back gracefully if Selenium / Chrome are not installed.
+    """
+    import base64
+
+    progress_recorder = ProgressRecorder(self)
+    progress_recorder.set_progress(0, 3, description="Preparing…")
+
+    device = Device.objects.get(id=device_id)
+    port = str(device.port or "80").strip().split(",")[0].strip()
+
+    # Determine URL scheme
+    if port in ("443", "8443", "9443"):
+        target_url = "https://{}:{}".format(device.ip, port)
+    else:
+        target_url = "http://{}:{}".format(device.ip, port)
+
+    progress_recorder.set_progress(1, 3, description="Capturing {}…".format(target_url))
+
+    try:
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.chrome.service import Service
+    except ImportError:
+        return {"error": "Selenium not installed. Run: pip install selenium"}
+
+    try:
+        chrome_options = Options()
+        chrome_options.add_argument("--headless=new")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=1280,1024")
+        chrome_options.add_argument("--ignore-certificate-errors")
+        chrome_options.page_load_strategy = "eager"
+
+        driver = webdriver.Chrome(options=chrome_options)
+        driver.set_page_load_timeout(20)
+        try:
+            driver.get(target_url)
+            sleep(2)  # Wait for dynamic content
+            screenshot_bytes = driver.get_screenshot_as_png()
+        finally:
+            driver.quit()
+
+        b64_data = base64.b64encode(screenshot_bytes).decode("utf-8")
+
+        progress_recorder.set_progress(2, 3, description="Saving screenshot…")
+
+        device.screenshot = b64_data
+        device.save()
+
+        progress_recorder.set_progress(3, 3, description="Done")
+        return {"screenshot": b64_data}
+
+    except Exception as e:
+        logger.warning("Screenshot capture error for %s: %s", device.ip, e)
+        return {"error": "Screenshot failed: {}".format(str(e))}

@@ -19,3 +19,6 @@ wappalyzer
 # 3D globe rendering deps are intentionally kept in requirements-3d.txt
 # to avoid pulling in heavy VTK/Qt6 libraries in headless CI environments.
 # Install separately: pip install -r requirements-3d.txt
+# Screenshot capture (requires Chrome/Chromium and ChromeDriver installed on system,
+# or Selenium 4.6+ which includes selenium-manager to auto-manage drivers)
+selenium

@@ -93,7 +93,7 @@
                 <ul class="x-navigation x-navigation-horizontal x-navigation-panel">
                     <!-- TOGGLE NAVIGATION -->
 
-                   
+
                 </ul>
                 <!-- START BREADCRUMB -->
 <ul class="breadcrumb">
@@ -345,10 +345,17 @@
                                 </div>
                                 <div class="panel-body padding-2">
                                     <br>
-                                    <center><button type="button" id="scan" class="btn btn-primary active">Scan {{ device.type }} </button></center>
+                                    <div style="margin-bottom:12px;">
+                                        <select id="nse_script_select" style="padding:4px;margin-right:8px;min-width:220px;">
+                                            <option value="">Auto (device type: {{ device.type }})</option>
+                                            {% for script in nse_scripts %}
+                                            <option value="{{ script.path }}">{{ script.label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <button type="button" id="scan" class="btn btn-primary active">Scan</button>
+                                    </div>
+                                    <progress id="progress-bar7" value="0" max="100" style="display:none; margin-bottom: 1em; width:100%;"></progress>
                                     <pre><code id=scan_results></code></pre>
-
-                                    <progress id="progress-bar7" value="0" max="100" style="display:none; margin-bottom: 1em;"></progress>
 
                                 </div>
                             </div>
@@ -413,25 +420,31 @@
 
                                                 <div class="col-md-6">
 
-                            <!-- START USERS ACTIVITY BLOCK -->
+                            <!-- START SCREENSHOT BLOCK -->
                             <div class="panel panel-default">
                                 <div class="panel-heading ui-draggable-handle">
                                     <div class="panel-title-box">
-                                        <h3>Connect</h3>
+                                        <h3>Screenshot</h3>
                                     </div>
 
                                 </div>
                                     <div class="panel-body padding-2">
                                     <br>
-
-                                        {% if device.port == "443" %}
-                                    <a href="https://{{ device.ip}}:{{ device.port}}">https://{{ device.ip}}:{{ device.port}}</a>
-                                        {% else %}
-                                        <a href="http://{{ device.ip}}:{{ device.port}}">http://{{ device.ip}}:{{ device.port}}</a>
-                                        {% endif %}
+                                        <button type="button" id="screenshot_btn" class="btn btn-primary active" style="margin-bottom:8px;">
+                                            &#128247; Capture Screenshot
+                                        </button>
+                                        <a href="{% if device.port == '443' %}https://{{ device.ip }}:{{ device.port }}{% else %}http://{{ device.ip }}:{{ device.port }}{% endif %}" target="_blank" rel="noopener noreferrer" style="margin-left:8px;color:#00e1ff;">
+                                            Open in new tab &#8599;
+                                        </a>
+                                        <progress id="progress-bar-screenshot" value="0" max="100" style="display:none; width:100%; margin-top:8px;"></progress>
+                                        <div id="screenshot_container" style="margin-top:10px;">
+                                            {% if device.screenshot %}
+                                            <img src="data:image/png;base64,{{ device.screenshot }}" style="max-width:100%;border:1px solid #0064d7;border-radius:4px;" />
+                                            {% endif %}
+                                        </div>
                                 </div>
                             </div>
-                            <!-- END USERS ACTIVITY BLOCK -->
+                            <!-- END SCREENSHOT BLOCK -->
 
                         </div>
                                         </div>
@@ -457,6 +470,16 @@
                         <option value="modbus">Modbus</option>
                         <option value="s7">Siemens S7</option>
                         <option value="bacnet">BACnet</option>
+                        <option value="dnp3">DNP3</option>
+                        <option value="ethernetip">EtherNet/IP</option>
+                        <option value="fox">Fox / Niagara</option>
+                        <option value="codesys">CODESYS</option>
+                        <option value="cspv4">CIPv4 / CSPv4</option>
+                        <option value="atg">ATG (Tank Gauge)</option>
+                        <option value="modicon">Modicon</option>
+                        <option value="omron">Omron</option>
+                        <option value="pcworx">PC Worx</option>
+                        <option value="proconos">ProConOS</option>
                     </select>
                     <progress id="progress-bar-deep" value="0" max="100" style="display:none; margin-left:8px;"></progress>
                 </div>
@@ -548,7 +571,7 @@
                             <th>CVSS</th>
                             <th>EPSS</th>
                             <th>KEV</th>
-                            <th>Exploit</th>
+                            <th>Exploits</th>
                             <th>Description</th>
                         </tr>
                     </thead>
@@ -559,12 +582,28 @@
                             <td style="color:{% if vi.cvss_score >= 9.0 %}#ff2050{% elif vi.cvss_score >= 7.0 %}#ff6030{% elif vi.cvss_score >= 4.0 %}#ffe600{% else %}#00ff88{% endif %};font-weight:bold;">{{ vi.cvss_score|floatformat:1 }}</td>
                             <td style="font-family:monospace;">{{ vi.epss_score|floatformat:4 }}</td>
                             <td>{% if vi.kev_listed %}<span style="background:#ff2050;color:#fff;padding:1px 6px;border-radius:3px;font-size:0.8em;font-weight:bold;">KEV</span>{% else %}—{% endif %}</td>
-                            <td>{% if vi.exploit_available %}<span style="background:#ffe600;color:#000;padding:1px 6px;border-radius:3px;font-size:0.8em;font-weight:bold;">MSF</span>{% else %}—{% endif %}</td>
+                            <td>
+                                {% if vi.exploit_available %}
+                                    {% for eref in vi.parsed_exploit_refs %}
+                                    <a href="{{ eref.url }}" target="_blank" rel="noopener noreferrer" style="color:#ffe600;font-size:0.85em;display:block;">{{ eref.title }}</a>
+                                    {% endfor %}
+                                    {% if not vi.parsed_exploit_refs %}
+                                    <span style="background:#ffe600;color:#000;padding:1px 6px;border-radius:3px;font-size:0.8em;font-weight:bold;">Exploit</span>
+                                    {% endif %}
+                                {% else %}—{% endif %}
+                            </td>
                             <td style="font-size:0.85em;max-width:300px;overflow:hidden;text-overflow:ellipsis;">{{ vi.description|truncatechars:150 }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
+                <div style="margin-top:8px;">
+                    <button type="button" id="exploitdb_search_btn" class="btn btn-primary active" style="background:#ffe600;border-color:#ffe600;color:#000;font-weight:bold;">
+                        &#128269; Search ExploitDB
+                    </button>
+                    <progress id="progress-bar-exploitdb" value="0" max="100" style="display:none; margin-left:8px;"></progress>
+                    <div id="exploitdb_results" style="display:none;margin-top:10px;"></div>
+                </div>
                 {% else %}
                 <p style="color:#888;">No vulnerability intelligence yet. Click <b>Fetch CVE Intelligence</b> to query NVD/EPSS/KEV.</p>
                 {% endif %}
@@ -868,28 +907,39 @@ $('#whois_scan').on('click', function(){
 
 
 $('#scan').on('click', function(){
+       var nse = $('#nse_script_select').val();
+       var scanUrl = "/scan/{{device.id}}";
+       if (nse) { scanUrl += "?nse_script=" + encodeURIComponent(nse); }
+       var pgrbar7 = $('#progress-bar7');
        $.ajax({
         type: "GET",
-        url: "/scan/{{device.id}}",
+        url: scanUrl,
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
         success: function (data) {
-           console.log(data);
-           $('#scan_results').html(library.json.prettyPrint(data));
-
-        if (data.Success){
-                console.log(data);
-                noty({text: data.Success , layout: 'topRight', type: 'success', timeout: 10000});
-
-}
-                if (data.Error){
-                noty({text: data.Error , layout: 'topRight', type: 'error', timeout: 10000});
-                }
-            },
-            error: function (data) {
-                console.log("Something went wrong!");
+            if (data.task_id != null) {
+                pgrbar7.css('display', 'block');
+                get_task_info(data.task_id, pgrbar7, 0, function(result) {
+                    if (result) {
+                        $('#scan_results').html(library.json.prettyPrint(result));
+                    }
+                    if (result && result.Error) {
+                        noty({text: result.Error, layout: 'topRight', type: 'error', timeout: 10000});
+                    } else {
+                        noty({text: "Nmap scan complete", layout: 'topRight', type: 'success', timeout: 4000});
+                    }
+                });
+                noty({text: "Nmap scan started", layout: 'topRight', type: 'success', timeout: 3000});
+            } else {
+                noty({text: "Failed to start scan", layout: 'topRight', type: 'error', timeout: 4000});
             }
-        });
-        return false;
+        },
+        error: function (data) {
+            console.log("Something went wrong!");
+            noty({text: "Scan request failed", layout: 'topRight', type: 'error', timeout: 4000});
+        }
     });
+    return false;
+});
 
 $('#exploit').on('click', function(){
        $.ajax({
@@ -995,12 +1045,12 @@ var frm = $('#generate-user-form');
     });
 
 var frm = $('#generate-user-form');
-function get_task_info(task_id, pgrbar, attempts) {
+function get_task_info(task_id, pgrbar, attempts, onComplete) {
     attempts = attempts || 0;
     var MAX_ATTEMPTS = 600; // ~10 minutes at 1 s interval
     if (attempts >= MAX_ATTEMPTS) {
         pgrbar.css('display', 'none');
-        frm.html('<span class="cp-warn">[ TIMEOUT ] Task exceeded maximum wait time.</span>');
+        noty({text: "Task exceeded maximum wait time.", layout: 'topRight', type: 'error', timeout: 4000});
         return;
     }
     $.ajax({
@@ -1009,27 +1059,27 @@ function get_task_info(task_id, pgrbar, attempts) {
         headers: { 'X-Requested-With': 'XMLHttpRequest' },
         data: {'task_id': task_id},
         success: function (data) {
-            frm.html('');
             if (data.state === 'PENDING') {
-                frm.html('<span class="cp-blink">[ PENDING ]</span> Waiting for task to start...');
-                setTimeout(function () { get_task_info(task_id, pgrbar, attempts + 1); }, 1000);
+                setTimeout(function () { get_task_info(task_id, pgrbar, attempts + 1, onComplete); }, 1000);
             } else if (data.state === 'PROGRESS') {
                 pgrbar.css('display', 'block');
-                pgrbar.attr('value', data.result.percent);
+                var pct = (data.result && data.result.percent) ? data.result.percent : 0;
+                pgrbar.attr('value', pct);
                 var desc = (data.result && data.result.description) ? data.result.description : '';
-                frm.html('<span class="cp-cyan">[ SCANNING ]</span> ' + Math.round(data.result.percent) + '% — ' + desc);
-                setTimeout(function () { get_task_info(task_id, pgrbar, attempts + 1); }, 1000);
+                setTimeout(function () { get_task_info(task_id, pgrbar, attempts + 1, onComplete); }, 1000);
             } else if (data.state === 'SUCCESS') {
                 pgrbar.attr('value', 100);
-                frm.html('<span class="cp-ok">[ DONE ]</span> Task completed successfully.');
-                setTimeout(function () { pgrbar.css('display', 'none'); frm.html(''); }, 2000);
+                noty({text: "Task completed successfully.", layout: 'topRight', type: 'success', timeout: 2000});
+                setTimeout(function () { pgrbar.css('display', 'none'); }, 2000);
+                if (typeof onComplete === 'function') { onComplete(data.result); }
             } else {
                 pgrbar.css('display', 'none');
-                frm.html('<span class="cp-warn">[ ' + data.state + ' ]</span> Task ended.');
+                var errMsg = (data.result && data.result.error) ? data.result.error : ('Task ended: ' + data.state);
+                noty({text: errMsg, layout: 'topRight', type: 'error', timeout: 4000});
             }
         },
         error: function () {
-            frm.html('<span class="cp-warn">[ ERROR ]</span> Could not reach task endpoint.');
+            setTimeout(function () { get_task_info(task_id, pgrbar, attempts + 1, onComplete); }, 2000);
         }
     });
 }
@@ -1276,6 +1326,75 @@ $('#sbom_scan_btn').on('click', function(){
             }
         },
         error: function () { console.log("SBOM lookup error"); }
+    });
+    return false;
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// SCREENSHOT CAPTURE BUTTON
+// ═══════════════════════════════════════════════════════════════════
+$('#screenshot_btn').on('click', function(){
+    var pgrbar_ss = $('#progress-bar-screenshot');
+    $.ajax({
+        type: "GET",
+        url: "/{{device.id}}/screenshot",
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        success: function (data) {
+            if (data.task_id != null) {
+                pgrbar_ss.css('display', 'block');
+                get_task_info(data.task_id, pgrbar_ss, 0, function(result) {
+                    if (result && result.screenshot) {
+                        $('#screenshot_container').html('<img src="data:image/png;base64,' + result.screenshot + '" style="max-width:100%;border:1px solid #0064d7;border-radius:4px;" />');
+                        noty({text: "Screenshot captured", layout: 'topRight', type: 'success', timeout: 3000});
+                    } else if (result && result.error) {
+                        noty({text: result.error, layout: 'topRight', type: 'error', timeout: 6000});
+                    }
+                });
+                noty({text: "Capturing screenshot...", layout: 'topRight', type: 'success', timeout: 3000});
+            } else if (data.error) {
+                noty({text: data.error, layout: 'topRight', type: 'error', timeout: 4000});
+            }
+        },
+        error: function () { noty({text: "Screenshot request failed", layout: 'topRight', type: 'error', timeout: 4000}); }
+    });
+    return false;
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// EXPLOITDB SEARCH BUTTON
+// ═══════════════════════════════════════════════════════════════════
+$('#exploitdb_search_btn').on('click', function(){
+    var pgrbar_edb = $('#progress-bar-exploitdb');
+    $.ajax({
+        type: "GET",
+        url: "/{{device.id}}/exploitdb/search",
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        success: function (data) {
+            if (data.task_id != null) {
+                pgrbar_edb.css('display', 'inline-block');
+                get_task_info(data.task_id, pgrbar_edb, 0, function(result) {
+                    var container = $('#exploitdb_results');
+                    container.css('display', 'block');
+                    if (result && result.exploits && result.exploits.length > 0) {
+                        var html = '<h4 style="color:#ffe600;">ExploitDB Results</h4><ul style="list-style:none;padding:0;">';
+                        $.each(result.exploits, function(i, exp) {
+                            html += '<li style="padding:4px 0;border-bottom:1px solid rgba(255,230,0,0.15);">';
+                            html += '<a href="' + exp.url + '" target="_blank" rel="noopener noreferrer" style="color:#ffe600;">' + exp.title + '</a>';
+                            if (exp.cve_id) { html += ' <span style="color:#00e1ff;font-size:0.85em;">[' + exp.cve_id + ']</span>'; }
+                            html += '</li>';
+                        });
+                        html += '</ul>';
+                        container.html(html);
+                        noty({text: result.exploits.length + " exploit(s) found", layout: 'topRight', type: 'success', timeout: 4000});
+                    } else {
+                        container.html('<p style="color:#888;">No ExploitDB results found.</p>');
+                        noty({text: "No exploits found in ExploitDB", layout: 'topRight', type: 'warning', timeout: 3000});
+                    }
+                });
+                noty({text: "Searching ExploitDB...", layout: 'topRight', type: 'success', timeout: 3000});
+            }
+        },
+        error: function () { console.log("ExploitDB search error"); }
     });
     return false;
 });

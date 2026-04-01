@@ -29,7 +29,7 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 ## Documentation
 
 | Document | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | [docs/INSTALL.md](docs/INSTALL.md) | Full installation guide, environment variables, running tests, Android/Termux setup |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 3D globe, verification pipeline, tool path configuration, Celery/Redis architecture |
 | [docs/DATABASE.md](docs/DATABASE.md) | SQLite WAL concurrency mitigations and PostgreSQL migration guide |

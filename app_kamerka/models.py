@@ -1,7 +1,7 @@
 from django.db import models
 
-
 # Create your models here.
+
 
 class Search(models.Model):
     coordinates = models.CharField(max_length=100)
@@ -9,6 +9,7 @@ class Search(models.Model):
     ics = models.CharField(max_length=100)
     coordinates_search = models.CharField(max_length=1000)
     nmap = models.BooleanField(default=False)
+
 
 class Device(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
@@ -48,7 +49,9 @@ class Device(models.Model):
     def port_scan_label(self):
         """Short label used in the Port Scan Task dropdown (ID · IP · product or type)."""
         detail = (self.product or self.type or "")[:30]
-        return "#{} {} {}".format(self.id, self.ip, ("· " + detail) if detail else "").strip()
+        return "#{} {} {}".format(
+            self.id, self.ip, ("· " + detail) if detail else ""
+        ).strip()
 
 
 class DeviceNearby(models.Model):
@@ -100,16 +103,19 @@ class Whois(models.Model):
     admin_phone = models.CharField(max_length=100)
     email = models.CharField(max_length=100)
 
+
 class Bosch(models.Model):
     device = models.ForeignKey(Device, on_delete=models.CASCADE)
     username = models.CharField(max_length=100)
     password = models.CharField(max_length=100)
+
 
 class Dnp3(models.Model):
     device = models.ForeignKey(Device, on_delete=models.CASCADE)
     source = models.CharField(max_length=100)
     destination = models.CharField(max_length=100)
     control = models.CharField(max_length=100)
+
 
 class ProtocolFingerprint(models.Model):
     device = models.ForeignKey(Device, on_delete=models.CASCADE)
@@ -135,6 +141,7 @@ class VulnIntelligence(models.Model):
     kev_listed = models.BooleanField(default=False)
     description = models.TextField(default="")
     exploit_available = models.BooleanField(default=False)
+    exploit_refs = models.TextField(default="", blank=True)
     source = models.CharField(max_length=50, default="nvd")
     last_updated = models.DateTimeField(auto_now=True)
 
@@ -167,4 +174,3 @@ class GFWStatus(models.Model):
     last_checked = models.DateTimeField(auto_now=True)
     ooni_report_id = models.CharField(max_length=200, default="")
     blocking_type = models.CharField(max_length=100, default="")
-
