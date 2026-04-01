@@ -34,3 +34,20 @@ venv/
 
 # collectstatic output
 staticfiles/
+
+.dockerrc
+db.sqlite3-shm
+db.sqlite3-wal
+dump.rdb
+*.json.gz
+*.csv
+*.zip
+*.tar.gz
+*.log
+*.bak
+*.swp
+*.tmp
+*.cache
+*.pid
+*.seed
+*.pid.lock
