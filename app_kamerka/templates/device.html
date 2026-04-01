@@ -562,6 +562,7 @@
 
                         </div>
                                         </div>
+</div><!-- end tab11 -->
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
 <!-- HARDWARE & PROTOCOL TAB                                           -->
@@ -1447,7 +1448,10 @@ $('#sbom_scan_btn').on('click', function(){
         success: function (data) {
             if (data.task_id != null) {
                 pgrbar_sbom.css('display', 'inline-block');
-                get_task_info(data.task_id, pgrbar_sbom);
+                get_task_info(data.task_id, pgrbar_sbom, 0, function() {
+                    noty({text: "SBOM lookup complete — refreshing…", layout: 'topRight', type: 'success', timeout: 2000});
+                    setTimeout(function(){ location.reload(); }, 1500);
+                });
                 noty({text: "SBOM component lookup started", layout: 'topRight', type: 'success', timeout: 3000});
             }
         },
