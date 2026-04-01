@@ -18,20 +18,64 @@
         <link rel="stylesheet" href="{% static 'css/pretty-print-json.dark-mode.css' %}">
         <link href="{% static 'css/selectr.min.css' %}" rel="stylesheet" type="text/css">
         <style>
+        /* Selectr dropdown – cyberpunk theme overrides */
+        .selectr-container {
+            width: 100% !important;
+            max-width: 500px;
+        }
         .selectr-selected {
             position: relative;
-            padding: 0px 20px 5px 5px;
-            border: 4px solid #444;
-            width: 100%;
-            background: #FFF;
+            padding: 7px 28px 7px 14px;
+            border: 1px solid #0064d7;
+            background: #0a0a1a;
+            color: #c8d6e5;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 14px;
+            min-height: 38px;
+            border-radius: 0;
             z-index: 1;
-            margin: 0px;
-            font-size: 16px;
-            min-height: 58px;
+        }
+        .selectr-selected::before {
+            border-color: #00e1ff transparent transparent !important;
+        }
+        .selectr-container.open .selectr-selected::before {
+            border-color: transparent transparent #00e1ff !important;
+        }
+        .selectr-label {
+            color: #c8d6e5 !important;
         }
         .selectr-placeholder {
-            color: black;
-            margin-top: 15px;
+            color: #6c7a86;
+        }
+        .selectr-options-container {
+            background: #0a0a1a !important;
+            border: 1px solid #0064d7 !important;
+            border-top: none !important;
+            z-index: 10001 !important;
+        }
+        .selectr-input {
+            background: #111 !important;
+            color: #c8d6e5 !important;
+            border: 1px solid #333 !important;
+            font-family: 'Share Tech Mono', monospace !important;
+        }
+        .selectr-option {
+            color: #c8d6e5;
+            padding: 6px 14px;
+        }
+        .selectr-option.active,
+        .selectr-option:hover {
+            background: #0064d7 !important;
+            color: #fff !important;
+        }
+        .selectr-option.selected {
+            background: rgba(0, 100, 215, 0.3) !important;
+            color: #00e1ff !important;
+        }
+        .selectr-notice {
+            background: #0a0a1a !important;
+            color: #6c7a86 !important;
+            border-color: #333 !important;
         }
         .selectr-tags {
             padding: 5px;
@@ -39,7 +83,7 @@
         .selectr-tag {
             background: #1caf9a;
         }
-        /* Keep the nearby-devices panel on top when its Selectr dropdown is open */
+        /* Elevate the panel when its Selectr dropdown is open */
         .selectr-container.open {
             z-index: 10001;
         }
@@ -50,8 +94,82 @@
         .panel .panel-body {
             overflow: visible;
         }
-        .selectr-options-container {
-            z-index: 10001 !important;
+
+        /* ── Responsive layout ──────────────────────────────────── */
+        /* Map action bar: wrap inputs + buttons fluidly */
+        .device-action-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            justify-content: center;
+            padding: 8px 0;
+        }
+        .device-action-bar input[type="text"] {
+            flex: 1 1 200px;
+            min-width: 120px;
+            max-width: 300px;
+        }
+        .device-action-bar .btn {
+            flex: 0 0 auto;
+        }
+
+        /* Fluid selects */
+        select#nearby_search,
+        select#nuclei_template_select,
+        select#nse_script_select,
+        select#exploit_select,
+        select#deep_probe_protocol {
+            width: 100% !important;
+            max-width: 400px;
+            box-sizing: border-box;
+        }
+
+        /* Tabs: allow wrapping on narrow screens */
+        .nav-tabs.nav-justified > li {
+            display: inline-block;
+            float: none;
+        }
+        .nav-tabs.nav-justified {
+            display: flex;
+            flex-wrap: wrap;
+        }
+        .nav-tabs.nav-justified > li {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+        .nav-tabs.nav-justified > li > a {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding: 8px 10px;
+            font-size: 0.85em;
+        }
+
+        /* CVE/vuln table: horizontal scroll on narrow */
+        .table-responsive-wrap {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        @media (max-width: 992px) {
+            .device-action-bar input[type="text"] {
+                max-width: 100%;
+                flex: 1 1 100%;
+            }
+            .device-action-bar .btn {
+                flex: 1 1 auto;
+            }
+            .nav-tabs.nav-justified > li > a {
+                font-size: 0.75em;
+                padding: 6px 6px;
+            }
+        }
+        @media (max-width: 768px) {
+            .nav-tabs.nav-justified > li {
+                flex: 1 1 50%;
+            }
         }
         </style>
         <!-- EOF CSS INCLUDE -->
@@ -145,7 +263,7 @@
 
                     <!-- START WIDGETS -->
                  <div class="row">
-                        <div class="col-md-6" style="width:100%">
+                        <div class="col-md-12">
                             <!-- START JUSTIFIED TABS -->
                             <div class="panel panel-default tabs">
                                 <ul class="nav nav-tabs nav-justified">
@@ -177,22 +295,15 @@
                                     <div id="leaflet_world_map" style="width: 100%; height: 400px;"></div>
 
                                     <form id="form1" runat="server">
-    <div>
-<br>
-        <center>
-        <input type="text" id="txtDestination" placeholder="Find device" style="width: 300px" />
-        <input type="button" value="Find route" class="btn btn-primary active" style="margin-right: 120px;" onclick="GetRoute()" />
+    <div class="device-action-bar">
+        <input type="text" id="txtDestination" placeholder="Find device" />
+        <input type="button" value="Find route" class="btn btn-primary active" onclick="GetRoute()" />
 
-        <input type="text" id="update_location" placeholder="Update location" style="width: 300px" />
-        <input type="button" id="btn_update_location" class="btn btn-primary active" value="Update location" style="margin-right: 120px;" class="btn btn-info active"/>
+        <input type="text" id="update_location" placeholder="Update location" />
+        <input type="button" id="btn_update_location" class="btn btn-primary active" value="Update location" />
 
-
-        <input type="text" id="notes" value=""  placeholder="Notes for field agent" style="width: 300px" />
-        <input type="button" id="btn_send_all"  class="btn btn-primary active" value="Send" class="btn btn-danger active"/>
-
-</center>
-
-
+        <input type="text" id="notes" value=""  placeholder="Notes for field agent" />
+        <input type="button" id="btn_send_all"  class="btn btn-primary active" value="Send" />
     </div>                            <!-- END WORLD MAP-->
                                     </form>
 
@@ -206,7 +317,7 @@
                                     <h3 class="panel-title">Shodan scan for nearby devices</h3>
                                 </div>
                                 <div class="panel-body">
-                                    <select id="nearby_search" style="width: 300px">
+                                    <select id="nearby_search">
                                         {% for key, query in nearby_queries.items %}
                                         <option value="{{ query }}">{{ key }}</option>
                                         {% endfor %}
@@ -228,7 +339,7 @@
                                     <h3 class="panel-title">Nuclei Scan</h3>
                                 </div>
                                 <div class="panel-body">
-                                    <select id="nuclei_template_select" style="width: 300px; margin-bottom: 8px;">
+                                    <select id="nuclei_template_select" style="margin-bottom: 8px;">
                                         <option value="">-- Select Template --</option>
                                         {% for tpl in nuclei_templates %}
                                         <option value="{{ tpl.path }}"{% if tpl.match %} selected{% endif %}>{% if tpl.is_dir %}[dir] {% endif %}{{ tpl.label }}</option>
@@ -388,7 +499,7 @@
                                 <div class="panel-body padding-2">
                                     <br>
                                     <div style="margin-bottom:12px;">
-                                        <select id="nse_script_select" style="padding:4px;margin-right:8px;min-width:220px;">
+                                        <select id="nse_script_select" style="padding:4px;margin-right:8px;">
                                             <option value="">Auto (device type: {{ device.type }})</option>
                                             {% for script in nse_scripts %}
                                             <option value="{{ script.path }}">{{ script.label }}</option>
@@ -427,7 +538,7 @@
                                     <div class="panel-body padding-2">
                                     <br>
                                     <div style="margin-bottom:12px;">
-                                        <select id="exploit_select" style="padding:4px;margin-right:8px;min-width:280px;">
+                                        <select id="exploit_select" style="padding:4px;margin-right:8px;">
                                             <option value="auto">Run default exploit check</option>
                                             {% for vi in vuln_intel %}
                                             {% if vi.exploit_available %}
@@ -627,6 +738,7 @@
 
                 <!-- CVE INTELLIGENCE TABLE -->
                 {% if vuln_intel %}
+                <div class="table-responsive-wrap">
                 <table class="table" style="font-size:0.9em;">
                     <thead>
                         <tr>
@@ -660,6 +772,7 @@
                         {% endfor %}
                     </tbody>
                 </table>
+                </div>
                 <div style="margin-top:8px;">
                     <button type="button" id="exploitdb_search_btn" class="btn btn-primary active" style="background:#ffe600;border-color:#ffe600;color:#000;font-weight:bold;">
                         &#128269; Search ExploitDB
