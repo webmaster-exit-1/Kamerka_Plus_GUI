@@ -1386,7 +1386,7 @@ $('#nvd_scan_btn').on('click', function(){
                 pgrbar_risk.css('display', 'inline-block');
                 get_task_info(data.task_id, pgrbar_risk, 0, function() {
                     noty({text: "CVE data loaded — refreshing page…", layout: 'topRight', type: 'success', timeout: 2000});
-                    setTimeout(function(){ window.location.hash = '#tab_risk'; location.reload(); }, 1500);
+                    setTimeout(function(){ location.reload(); }, 1500);
                 });
                 noty({text: "CVE intelligence lookup started", layout: 'topRight', type: 'success', timeout: 3000});
             }
