@@ -1360,13 +1360,7 @@ $('#deep_probe_btn').on('click', function(){
             if (data.task_id != null) {
                 pgrbar_deep.css('display', 'inline-block');
                 get_task_info(data.task_id, pgrbar_deep, 0, function() {
-                    noty({text: "Deep probe complete — refreshing…", layout: 'topRight', type: 'success', timeout: 2000});
-                    setTimeout(function(){
-                        // Reload and jump back to the Hardware tab
-                        var url = window.location.pathname + '#tab_hw';
-                        window.location.href = url;
-                        window.location.reload();
-                    }, 1500);
+                    noty({text: "Deep probe complete", layout: 'topRight', type: 'success', timeout: 3000});
                 });
                 noty({text: "Deep protocol scan started", layout: 'topRight', type: 'success', timeout: 3000});
             } else if (data.Error) {
