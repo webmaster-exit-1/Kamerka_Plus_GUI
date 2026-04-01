@@ -88,7 +88,7 @@
             z-index: 10001;
         }
         .panel:has(.selectr-container.open) {
-            z-index: 9998;
+            z-index: 10002;
             position: relative;
         }
         .panel .panel-body {
@@ -311,6 +311,24 @@
                                     </div>
 
                                 </div>
+                                                                                <div class="panel panel-default">
+                                <div class="panel-heading ui-draggable-handle">
+                                    <h3 class="panel-title">Nuclei Scan</h3>
+                                </div>
+                                <div class="panel-body">
+                                    <select id="nuclei_template_select" style="margin-bottom: 8px;">
+                                        <option value="">-- Select Template --</option>
+                                        {% for tpl in nuclei_templates %}
+                                        <option value="{{ tpl.path }}"{% if tpl.match %} selected{% endif %}>{% if tpl.is_dir %}[dir] {% endif %}{{ tpl.label }}</option>
+                                        {% endfor %}
+                                    </select><br>
+                                    <button type="button" id="nuclei_scan_btn" class="btn btn-primary active">Scan</button>
+                                    <button type="button" id="nuclei_show_btn" class="btn btn-primary active">Show Results</button>
+                                    <progress id="progress-bar-nuclei" value="0" max="100" style="display:none; margin-bottom: 1em;"></progress>
+                                    <div id="nuclei_results" style="display:none;"></div>
+                                </div>
+                            </div>
+
                                         <div class="panel panel-default">
 
                                 <div class="panel-heading ui-draggable-handle">
@@ -331,24 +349,6 @@
 
                                     <button type="button" id="add_nearby_devices" class="btn btn-primary active">Add</button>
 
-                                </div>
-                            </div>
-
-                                                                                <div class="panel panel-default">
-                                <div class="panel-heading ui-draggable-handle">
-                                    <h3 class="panel-title">Nuclei Scan</h3>
-                                </div>
-                                <div class="panel-body">
-                                    <select id="nuclei_template_select" style="margin-bottom: 8px;">
-                                        <option value="">-- Select Template --</option>
-                                        {% for tpl in nuclei_templates %}
-                                        <option value="{{ tpl.path }}"{% if tpl.match %} selected{% endif %}>{% if tpl.is_dir %}[dir] {% endif %}{{ tpl.label }}</option>
-                                        {% endfor %}
-                                    </select><br>
-                                    <button type="button" id="nuclei_scan_btn" class="btn btn-primary active">Scan</button>
-                                    <button type="button" id="nuclei_show_btn" class="btn btn-primary active">Show Results</button>
-                                    <progress id="progress-bar-nuclei" value="0" max="100" style="display:none; margin-bottom: 1em;"></progress>
-                                    <div id="nuclei_results" style="display:none;"></div>
                                 </div>
                             </div>
                                 </div>
