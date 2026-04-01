@@ -39,6 +39,20 @@
         .selectr-tag {
             background: #1caf9a;
         }
+        /* Keep the nearby-devices panel on top when its Selectr dropdown is open */
+        .selectr-container.open {
+            z-index: 10001;
+        }
+        .panel:has(.selectr-container.open) {
+            z-index: 9998;
+            position: relative;
+        }
+        .panel .panel-body {
+            overflow: visible;
+        }
+        .selectr-options-container {
+            z-index: 10001 !important;
+        }
         </style>
         <!-- EOF CSS INCLUDE -->
     </head>
@@ -1465,7 +1479,18 @@ $('#exploitdb_search_btn').on('click', function(){
 
 
         <script type="text/javascript" src="{% static 'js/actions.js' %}"></script>
-        <script>new Selectr('#nearby_search', { searchable: true });</script>
+        <script>
+        (function() {
+            var sel = new Selectr('#nearby_search', { searchable: true });
+            var panel = document.getElementById('nearby_search').closest('.panel');
+            sel.on('selectr.open', function() {
+                if (panel) panel.style.zIndex = '9998';
+            });
+            sel.on('selectr.close', function() {
+                if (panel) panel.style.zIndex = '';
+            });
+        })();
+        </script>
 
         <script type="text/javascript" src="{% static 'js/index_charts.js' %}"></script>
         <!-- END TEMPLATE -->
