@@ -318,10 +318,10 @@
 <script type="text/javascript">
 function initialize() {
     var centerLat = 0, centerLon = 0;
-    {% for device in search %}
-    {% if forloop.first and device.lat and device.lon %}
-    centerLat = {{ device.lat }};
-    centerLon = {{ device.lon }};
+    {% for device in map_devices %}
+    {% if forloop.first %}
+    centerLat = {{ device.safe_lat }};
+    centerLon = {{ device.safe_lon }};
     {% endif %}
     {% endfor %}
 
@@ -335,17 +335,15 @@ function initialize() {
 
     var markers = [];
     var heatPoints = [];
-    {% for device in search %}
-    {% if device.lat and device.lon %}
+    {% for device in map_devices %}
     (function() {
-        var vulns = "{{ device.vulns|default:'' }}";
+        var vulns = "{{ device.vulns|default:''|escapejs }}";
         var intensity = Math.min(1.0, 0.2 + (vulns.match(/CVE-/g)||[]).length * 0.15);
-        heatPoints.push([{{device.lat}}, {{device.lon}}, intensity]);
-        var m = L.marker([{{device.lat}}, {{device.lon}}]).addTo(map);
-        m.bindPopup('<a href="{{device.search_id}}/{{device.id}}/{{device.ip}}">{{device.type}} — {{device.ip}}</a>');
+        heatPoints.push([{{device.safe_lat}}, {{device.safe_lon}}, intensity]);
+        var m = L.marker([{{device.safe_lat}}, {{device.safe_lon}}]).addTo(map);
+        m.bindPopup('<a href="{{device.search_id}}/{{device.id}}/{{device.ip|escapejs}}">{{device.type|escapejs}} — {{device.ip|escapejs}}</a>');
         markers.push(m);
     })();
-    {% endif %}
     {% endfor %}
 
     var heatLayer = L.heatLayer(heatPoints, {

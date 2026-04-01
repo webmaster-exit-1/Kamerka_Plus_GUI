@@ -78,6 +78,29 @@ def _parse_vulns(raw):
         return []
 
 
+def _safe_coord(value):
+    """Return a float for *value*, or None if it is not a valid coordinate."""
+    if not value:
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _devices_with_valid_coords(qs):
+    """Filter a Device queryset to only those with valid numeric lat/lon."""
+    valid = []
+    for d in qs:
+        lat = _safe_coord(d.lat)
+        lon = _safe_coord(d.lon)
+        if lat is not None and lon is not None:
+            d.safe_lat = lat
+            d.safe_lon = lon
+            valid.append(d)
+    return valid
+
+
 # Create your views here.
 
 passwds = {
@@ -383,7 +406,7 @@ def devices(request):
 
 
 def map(request):
-    all_devices = Device.objects.all()
+    all_devices = _devices_with_valid_coords(Device.objects.all())
 
     context = {"devices": all_devices}
 
@@ -455,8 +478,12 @@ def results(request, id):
         except Exception:
             i.vulns_list = []
 
+    # Filter to devices with valid numeric coordinates for the map
+    map_devices = _devices_with_valid_coords(all_devices)
+
     context = {
         "search": all_devices,
+        "map_devices": map_devices,
         "ports": ports_list,
         "vulns": sort,
         "category": categories_list,
@@ -625,8 +652,18 @@ def device(request, id, device_id, ip):
     # Build NSE script list for dropdown
     nse_scripts = [{"label": k, "path": v} for k, v in NSE_SCRIPT_CATALOG.items()]
 
+    # Validate device coordinates for safe JS injection
+    safe_lat = _safe_coord(all_devices.lat)
+    safe_lon = _safe_coord(all_devices.lon)
+    if safe_lat is None:
+        safe_lat = 0.0
+    if safe_lon is None:
+        safe_lon = 0.0
+
     context = {
         "device": all_devices,
+        "safe_lat": safe_lat,
+        "safe_lon": safe_lon,
         "nearby": nearby,
         "shodan": shodan,
         "wappalyzer": wappalyzer,

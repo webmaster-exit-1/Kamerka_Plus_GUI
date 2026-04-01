@@ -727,19 +727,19 @@
 <script src="{% static 'js/map_themes.js' %}"></script>
 
 <script>
-var map = L.map('leaflet_world_map').setView([{{ device.lat }}, {{ device.lon }}], 13);
+var map = L.map('leaflet_world_map').setView([{{ safe_lat }}, {{ safe_lon }}], 13);
 
 var themeRef = { layer: null, currentKey: KamerkaTiles.savedTheme() };
 themeRef.layer = KamerkaTiles.apply(themeRef.currentKey, map);
 
-var marker = L.marker([{{ device.lat }}, {{ device.lon }}]).addTo(map);
-marker.bindPopup('{{ device.type }} — {{ device.ip }}').openPopup();
+var marker = L.marker([{{ safe_lat }}, {{ safe_lon }}]).addTo(map);
+marker.bindPopup('{{ device.type|escapejs }} — {{ device.ip|escapejs }}').openPopup();
 
-var heatPoints = [[{{ device.lat }}, {{ device.lon }}, 0.8]];
+var heatPoints = [[{{ safe_lat }}, {{ safe_lon }}, 0.8]];
 
 {% for dev in nearby %}
 var nearby_marker = L.marker([{{ dev.lat }}, {{ dev.lon }}]).addTo(map);
-nearby_marker.bindPopup('{{ dev.product }} — {{ dev.ip }}');
+nearby_marker.bindPopup('{{ dev.product|escapejs }} — {{ dev.ip|escapejs }}');
 heatPoints.push([{{ dev.lat }}, {{ dev.lon }}, 0.4]);
 {% endfor %}
 
