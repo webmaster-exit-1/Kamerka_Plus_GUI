@@ -17,13 +17,6 @@
         <link rel="stylesheet" type="text/css" href="{% static 'css/leaflet.css' %}"/>
         <link rel="stylesheet" href="{% static 'css/pretty-print-json.dark-mode.css' %}">
         <style>
-        /* NMAP scan results – readable with word wrap */
-        #scan_results {
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            max-height: 600px;
-            overflow-y: auto;
-        }
         /* Native select – cyberpunk theme */
         select#nearby_search,
         select#nuclei_template_select {
@@ -1047,15 +1040,7 @@ $('#scan').on('click', function(){
                 pgrbar7.css('display', 'block');
                 get_task_info(data.task_id, pgrbar7, 0, function(result) {
                     if (result) {
-                        // Format each key/value as readable text with real newlines
-                        var lines = [];
-                        for (var key in result) {
-                            if (result.hasOwnProperty(key)) {
-                                var val = String(result[key]).replace(/\\n/g, '\n');
-                                lines.push('─── ' + key + ' ───\n' + val);
-                            }
-                        }
-                        $('#scan_results').text(lines.join('\n\n'));
+                        $('#scan_results').html(library.json.prettyPrint(result));
                     }
                     if (result && result.Error) {
                         noty({text: result.Error, layout: 'topRight', type: 'error', timeout: 10000});
