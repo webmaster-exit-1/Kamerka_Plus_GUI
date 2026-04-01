@@ -819,10 +819,14 @@ library.json = {
 
 </script>
             <script>
-            $('#scan_results').html(library.json.prettyPrint({{ device.scan|safe }}));
+            {% if device.scan %}
+            $('#scan_results').html(library.json.prettyPrint({{ scan_json|safe }}));
+            {% endif %}
 </script>
             <script>
-            $('#exploit_results').html(library.json.prettyPrint({{ device.exploit|safe }}));
+            {% if device.exploit %}
+            $('#exploit_results').html(library.json.prettyPrint({{ exploit_json|safe }}));
+            {% endif %}
 </script>
                 <script type="text/javascript">
 

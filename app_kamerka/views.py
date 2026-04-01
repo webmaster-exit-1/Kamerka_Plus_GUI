@@ -101,6 +101,29 @@ def _devices_with_valid_coords(qs):
     return valid
 
 
+def _scan_to_json(raw):
+    """Convert a Device.scan or Device.exploit string to a JSON string.
+
+    The field is stored as either a Python dict literal (legacy) or JSON.
+    Returns a valid JSON string suitable for embedding in a <script> tag,
+    or '{}' if the value is empty or unparseable.
+    """
+    if not raw:
+        return "{}"
+    # If it's already valid JSON, return it
+    try:
+        json.loads(raw)
+        return raw
+    except (json.JSONDecodeError, TypeError):
+        pass
+    # Try as a Python literal and convert to JSON
+    try:
+        obj = ast.literal_eval(raw)
+        return json.dumps(obj)
+    except Exception:
+        return "{}"
+
+
 # Create your views here.
 
 passwds = {
@@ -664,6 +687,8 @@ def device(request, id, device_id, ip):
         "device": all_devices,
         "safe_lat": safe_lat,
         "safe_lon": safe_lon,
+        "scan_json": _scan_to_json(all_devices.scan),
+        "exploit_json": _scan_to_json(all_devices.exploit),
         "nearby": nearby,
         "shodan": shodan,
         "wappalyzer": wappalyzer,

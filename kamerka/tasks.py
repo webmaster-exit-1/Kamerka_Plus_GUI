@@ -1813,7 +1813,7 @@ def nmap_device_scan(self, device_id, nse_script=None):
             return_dict["Error"] = "No Nmap output — nmap may not be installed"
             if nm.stderr:
                 return_dict["stderr"] = nm.stderr[:500]
-            device.scan = str(return_dict)
+            device.scan = json.dumps(return_dict)
             device.exploited_scanned = True
             device.save()
             return return_dict
@@ -1860,7 +1860,7 @@ def nmap_device_scan(self, device_id, nse_script=None):
             return_dict["State"] = "Parse error: {}".format(str(e))
             return_dict["raw"] = nm.stdout[:2000]
 
-        device.scan = str(return_dict)
+        device.scan = json.dumps(return_dict)
         device.exploited_scanned = True
         device.save()
 
