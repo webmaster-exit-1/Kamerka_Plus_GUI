@@ -651,6 +651,12 @@ def device(request, id, device_id, ip):
     fingerprints = ProtocolFingerprint.objects.filter(device_id=all_devices.id)
     vuln_intel = VulnIntelligence.objects.filter(device_id=all_devices.id)
     honeypot = HoneypotAnalysis.objects.filter(device_id=all_devices.id).first()
+    honeypot_reasons = []
+    if honeypot and honeypot.reasons:
+        try:
+            honeypot_reasons = json.loads(honeypot.reasons)
+        except (json.JSONDecodeError, TypeError):
+            pass
     sbom_components = SBOMComponent.objects.filter(device_id=all_devices.id)
     gfw_status = GFWStatus.objects.filter(device_id=all_devices.id).first()
 
@@ -700,6 +706,7 @@ def device(request, id, device_id, ip):
         "fingerprints": fingerprints,
         "vuln_intel": vuln_intel,
         "honeypot": honeypot,
+        "honeypot_reasons": honeypot_reasons,
         "sbom_components": sbom_components,
         "gfw_status": gfw_status,
         "max_epss": max_epss,
