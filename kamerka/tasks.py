@@ -3159,13 +3159,9 @@ def honeypot_check(device_id):
 
     # Check Shodan scan tags — if Shodan has already tagged this device as a
     # honeypot that is a very strong authoritative signal.
-    shodan_scans = ShodanScan.objects.filter(device=device)
-    for scan in shodan_scans:
-        tags_str = str(scan.tags or "").lower()
-        if "honeypot" in tags_str:
-            probability = max(probability, 0.8)
-            reasons.append("Shodan has tagged this device as 'honeypot'")
-            break
+    if ShodanScan.objects.filter(device=device, tags__icontains="honeypot").exists():
+        probability = max(probability, 0.8)
+        reasons.append("Shodan has tagged this device as 'honeypot'")
 
     # Cap probability at 1.0
     probability = min(probability, 1.0)
