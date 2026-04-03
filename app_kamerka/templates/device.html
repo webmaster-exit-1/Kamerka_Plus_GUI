@@ -734,6 +734,14 @@
                     {% if honeypot.is_conpot %}<p style="color:#ff2050;">&#9888; Matches Conpot honeypot signatures</p>{% endif %}
                     {% if honeypot.is_cowrie %}<p style="color:#ff2050;">&#9888; Matches Cowrie honeypot signatures</p>{% endif %}
                     <p><b>Identical banners in /24:</b> {{ honeypot.banner_count_in_subnet }}</p>
+                    {% if honeypot_reasons %}
+                    <div style="margin-top:8px;">
+                        <b>Detection reasons:</b>
+                        <ul style="margin:4px 0 0 16px;padding:0;">
+                            {% for reason in honeypot_reasons %}<li style="color:#ccc;font-size:0.9em;">{{ reason }}</li>{% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
                 </div>
                 {% endif %}
 

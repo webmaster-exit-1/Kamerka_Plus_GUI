@@ -896,6 +896,20 @@ class HoneypotCheckTest(TestCase):
         from app_kamerka.models import HoneypotAnalysis
         self.assertTrue(HoneypotAnalysis.objects.filter(device=device).exists())
 
+    def test_shodan_tag_raises_probability(self):
+        """A ShodanScan record tagged 'honeypot' must push probability to >= 0.8."""
+        from app_kamerka.models import ShodanScan
+        device = _make_device(self.search, ip="10.0.0.5")
+        ShodanScan.objects.create(
+            device=device, ports="[]", tags="['honeypot']",
+            products="[]", module="", vulns="[]",
+        )
+        from kamerka.tasks import honeypot_check
+        result = honeypot_check(device.id)
+        self.assertGreaterEqual(result["probability"], 0.8)
+        reasons_combined = " ".join(result["reasons"]).lower()
+        self.assertIn("shodan", reasons_combined)
+
 
 # ---------------------------------------------------------------------------
 # SBOM Lookup
