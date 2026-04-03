@@ -17,6 +17,7 @@ jobs:
     env:
       DJANGO_SECRET_KEY: "ci-only-not-a-real-secret-key"
       SHODAN_API_KEY: ${{ secrets.SHODAN_API_KEY }}
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     services:
       redis:
@@ -37,6 +38,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: '1.21'
+        cache: false
 
     - name: Install System Dependencies
       run: |
