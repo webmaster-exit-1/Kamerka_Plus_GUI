@@ -56,6 +56,8 @@ from kamerka.tasks import (
     gfw_check,
     check_search_cost,
     nmap_device_scan,
+    nmap_custom_scan,
+    shodan_custom_search,
     NSE_SCRIPT_CATALOG,
     exploitdb_search,
     capture_screenshot,
@@ -899,6 +901,65 @@ def scan_dev(request, id):
     else:
         return HttpResponse(
             json.dumps({"task_id": None}), content_type="application/json"
+        )
+
+
+def scan_dev_custom(request, id):
+    """Launch a custom/advanced Nmap scan with user-supplied flags.
+
+    GET /scan_custom/<id>?ports=22,80&timing=T4&extra_flags=-sV+--osscan-guess
+    """
+    if (
+        request.method == "GET"
+        and request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    ):
+        ports = request.GET.get("ports", None)
+        timing = request.GET.get("timing", None)
+        extra_flags = request.GET.get("extra_flags", None)
+        task = nmap_custom_scan.delay(
+            int(id), ports=ports, timing=timing, extra_flags=extra_flags
+        )
+        return HttpResponse(
+            json.dumps({"task_id": task.id}), content_type="application/json"
+        )
+    else:
+        return HttpResponse(
+            json.dumps({"task_id": None}), content_type="application/json"
+        )
+
+
+def shodan_custom_search_view(request):
+    """Launch a custom Shodan search with a raw dork query.
+
+    POST /shodan_custom_search  with ``query`` form field.
+    """
+    if request.method == "POST":
+        query_string = request.POST.get("query", "").strip()
+        if not query_string:
+            return HttpResponse(
+                json.dumps({"Error": "Empty query"}),
+                content_type="application/json",
+            )
+        if len(query_string) > 500:
+            return HttpResponse(
+                json.dumps({"Error": "Query too long (max 500 characters)"}),
+                content_type="application/json",
+            )
+
+        all_results = request.POST.get("all", "").lower() in ("1", "true", "on")
+
+        search = Search(country="XX", ics=query_string)
+        search.save()
+
+        task = shodan_custom_search.delay(
+            fk=search.id, query_string=query_string, all_results=all_results
+        )
+        request.session["task_id"] = task.id
+        return HttpResponseRedirect("/index")
+    else:
+        return HttpResponse(
+            json.dumps({"Error": "POST required"}),
+            content_type="application/json",
         )
 
 

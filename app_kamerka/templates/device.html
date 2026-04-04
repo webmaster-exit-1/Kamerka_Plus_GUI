@@ -450,6 +450,37 @@
                                     <progress id="progress-bar7" value="0" max="100" style="display:none; margin-bottom: 1em; width:100%;"></progress>
                                     <div id="scan_results"></div>
 
+                                    <!-- Advanced / Manual Nmap Mode -->
+                                    <div style="margin-top:16px;">
+                                        <a data-toggle="collapse" href="#advancedNmap" role="button" aria-expanded="false" aria-controls="advancedNmap" style="font-size:0.9em;color:var(--cp-accent,#00E1FF);">
+                                            ▸ Advanced / Manual Mode
+                                        </a>
+                                        <div class="collapse" id="advancedNmap" style="margin-top:8px;padding:12px;border:1px solid #444;border-radius:4px;background:#1a1a2e;">
+                                            <div style="margin-bottom:8px;">
+                                                <label style="display:block;font-size:0.85em;margin-bottom:2px;">Port Override</label>
+                                                <input type="text" id="adv_ports" placeholder="e.g. 22,80,443,502" style="width:100%;padding:4px;background:#111;color:#eee;border:1px solid #555;">
+                                            </div>
+                                            <div style="margin-bottom:8px;">
+                                                <label style="display:block;font-size:0.85em;margin-bottom:2px;">Timing</label>
+                                                <select id="adv_timing" style="padding:4px;background:#111;color:#eee;border:1px solid #555;">
+                                                    <option value="">Default</option>
+                                                    <option value="T0">T0 — Paranoid</option>
+                                                    <option value="T1">T1 — Sneaky</option>
+                                                    <option value="T2">T2 — Polite</option>
+                                                    <option value="T3">T3 — Normal</option>
+                                                    <option value="T4">T4 — Aggressive</option>
+                                                    <option value="T5">T5 — Insane</option>
+                                                </select>
+                                            </div>
+                                            <div style="margin-bottom:8px;">
+                                                <label style="display:block;font-size:0.85em;margin-bottom:2px;">Extra Flags</label>
+                                                <input type="text" id="adv_extra_flags" placeholder="e.g. -sV --osscan-guess" style="width:100%;padding:4px;background:#111;color:#eee;border:1px solid #555;">
+                                                <small style="color:#888;">Allowed: -sV, -sT, -O, -A, --script, --osscan-guess, --version-intensity, etc.</small>
+                                            </div>
+                                            <button type="button" id="adv_scan" class="btn btn-warning active" style="margin-top:4px;">Run Custom Scan</button>
+                                        </div>
+                                    </div>
+
                                 </div>
                             </div>
                             <!-- END USERS ACTIVITY BLOCK -->
@@ -1065,6 +1096,46 @@ $('#scan').on('click', function(){
         error: function (data) {
             console.log("Something went wrong!");
             noty({text: "Scan request failed", layout: 'topRight', type: 'error', timeout: 4000});
+        }
+    });
+    return false;
+});
+
+$('#adv_scan').on('click', function(){
+    var ports = $('#adv_ports').val();
+    var timing = $('#adv_timing').val();
+    var extraFlags = $('#adv_extra_flags').val();
+    var scanUrl = "/scan_custom/{{device.id}}";
+    var params = [];
+    if (ports) { params.push("ports=" + encodeURIComponent(ports)); }
+    if (timing) { params.push("timing=" + encodeURIComponent(timing)); }
+    if (extraFlags) { params.push("extra_flags=" + encodeURIComponent(extraFlags)); }
+    if (params.length > 0) { scanUrl += "?" + params.join("&"); }
+    var pgrbar7 = $('#progress-bar7');
+    $.ajax({
+        type: "GET",
+        url: scanUrl,
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        success: function (data) {
+            if (data.task_id != null) {
+                pgrbar7.css('display', 'block');
+                get_task_info(data.task_id, pgrbar7, 0, function(result) {
+                    if (result) {
+                        $('#scan_results').html(library.json.prettyPrint(result));
+                    }
+                    if (result && result.Error) {
+                        noty({text: result.Error, layout: 'topRight', type: 'error', timeout: 10000});
+                    } else {
+                        noty({text: "Custom scan complete", layout: 'topRight', type: 'success', timeout: 4000});
+                    }
+                });
+                noty({text: "Custom scan started", layout: 'topRight', type: 'success', timeout: 3000});
+            } else {
+                noty({text: "Failed to start custom scan", layout: 'topRight', type: 'error', timeout: 4000});
+            }
+        },
+        error: function (data) {
+            noty({text: "Custom scan request failed", layout: 'topRight', type: 'error', timeout: 4000});
         }
     });
     return false;

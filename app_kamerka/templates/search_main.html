@@ -153,6 +153,9 @@ font-size: 22px;
                         <li class="tab-list__item">
                             <a class="tab-list__link" href="#tab5"  id='tab6' onclick="replace3()" data-toggle="tab">Upload NMAP Scan</a>
                         </li>
+                        <li class="tab-list__item">
+                            <a class="tab-list__link" href="#tab9" data-toggle="tab">Custom Shodan Query</a>
+                        </li>
 
 
 
@@ -831,6 +834,30 @@ font-size: 22px;' class="image-title">
 
                             </form>
                         </div>
+
+                        <div class="tab-pane" id="tab9">
+                            <h3><center style="color: #00E1FF;">Custom Shodan Query</center></h3>
+                            <p style="color:#aaa;text-align:center;font-size:0.9em;">
+                                Enter any Shodan dork syntax directly. Examples:<br>
+                                <code>port:502 country:DE org:"Siemens"</code><br>
+                                <code>http.title:"SCADA" country:US</code><br>
+                                <code>product:"Modbus" has_screenshot:true</code>
+                            </p>
+                            <form method="POST" action="{% url 'shodan_custom_search' %}">
+                                {% csrf_token %}
+                                <div style="margin-bottom:12px;">
+                                    <input type="text" name="query" id="custom_shodan_query"
+                                           placeholder="Enter Shodan query..."
+                                           maxlength="500"
+                                           style="width:100%;padding:10px;font-size:16px;border:4px solid #444;background:#fff;">
+                                </div>
+                                <input type="checkbox" id="custom_all" name="all" />
+                                <label for="custom_all"><span class="ui"></span> <h4>All results</h4></label>
+                                <br><br>
+                                <button class="btn-submit m-t-0" type="submit">Search</button>
+                            </form>
+                        </div>
+
 
 
 

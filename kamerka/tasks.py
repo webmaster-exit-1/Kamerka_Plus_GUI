@@ -2131,6 +2131,220 @@ def nmap_device_scan(self, device_id, nse_script=None):
         return {"Error": str(e)}
 
 
+# Whitelist of allowed Nmap flag prefixes for manual/advanced mode.
+# Flags not matching any prefix are rejected to prevent misuse.
+ALLOWED_NMAP_FLAGS = frozenset([
+    "-p", "-sV", "-sT", "-sS", "-sU", "-sN", "-sF", "-sX",
+    "-T0", "-T1", "-T2", "-T3", "-T4", "-T5",
+    "-O", "-A", "-v", "-vv",
+    "--script", "--osscan-guess", "--version-intensity",
+    "--open", "--reason", "--top-ports", "--max-retries",
+    "--host-timeout", "--max-rtt-timeout", "--min-rate", "--max-rate",
+])
+
+
+def _sanitize_nmap_flags(raw_flags):
+    """Validate and sanitise user-supplied Nmap flags.
+
+    Returns a tuple ``(clean_flags, error)`` where *clean_flags* is a safe
+    options string and *error* is a human-readable message on rejection
+    (or None on success).
+
+    Rejects shell metacharacters and flags not in ALLOWED_NMAP_FLAGS.
+    """
+    if not raw_flags or not raw_flags.strip():
+        return "", None
+
+    # Block shell metacharacters
+    if re.search(r"[;&|`$(){}!<>'\"\\\n\r]", raw_flags):
+        return "", "Flags contain forbidden characters"
+
+    tokens = raw_flags.split()
+    cleaned = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        # Check if the token (or its prefix before '=') is allowed
+        prefix = tok.split("=")[0]
+        allowed = any(prefix.startswith(f) for f in ALLOWED_NMAP_FLAGS)
+        if not allowed:
+            return "", "Flag '{}' is not allowed".format(tok)
+
+        # For --script, validate path stays within nmap_scripts/
+        if tok.startswith("--script"):
+            if "=" in tok:
+                script_val = tok.split("=", 1)[1]
+            elif i + 1 < len(tokens):
+                i += 1
+                script_val = tokens[i]
+            else:
+                return "", "--script requires a value"
+
+            safe_base = os.path.realpath(
+                os.path.join(settings.BASE_DIR, "nmap_scripts")
+            )
+            for script_path in script_val.split(","):
+                script_path = script_path.strip()
+                # Allow built-in nmap scripts (no path separator)
+                if "/" not in script_path and "\\" not in script_path:
+                    continue
+                script_abs = os.path.realpath(
+                    os.path.join(settings.BASE_DIR, script_path)
+                )
+                if not script_abs.startswith(safe_base + os.sep):
+                    return "", "Script path '{}' is outside nmap_scripts/".format(
+                        script_path
+                    )
+            cleaned.append("--script={}".format(script_val))
+        else:
+            cleaned.append(tok)
+        i += 1
+
+    return " ".join(cleaned), None
+
+
+@shared_task(bind=True)
+def nmap_custom_scan(self, device_id, ports=None, timing=None, extra_flags=None):
+    """Run a custom Nmap scan with user-supplied flags (manual/advanced mode).
+
+    All flags are validated against ALLOWED_NMAP_FLAGS before execution.
+    """
+    progress_recorder = ProgressRecorder(self)
+    progress_recorder.set_progress(0, 4, description="Resolving device…")
+
+    device = Device.objects.get(id=device_id)
+    ip = device.ip
+
+    import ipaddress as _ipa
+    try:
+        _ipa.ip_address(ip)
+    except ValueError:
+        return {"Error": "Invalid IP address: {}".format(ip)}
+
+    # Build options from user inputs
+    port_spec = (ports or "").strip()
+    if not port_spec:
+        port_spec = str(device.port or "").strip().split(",")[0].strip()
+    if not port_spec:
+        port_spec = "21,22,23,80,102,443,502,1911,4911,8080,9600,20000,44818,47808"
+
+    # Sanitize port spec (digits, commas, dashes only)
+    if not re.match(r'^[\d,\-]+$', port_spec):
+        return {"Error": "Invalid port specification: {}".format(port_spec)}
+
+    timing_flag = ""
+    if timing and timing in ("T0", "T1", "T2", "T3", "T4", "T5"):
+        timing_flag = "-{}".format(timing)
+
+    # Sanitize extra flags
+    clean_extra, flag_err = _sanitize_nmap_flags(extra_flags or "")
+    if flag_err:
+        return {"Error": flag_err}
+
+    options = "-p {}".format(port_spec)
+    if timing_flag:
+        options += " {}".format(timing_flag)
+    if clean_extra:
+        options += " {}".format(clean_extra)
+
+    progress_recorder.set_progress(
+        1, 4, description="Starting custom scan on {}…".format(ip)
+    )
+
+    try:
+        nm_result = _run_nmap_with_timeout(ip, options)
+
+        progress_recorder.set_progress(3, 4, description="Processing results…")
+
+        return_dict = {}
+        if nm_result["error"] or not nm_result["stdout"]:
+            return_dict["Error"] = nm_result["error"] or "No Nmap output"
+            if nm_result["stderr"]:
+                return_dict["stderr"] = nm_result["stderr"]
+            return_dict["options_used"] = options
+            device.scan = json.dumps(return_dict)
+            device.exploited_scanned = True
+            device.save()
+            return return_dict
+
+        u = xmltodict.parse(nm_result["stdout"])
+
+        # Extract results
+        try:
+            host = u.get("nmaprun", {}).get("host", {})
+            ports_data = host.get("ports", {}).get("port", {})
+
+            if isinstance(ports_data, list):
+                for p in ports_data:
+                    port_id = p.get("@portid", "")
+                    state = p.get("state", {}).get("@state", "")
+                    return_dict["port_{}".format(port_id)] = state
+                    scripts = p.get("script", {})
+                    if isinstance(scripts, dict):
+                        return_dict[scripts.get("@id", "script")] = scripts.get(
+                            "@output", ""
+                        )
+                    elif isinstance(scripts, list):
+                        for s in scripts:
+                            return_dict[s.get("@id", "script")] = s.get("@output", "")
+            elif isinstance(ports_data, dict):
+                port_id = ports_data.get("@portid", "")
+                state = ports_data.get("state", {}).get("@state", "")
+                return_dict["port_{}".format(port_id)] = state
+                scripts = ports_data.get("script", {})
+                if isinstance(scripts, dict):
+                    return_dict[scripts.get("@id", "script")] = scripts.get(
+                        "@output", ""
+                    )
+                elif isinstance(scripts, list):
+                    for s in scripts:
+                        return_dict[s.get("@id", "script")] = s.get("@output", "")
+
+            if not return_dict:
+                return_dict["State"] = "No script output"
+                return_dict["raw"] = nm_result["stdout"][:2000]
+
+        except Exception as e:
+            logger.warning("nmap_custom_scan parse error: %s", e)
+            return_dict["State"] = "Parse error: {}".format(str(e))
+            return_dict["raw"] = nm_result["stdout"][:2000]
+
+        return_dict["options_used"] = options
+        device.scan = json.dumps(return_dict)
+        device.exploited_scanned = True
+        device.save()
+
+        progress_recorder.set_progress(4, 4, description="Custom scan complete")
+        return return_dict
+
+    except Exception as e:
+        logger.warning("nmap_custom_scan error for %s: %s", ip, e)
+        return {"Error": str(e)}
+
+
+@shared_task(bind=True)
+def shodan_custom_search(self, fk, query_string, all_results=False):
+    """Run a custom Shodan search with a raw query string (manual mode).
+
+    The query is passed directly to the Shodan Python API (no subprocess),
+    so shell injection is not a concern.  Basic length validation is applied.
+    """
+    if not query_string or not query_string.strip():
+        return {"Error": "Empty query"}
+    if len(query_string) > 500:
+        return {"Error": "Query too long (max 500 characters)"}
+
+    shodan_search_worker(
+        fk=fk,
+        query=query_string.strip(),
+        search_type="custom",
+        category="custom",
+        country="XX",  # XX = no country filter (raw query)
+        all_results=all_results,
+    )
+    return {"status": "complete", "query": query_string.strip()}
+
+
 @shared_task(bind=False)
 def scan(id):
     """Legacy synchronous Nmap scan — prefer nmap_device_scan() Celery task."""
