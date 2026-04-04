@@ -113,18 +113,36 @@ def main():
     snippet = (
         f'export PASTEBIN_API_DEV_KEY="{dev_key}"\n'
         f'export PASTEBIN_API_USER_NAME="{username}"\n'
-        f'export PASTEBIN_API_USER_PASSWORD="{password}"\n'
+        f'export PASTEBIN_API_USER_PASSWORD="<your_password_here>"\n'
     )
     print("Add the following to your shell profile (e.g. ~/.bashrc):\n")
     print(snippet)
+    print(
+        "⚠  Replace <your_password_here> with your actual password.\n"
+        "   Storing passwords in plaintext shell profiles is convenient but\n"
+        "   carries risk.  Consider using a secrets manager or encrypted\n"
+        "   credential store for production deployments.\n"
+    )
 
-    answer = input("Append to ~/.bashrc now? [y/N] ").strip().lower()
+    answer = input("Append API key and username (without password) to ~/.bashrc? [y/N] ").strip().lower()
     if answer == "y":
-        bashrc = os.path.expanduser("~/.bashrc")
-        with open(bashrc, "a") as fh:
-            fh.write("\n# Pastebin API keys for Kamerka field-agent sync\n")
-            fh.write(snippet)
-        print(f"✓ Appended to {bashrc}.  Run 'source ~/.bashrc' to apply.")
+        home = os.path.expanduser("~")
+        bashrc = os.path.join(home, ".bashrc")
+        real_bashrc = os.path.realpath(bashrc)
+        real_home = os.path.realpath(home)
+        if not real_bashrc.startswith(real_home + os.sep):
+            print(f"✗ Resolved path {real_bashrc} is outside your home directory.  Skipping.")
+        else:
+            safe_snippet = (
+                f'export PASTEBIN_API_DEV_KEY="{dev_key}"\n'
+                f'export PASTEBIN_API_USER_NAME="{username}"\n'
+                "# export PASTEBIN_API_USER_PASSWORD=  # set this manually — avoid storing passwords in plaintext\n"
+            )
+            with open(real_bashrc, "a") as fh:
+                fh.write("\n# Pastebin API keys for Kamerka field-agent sync\n")
+                fh.write(safe_snippet)
+            print(f"✓ Appended to {real_bashrc}.  Run 'source ~/.bashrc' to apply.")
+            print("  Remember to set PASTEBIN_API_USER_PASSWORD manually before using the field-agent feature.")
     else:
         print("Skipped.  Copy the exports above and add them manually.")
 
