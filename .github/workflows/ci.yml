@@ -29,6 +29,11 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Install System Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libpcap-dev nmap
+
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
@@ -36,23 +41,20 @@ jobs:
         check-latest: true
         cache: false
 
+    - name: Install ProjectDiscovery Tools
+      run: |
+        # Explicitly use modern toolchain for pdtm
+        GOTOOLCHAIN=go1.26.0 go install -v github.com/projectdiscovery/pdtm/cmd/pdtm@latest
+        # Install binaries now that libpcap-dev is present
+        $(go env GOPATH)/bin/pdtm -i nuclei,naabu
+        # Export the pdtm bin path to the global GITHUB_PATH
+        echo "$HOME/.pdtm/go/bin" >> $GITHUB_PATH
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.12' # Upgrade to 3.12 to match 2026 standards
+        python-version: '3.12'
         cache: 'pip'
-
-    - name: Install ProjectDiscovery Tools
-      run: |
-        # Force the Go toolchain to latest for this specific command
-        GOTOOLCHAIN=go1.26.0 go install -v github.com/projectdiscovery/pdtm/cmd/pdtm@latest
-        $(go env GOPATH)/bin/pdtm -i nuclei,naabu
-        echo "$HOME/.pdtm/go/bin" >> $GITHUB_PATH
-
-    - name: Install System Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y nmap
 
     - name: Install Python Dependencies
       run: |
@@ -73,5 +75,7 @@ jobs:
     - name: Verify Security Engine Health
       run: |
         nmap --version
+        naabu -version
         nuclei -version
         pip show wappalyzer
+
