@@ -92,9 +92,14 @@ These are only needed if the tools are not on your `$PATH`.  See [docs/ARCHITECT
 | `KAMERKA_NUCLEI_TIMEOUT` | `300` | Nuclei subprocess timeout (seconds) |
 | `NMAP_MAX_RUNTIME` | `300` | Maximum seconds an Nmap scan may run before being killed |
 
-> **Nmap** is resolved from `$PATH` automatically.  Raw-socket scan types
-> (`-sS`, `-O`) require root / `CAP_NET_RAW`.  The Celery worker must be
-> started as root so Nmap inherits the required permissions.
+> **Nmap** is resolved from `$PATH` automatically. Raw-socket scan types
+> such as `-sS` and `-O` require additional privileges (`CAP_NET_RAW` /
+> `CAP_NET_ADMIN` or root), but scans that do not use those features can run
+> unprivileged. If you need raw-socket features, prefer granting the `nmap`
+> binary the required capabilities, for example:
+> `setcap cap_net_raw,cap_net_admin+eip $(which nmap)`.
+> Do **not** run the Celery worker as root solely to give Nmap these
+> permissions.
 
 ## GeoLite2 / GeoIP Databases
 

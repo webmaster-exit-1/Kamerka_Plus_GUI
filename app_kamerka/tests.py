@@ -1274,7 +1274,14 @@ class HomepageHamburgerMenuTest(TestCase):
         self.assertEqual(response.status_code, 200)
         content = response.content.decode()
         self.assertIn('id="kamerka-hamburger-btn"', content)
-        self.assertIn("&#9776;", content)
+        # Verify the ☰ icon is inside the button element, not just anywhere
+        # in the page (the entity also appears in the inline JS toggle).
+        import re
+        btn_match = re.search(
+            r'<button[^>]*id="kamerka-hamburger-btn"[^>]*>&#9776;</button>',
+            content,
+        )
+        self.assertIsNotNone(btn_match, "&#9776; must appear inside the hamburger <button>")
 
     def test_hamburger_overlay_present(self):
         response = self.client.get("/")

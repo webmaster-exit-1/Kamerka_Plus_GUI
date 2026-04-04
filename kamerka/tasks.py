@@ -1742,13 +1742,21 @@ def send_to_field_agent_task(id, notes):
             id,
         )
 
-    user_key = paste_login(
-        _get_env_key("PASTEBIN_API_USER_NAME"),
-        _get_env_key("PASTEBIN_API_USER_PASSWORD"),
-        _get_env_key("PASTEBIN_API_DEV_KEY"),
-    )
+    pb_username = _get_env_key("PASTEBIN_API_USER_NAME")
+    pb_password = _get_env_key("PASTEBIN_API_USER_PASSWORD")
+    pb_dev_key = _get_env_key("PASTEBIN_API_DEV_KEY")
 
-    pastes = retrieve_pastes(_get_env_key("PASTEBIN_API_DEV_KEY"), user_key=user_key)
+    if not pb_username or not pb_password or not pb_dev_key:
+        logger.error(
+            "send_to_field_agent_task: one or more Pastebin env vars are unset "
+            "(PASTEBIN_API_DEV_KEY, PASTEBIN_API_USER_NAME, PASTEBIN_API_USER_PASSWORD). "
+            "Aborting."
+        )
+        return
+
+    user_key = paste_login(pb_username, pb_password, pb_dev_key)
+
+    pastes = retrieve_pastes(pb_dev_key, user_key=user_key)
 
     ip = af.ip
     lat = af.lat

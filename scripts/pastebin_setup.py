@@ -15,6 +15,7 @@ Reference: https://pastebin.com/doc_api
 """
 
 import os
+import shlex
 import sys
 import textwrap
 
@@ -110,9 +111,15 @@ def main():
 
     # Step 4 — Export snippet
     print("\n─── Step 4: Environment Variables ───")
+
+    # Reject values containing newlines to prevent shell injection.
+    for label, val in [("Developer API Key", dev_key), ("Username", username)]:
+        if "\n" in val or "\r" in val:
+            sys.exit(f"✗ {label} contains newline characters — aborting for safety.")
+
     snippet = (
-        f'export PASTEBIN_API_DEV_KEY="{dev_key}"\n'
-        f'export PASTEBIN_API_USER_NAME="{username}"\n'
+        f"export PASTEBIN_API_DEV_KEY={shlex.quote(dev_key)}\n"
+        f"export PASTEBIN_API_USER_NAME={shlex.quote(username)}\n"
         'export PASTEBIN_API_USER_PASSWORD="<your_password_here>"\n'
     )
     print("Add the following to your shell profile (e.g. ~/.bashrc):\n")
@@ -134,11 +141,11 @@ def main():
             print(f"✗ Resolved path {real_bashrc} is outside your home directory.  Skipping.")
         else:
             safe_snippet = (
-                f'export PASTEBIN_API_DEV_KEY="{dev_key}"\n'
-                f'export PASTEBIN_API_USER_NAME="{username}"\n'
+                f"export PASTEBIN_API_DEV_KEY={shlex.quote(dev_key)}\n"
+                f"export PASTEBIN_API_USER_NAME={shlex.quote(username)}\n"
                 "# export PASTEBIN_API_USER_PASSWORD=  # set this manually — avoid storing passwords in plaintext\n"
             )
-            with open(real_bashrc, "a") as fh:
+            with open(real_bashrc, "a", encoding="utf-8") as fh:
                 fh.write("\n# Pastebin API keys for Kamerka field-agent sync\n")
                 fh.write(safe_snippet)
             print(f"✓ Appended to {real_bashrc}.  Run 'source ~/.bashrc' to apply.")
