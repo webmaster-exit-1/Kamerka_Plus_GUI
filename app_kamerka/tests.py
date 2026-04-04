@@ -16,6 +16,7 @@ Each test here would catch a real bug in the application:
 
 import json
 import os
+import re
 import subprocess
 from unittest.mock import patch, MagicMock, call
 
@@ -1276,7 +1277,6 @@ class HomepageHamburgerMenuTest(TestCase):
         self.assertIn('id="kamerka-hamburger-btn"', content)
         # Verify the ☰ icon is inside the button element, not just anywhere
         # in the page (the entity also appears in the inline JS toggle).
-        import re
         btn_match = re.search(
             r'<button[^>]*id="kamerka-hamburger-btn"[^>]*>&#9776;</button>',
             content,
