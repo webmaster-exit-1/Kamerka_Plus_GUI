@@ -27,6 +27,7 @@ export SHODAN_API_KEY=your_shodan_api_key_here
 # export PASTEBIN_USER=your_pastebin_username
 # export PASTEBIN_PASSWORD=your_pastebin_password
 # export PASTEBIN_DEV_KEY=your_pastebin_developer_key
+# export NVD_API_KEY=your_nvd_api_key_here   # raises NVD rate limit from 5 to 50 req/30s
 ```
 
 **Making environment variables persistent (so you don't have to re-export in every new terminal)**
@@ -63,6 +64,7 @@ docker run -e SHODAN_API_KEY=your_key ...
 | `PASTEBIN_USER` | optional | Pastebin username (field-agent sync) |
 | `PASTEBIN_PASSWORD` | optional | Pastebin password |
 | `PASTEBIN_DEV_KEY` | optional | Pastebin developer key |
+| `NVD_API_KEY` | optional | NIST NVD API key — raises CVE lookup rate limit from 5 to 50 req/30 s; register free at https://nvd.nist.gov/developers/request-an-api-key |
 | `DJANGO_SECRET_KEY` | optional | Override the auto-generated Django secret key |
 
 ## GeoLite2 Database (Required for NMAP scan)

@@ -24,6 +24,7 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 - **Native 3D globe viewer** (PyVista + PyQt6) with textured Earth, device spikes, LOD clustering, and click-to-inspect
 - **Tiered verification pipeline**: InternetDB (free) → Naabu → Shodan, with credit cost reporting
 - **Honeypot cluster detection**: filters /24 subnets with ≥ 500 identical banners before rendering
+- **CVE Intelligence (NVD/EPSS/KEV)** — one-click enrichment of device CVEs with CVSS scores, EPSS exploit-probability, and CISA Known Exploited Vulnerabilities status via the NIST NVD API (optional `NVD_API_KEY` for higher rate limits)
 - **Android / Termux support** — runs without root on Android 14 (tested on OnePlus CPH2583)
 
 ## Documentation
@@ -44,6 +45,7 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 - Wappalyzer web technology detection
 - RTSP camera stream scanning
 - CSV and KML export for search results — compatible with QGIS, Kepler.gl, uMap, and the built-in globe
+- CVE Intelligence enrichment via NIST NVD API (CVSS scores, EPSS exploit probability, CISA KEV status)
 - Gallery section shows every gathered screenshot in one place
 - Celery task progress tracking in the UI
 
@@ -54,6 +56,8 @@ git clone https://github.com/webmaster-exit-1/Kamerka_Plus_GUI.git
 cd Kamerka_Plus_GUI
 pip3 install -r requirements.txt
 export SHODAN_API_KEY=your_key_here
+# optional — raises NVD CVE lookup rate limit from 5 to 50 req/30s:
+# export NVD_API_KEY=your_nvd_api_key_here
 redis-server &
 python3 manage.py migrate
 python3 manage.py create_default_superuser
