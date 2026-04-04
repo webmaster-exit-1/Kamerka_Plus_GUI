@@ -1261,3 +1261,385 @@ class SBOMResultsViewTest(TestCase):
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]["component_name"], "OpenSSL")
         self.assertEqual(data[0]["version"], "1.1.1")
+
+
+# ---------------------------------------------------------------------------
+# _run_nmap_with_timeout helper
+# ---------------------------------------------------------------------------
+class RunNmapWithTimeoutTest(TestCase):
+    """_run_nmap_with_timeout provides timeout and TCP-connect fallback."""
+
+    @patch("kamerka.tasks.NmapProcess")
+    def test_successful_scan_returns_stdout(self, MockNmap):
+        from kamerka.tasks import _run_nmap_with_timeout
+
+        mock_nm = MagicMock()
+        mock_nm.is_running.side_effect = [True, False]
+        mock_nm.stdout = "<nmaprun></nmaprun>"
+        mock_nm.stderr = ""
+        mock_nm.rc = 0
+        MockNmap.return_value = mock_nm
+
+        result = _run_nmap_with_timeout("1.2.3.4", "-p 80 -sV", timeout=60)
+        self.assertEqual(result["rc"], 0)
+        self.assertIsNone(result["error"])
+        self.assertIn("nmaprun", result["stdout"])
+
+    @patch("kamerka.tasks.NmapProcess")
+    def test_timeout_returns_error(self, MockNmap):
+        from kamerka.tasks import _run_nmap_with_timeout
+
+        mock_nm = MagicMock()
+        mock_nm.is_running.return_value = True  # never finishes
+        mock_nm.stdout = ""
+        mock_nm.stderr = ""
+        mock_nm.rc = -1
+        MockNmap.return_value = mock_nm
+
+        result = _run_nmap_with_timeout(
+            "1.2.3.4", "-p 80", timeout=1, fallback_tcp_connect=False
+        )
+        self.assertIn("timed out", result["error"])
+        mock_nm.stop.assert_called()
+
+    @patch("kamerka.tasks.NmapProcess")
+    def test_failure_retries_with_sT(self, MockNmap):
+        from kamerka.tasks import _run_nmap_with_timeout
+
+        # First call fails (rc=1), second call succeeds
+        mock_fail = MagicMock()
+        mock_fail.is_running.side_effect = [False]
+        mock_fail.stdout = ""
+        mock_fail.stderr = "permission denied"
+        mock_fail.rc = 1
+
+        mock_success = MagicMock()
+        mock_success.is_running.side_effect = [False]
+        mock_success.stdout = "<nmaprun></nmaprun>"
+        mock_success.stderr = ""
+        mock_success.rc = 0
+
+        MockNmap.side_effect = [mock_fail, mock_success]
+
+        result = _run_nmap_with_timeout(
+            "1.2.3.4", "-p 80 -sV", timeout=60, fallback_tcp_connect=True
+        )
+        self.assertEqual(result["rc"], 0)
+        # Verify -sT was used in the retry
+        second_call_kwargs = MockNmap.call_args_list[1][1]
+        self.assertIn("-sT", second_call_kwargs.get("options", ""))
+
+    @patch("kamerka.tasks.NmapProcess")
+    def test_stderr_surfaced_on_failure(self, MockNmap):
+        from kamerka.tasks import _run_nmap_with_timeout
+
+        mock_nm = MagicMock()
+        mock_nm.is_running.side_effect = [False]
+        mock_nm.stdout = ""
+        mock_nm.stderr = "nmap: command not found"
+        mock_nm.rc = 127
+        MockNmap.return_value = mock_nm
+
+        result = _run_nmap_with_timeout(
+            "1.2.3.4", "-p 80", timeout=60, fallback_tcp_connect=False
+        )
+        self.assertIn("127", result["error"])
+        self.assertIn("nmap: command not found", result["stderr"])
+
+
+# ---------------------------------------------------------------------------
+# _shodan_with_retry helper
+# ---------------------------------------------------------------------------
+class ShodanWithRetryTest(TestCase):
+    """_shodan_with_retry provides exponential back-off for Shodan API calls."""
+
+    @patch("kamerka.tasks.sleep")
+    def test_success_on_first_try(self, mock_sleep):
+        from kamerka.tasks import _shodan_with_retry
+
+        fn = MagicMock(return_value={"matches": []})
+        result = _shodan_with_retry(fn, "test query", retries=3, base_delay=0)
+        self.assertEqual(result, {"matches": []})
+        fn.assert_called_once_with("test query")
+        mock_sleep.assert_not_called()
+
+    @patch("kamerka.tasks.sleep")
+    def test_retries_on_transient_error(self, mock_sleep):
+        import shodan.exception
+        from kamerka.tasks import _shodan_with_retry
+
+        fn = MagicMock(
+            side_effect=[
+                shodan.exception.APIError("rate limit"),
+                {"matches": [{"ip_str": "1.2.3.4"}]},
+            ]
+        )
+        result = _shodan_with_retry(fn, "test", retries=3, base_delay=0)
+        self.assertEqual(fn.call_count, 2)
+        self.assertIn("matches", result)
+
+    @patch("kamerka.tasks.sleep")
+    def test_raises_after_exhausting_retries(self, mock_sleep):
+        import shodan.exception
+        from kamerka.tasks import _shodan_with_retry
+
+        fn = MagicMock(
+            side_effect=shodan.exception.APIError("always fail")
+        )
+        with self.assertRaises(shodan.exception.APIError):
+            _shodan_with_retry(fn, "test", retries=2, base_delay=0)
+        self.assertEqual(fn.call_count, 2)
+
+
+# ---------------------------------------------------------------------------
+# _sanitize_nmap_flags
+# ---------------------------------------------------------------------------
+class SanitizeNmapFlagsTest(TestCase):
+    """_sanitize_nmap_flags rejects dangerous input and allows safe flags."""
+
+    def _sanitize(self, flags):
+        from kamerka.tasks import _sanitize_nmap_flags
+        return _sanitize_nmap_flags(flags)
+
+    def test_empty_input(self):
+        clean, err = self._sanitize("")
+        self.assertEqual(clean, "")
+        self.assertIsNone(err)
+
+    def test_allowed_flags(self):
+        clean, err = self._sanitize("-sV -T4 --osscan-guess")
+        self.assertIsNone(err)
+        self.assertIn("-sV", clean)
+        self.assertIn("-T4", clean)
+        self.assertIn("--osscan-guess", clean)
+
+    def test_rejects_shell_metacharacters(self):
+        _, err = self._sanitize("-sV; rm -rf /")
+        self.assertIsNotNone(err)
+        self.assertIn("forbidden", err)
+
+    def test_rejects_disallowed_flags(self):
+        _, err = self._sanitize("--datadir /etc")
+        self.assertIsNotNone(err)
+        self.assertIn("not allowed", err)
+
+    def test_rejects_pipe_injection(self):
+        _, err = self._sanitize("-sV | cat /etc/passwd")
+        self.assertIsNotNone(err)
+
+    def test_allows_timing_flags(self):
+        clean, err = self._sanitize("-T0")
+        self.assertIsNone(err)
+        self.assertEqual(clean, "-T0")
+
+
+# ---------------------------------------------------------------------------
+# nmap_custom_scan task
+# ---------------------------------------------------------------------------
+class NmapCustomScanTest(TestCase):
+    """nmap_custom_scan validates flags before running Nmap."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    @patch("kamerka.tasks.ProgressRecorder")
+    @patch("kamerka.tasks._run_nmap_with_timeout")
+    def test_rejects_invalid_ports(self, mock_nmap, mock_pr):
+        from kamerka.tasks import nmap_custom_scan
+        # Call the underlying function directly (bypass Celery)
+        result = nmap_custom_scan(
+            self.device.id, ports="abc;rm"
+        )
+        self.assertIn("Error", result)
+        mock_nmap.assert_not_called()
+
+    @patch("kamerka.tasks.ProgressRecorder")
+    @patch("kamerka.tasks._run_nmap_with_timeout")
+    def test_rejects_bad_flags(self, mock_nmap, mock_pr):
+        from kamerka.tasks import nmap_custom_scan
+        result = nmap_custom_scan(
+            self.device.id, extra_flags="--datadir /etc"
+        )
+        self.assertIn("Error", result)
+        mock_nmap.assert_not_called()
+
+    @patch("kamerka.tasks.ProgressRecorder")
+    @patch("kamerka.tasks._run_nmap_with_timeout")
+    def test_successful_custom_scan(self, mock_nmap, mock_pr):
+        from kamerka.tasks import nmap_custom_scan
+        mock_nmap.return_value = {
+            "stdout": "<nmaprun><host><ports><port protocol='tcp' portid='80'><state state='open'/></port></ports></host></nmaprun>",
+            "stderr": "",
+            "rc": 0,
+            "error": None,
+        }
+        result = nmap_custom_scan(
+            self.device.id, ports="80,443", timing="T4", extra_flags="-sV"
+        )
+        self.assertNotIn("Error", result)
+        self.assertIn("options_used", result)
+        self.assertIn("-T4", result["options_used"])
+        self.assertIn("-sV", result["options_used"])
+
+
+# ---------------------------------------------------------------------------
+# Custom scan view
+# ---------------------------------------------------------------------------
+class CustomScanViewTest(TestCase):
+    """scan_dev_custom view accepts custom nmap params via GET."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    @patch("app_kamerka.views.nmap_custom_scan")
+    def test_custom_scan_endpoint(self, mock_task):
+        mock_task.delay.return_value = MagicMock(id="test-task-id")
+        response = self.client.get(
+            "/scan_custom/{}?ports=80&timing=T4&extra_flags=-sV".format(
+                self.device.id
+            ),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["task_id"], "test-task-id")
+        mock_task.delay.assert_called_once_with(
+            self.device.id, ports="80", timing="T4", extra_flags="-sV"
+        )
+
+    def test_custom_scan_requires_ajax(self):
+        response = self.client.get(
+            "/scan_custom/{}".format(self.device.id),
+        )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertIsNone(data["task_id"])
+
+
+# ---------------------------------------------------------------------------
+# Custom Shodan search view
+# ---------------------------------------------------------------------------
+class CustomShodanSearchViewTest(TestCase):
+    """shodan_custom_search_view handles POST with raw query."""
+
+    @patch("app_kamerka.views.shodan_custom_search")
+    def test_custom_shodan_search_post(self, mock_task):
+        mock_task.delay.return_value = MagicMock(id="shodan-task-id")
+        response = self.client.post(
+            "/shodan_custom_search",
+            {"query": "port:502 country:DE"},
+        )
+        # Should redirect to /index
+        self.assertEqual(response.status_code, 302)
+        mock_task.delay.assert_called_once()
+        call_kwargs = mock_task.delay.call_args[1]
+        self.assertEqual(call_kwargs["query_string"], "port:502 country:DE")
+
+    @patch("app_kamerka.views.shodan_custom_search")
+    def test_rejects_empty_query(self, mock_task):
+        response = self.client.post(
+            "/shodan_custom_search",
+            {"query": ""},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertIn("Error", data)
+        mock_task.delay.assert_not_called()
+
+    def test_rejects_get_method(self):
+        response = self.client.get("/shodan_custom_search")
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertIn("Error", data)
+
+
+# ---------------------------------------------------------------------------
+# scan_ip management command
+# ---------------------------------------------------------------------------
+class ScanIPCommandTest(TestCase):
+    """scan_ip management command validates input and runs scans."""
+
+    def test_invalid_ip_raises_error(self):
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+        from io import StringIO
+
+        with self.assertRaises(CommandError) as ctx:
+            call_command("scan_ip", "not-an-ip", stderr=StringIO())
+        self.assertIn("Invalid IP", str(ctx.exception))
+
+    @patch("kamerka.tasks._run_nmap_with_timeout")
+    def test_nmap_scan_runs(self, mock_nmap):
+        from django.core.management import call_command
+        from io import StringIO
+
+        mock_nmap.return_value = {
+            "stdout": "<nmaprun><host><ports><port protocol='tcp' portid='22'><state state='open'/><service name='ssh'/></port></ports></host></nmaprun>",
+            "stderr": "",
+            "rc": 0,
+            "error": None,
+        }
+        out = StringIO()
+        err = StringIO()
+        call_command(
+            "scan_ip", "192.168.1.1", "--ports", "22", "--output", "json",
+            stdout=out, stderr=err,
+        )
+        result = json.loads(out.getvalue())
+        self.assertIn("nmap", result)
+        self.assertNotIn("Error", result["nmap"])
+
+    @patch("kamerka.tasks._run_nmap_with_timeout")
+    def test_json_output_format(self, mock_nmap):
+        from django.core.management import call_command
+        from io import StringIO
+
+        mock_nmap.return_value = {
+            "stdout": "<nmaprun></nmaprun>",
+            "stderr": "",
+            "rc": 0,
+            "error": None,
+        }
+        out = StringIO()
+        call_command(
+            "scan_ip", "10.0.0.1", "--output", "json",
+            stdout=out, stderr=StringIO(),
+        )
+        data = json.loads(out.getvalue())
+        self.assertIsInstance(data, dict)
+        self.assertIn("nmap", data)
+
+    @patch("kamerka.tasks._run_nmap_with_timeout")
+    def test_no_nmap_flag_skips_nmap(self, mock_nmap):
+        from django.core.management import call_command
+        from io import StringIO
+
+        out = StringIO()
+        call_command(
+            "scan_ip", "10.0.0.1", "--no-nmap", "--output", "json",
+            stdout=out, stderr=StringIO(),
+        )
+        data = json.loads(out.getvalue())
+        self.assertNotIn("nmap", data)
+        mock_nmap.assert_not_called()
+
+    @patch("kamerka.tasks._run_nmap_with_timeout")
+    def test_table_output_format(self, mock_nmap):
+        from django.core.management import call_command
+        from io import StringIO
+
+        mock_nmap.return_value = {
+            "stdout": "<nmaprun><host><ports><port protocol='tcp' portid='80'><state state='open'/><service name='http'/></port></ports></host></nmaprun>",
+            "stderr": "",
+            "rc": 0,
+            "error": None,
+        }
+        out = StringIO()
+        call_command(
+            "scan_ip", "10.0.0.1", "--ports", "80", "--output", "table",
+            stdout=out, stderr=StringIO(),
+        )
+        output = out.getvalue()
+        self.assertIn("NMAP SCAN RESULTS", output)
