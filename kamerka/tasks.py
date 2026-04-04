@@ -49,6 +49,147 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Nmap helper: run with timeout, stderr capture, and TCP-connect fallback
+# ---------------------------------------------------------------------------
+
+def _run_nmap_with_timeout(ip, options, timeout=None, fallback_tcp_connect=None):
+    """Run an NmapProcess with timeout enforcement and optional retry.
+
+    Returns a dict with keys:
+      - ``stdout``: raw XML output (may be empty on failure)
+      - ``stderr``: stderr content (if any)
+      - ``rc``:     nmap return code (0 = success)
+      - ``error``:  human-readable error string, or None on success
+
+    When *fallback_tcp_connect* is True and the first run fails with a
+    non-zero return code, the scan is retried once with ``-sT`` (TCP-connect)
+    to work around environments that lack raw-socket privileges.
+    """
+    if timeout is None:
+        timeout = getattr(settings, "NMAP_TIMEOUT", 300)
+    if fallback_tcp_connect is None:
+        fallback_tcp_connect = getattr(settings, "NMAP_FALLBACK_TCP_CONNECT", True)
+
+    def _execute(opts):
+        nm = NmapProcess(ip, options=opts)
+        nm.run_background()
+
+        start = time.time()
+        while nm.is_running():
+            elapsed = time.time() - start
+            if elapsed > timeout:
+                try:
+                    nm.stop()
+                except Exception:
+                    pass
+                return {
+                    "stdout": nm.stdout or "",
+                    "stderr": (nm.stderr or "")[:500],
+                    "rc": -1,
+                    "error": "Nmap scan timed out after {} seconds".format(timeout),
+                }
+            sleep(2)
+
+        return {
+            "stdout": nm.stdout or "",
+            "stderr": (nm.stderr or "")[:500],
+            "rc": nm.rc if nm.rc is not None else -1,
+            "error": None,
+        }
+
+    result = _execute(options)
+
+    # If it failed and stdout is empty, surface stderr as the error
+    if result["rc"] != 0 and not result["error"]:
+        stderr_msg = result["stderr"].strip()
+        result["error"] = "Nmap exited with code {} — {}".format(
+            result["rc"], stderr_msg or "no output"
+        )
+
+    # Retry with TCP-connect if the original scan failed (e.g. missing root)
+    if (
+        fallback_tcp_connect
+        and result["rc"] != 0
+        and "-sT" not in options
+        and "-sS" not in options
+    ):
+        logger.info(
+            "Nmap scan failed for %s (rc=%s), retrying with -sT (TCP connect)",
+            ip,
+            result["rc"],
+        )
+        retry_options = "-sT " + options
+        result = _execute(retry_options)
+        if result["rc"] != 0 and not result["error"]:
+            stderr_msg = result["stderr"].strip()
+            result["error"] = "Nmap -sT retry exited with code {} — {}".format(
+                result["rc"], stderr_msg or "no output"
+            )
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Shodan helper: exponential back-off retry wrapper
+# ---------------------------------------------------------------------------
+
+def _shodan_with_retry(fn, *args, retries=3, base_delay=2, **kwargs):
+    """Call *fn* with exponential back-off on transient Shodan / network errors.
+
+    Catches ``shodan.exception.APIError`` and ``requests.exceptions.RequestException``
+    and retries up to *retries* times, sleeping ``base_delay * 2^attempt`` seconds
+    between attempts.
+
+    On success, logs remaining Shodan query credits when the API client is
+    accessible.
+
+    Returns the result of *fn* on success; re-raises the last exception on
+    exhaustion.
+    """
+    import shodan.exception  # local import to avoid module-level dependency
+
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            result = fn(*args, **kwargs)
+            return result
+        except (
+            shodan.exception.APIError,
+            requests.exceptions.RequestException,
+        ) as exc:
+            last_exc = exc
+            if attempt < retries - 1:
+                delay = base_delay * (2 ** attempt)
+                logger.warning(
+                    "Shodan call %s failed (attempt %d/%d): %s — retrying in %ds",
+                    fn.__name__ if hasattr(fn, "__name__") else str(fn),
+                    attempt + 1,
+                    retries,
+                    exc,
+                    delay,
+                )
+                sleep(delay)
+            else:
+                logger.error(
+                    "Shodan call %s failed after %d attempts: %s",
+                    fn.__name__ if hasattr(fn, "__name__") else str(fn),
+                    retries,
+                    exc,
+                )
+    raise last_exc
+
+
+def _log_shodan_credits(api):
+    """Log remaining Shodan query credits (best-effort, never raises)."""
+    try:
+        info = api.info()
+        credits_left = info.get("query_credits", "?")
+        logger.info("Shodan credits remaining: %s", credits_left)
+    except Exception:
+        pass
+
 healthcare_queries = {
     "zoll": "http.favicon.hash:-236942626",
     "dicom": "dicom",
@@ -645,20 +786,14 @@ def devices_nearby(lat, lon, id, query):
     device = Device.objects.get(id=id)
 
     api = Shodan(SHODAN_API_KEY)
-    fail = 0
-    # Shodan sometimes fails with no reason, sleeping when it happens and it prevents rate limitation
-    try:
-        # Search Shodan
-        results = api.search("geo:" + lat + "," + lon + ",15 " + query)
-    except Exception as exc:
-        fail = 1
-        logger.warning("devices_nearby: Shodan search failed (attempt 1): %s", exc)
+    query_string = "geo:" + lat + "," + lon + ",15 " + query
 
-    if fail == 1:
-        try:
-            results = api.search("geo:" + lat + "," + lon + ",15 " + query)
-        except Exception as e:
-            logger.warning("devices_nearby: Shodan search failed (attempt 2): %s", e)
+    try:
+        results = _shodan_with_retry(api.search, query_string)
+        _log_shodan_credits(api)
+    except Exception as exc:
+        logger.warning("devices_nearby: Shodan search failed: %s", exc)
+        return {"error": str(exc)}
 
     try:  # Show the results
         total = len(results["matches"])
@@ -1036,6 +1171,7 @@ def shodan_search_worker(
             device.save()
 
         fout.close()
+        _log_shodan_credits(api)
     except Exception as exc:
         logger.warning(
             "shodan_search_worker: error during search/download for '%s': %s",
@@ -1804,11 +1940,10 @@ def shodan_scan_task(id):
     tags = []
     vulns = []
     try:
-        # Search Shodan
-        results = api.host(device.ip)
+        results = _shodan_with_retry(api.host, device.ip)
+        _log_shodan_credits(api)
         # Show the results
         total = len(results["ports"])
-        print(total)
         for counter, i in enumerate(results["data"]):
 
             if "product" in i:
@@ -1834,12 +1969,12 @@ def shodan_scan_task(id):
             device=device, products=product, ports=ports, tags=tags, vulns=vulns
         )
         device1.save()
-        print(results["ports"])
 
         return {"current": total, "total": total, "percent": 100}
 
     except Exception as e:
-        print(e.args)
+        logger.warning("shodan_scan_task failed for device %s: %s", id, e)
+        return {"error": str(e)}
 
 
 ics_scan = {
@@ -1929,39 +2064,20 @@ def nmap_device_scan(self, device_id, nse_script=None):
 
     return_dict = {}
     try:
-        nm = NmapProcess(ip, options=options)
-        nm.run_background()
-
-        # Wait for the scan with a timeout
-        start_time = time.time()
-        max_runtime = getattr(settings, "NMAP_MAX_RUNTIME", 300)
-        while nm.is_running():
-            elapsed = time.time() - start_time
-            if elapsed > max_runtime:
-                try:
-                    nm.stop()
-                except Exception:
-                    pass
-                return {
-                    "Error": "Nmap scan timed out after {} seconds".format(max_runtime)
-                }
-            progress_recorder.set_progress(
-                2, 4, description="Scanning… {:.0f}s elapsed".format(elapsed)
-            )
-            sleep(2)
+        nm_result = _run_nmap_with_timeout(ip, options)
 
         progress_recorder.set_progress(3, 4, description="Processing results…")
 
-        if not nm.stdout:
-            return_dict["Error"] = "No Nmap output — nmap may not be installed"
-            if nm.stderr:
-                return_dict["stderr"] = nm.stderr[:500]
+        if nm_result["error"] or not nm_result["stdout"]:
+            return_dict["Error"] = nm_result["error"] or "No Nmap output — nmap may not be installed"
+            if nm_result["stderr"]:
+                return_dict["stderr"] = nm_result["stderr"]
             device.scan = json.dumps(return_dict)
             device.exploited_scanned = True
             device.save()
             return return_dict
 
-        u = xmltodict.parse(nm.stdout)
+        u = xmltodict.parse(nm_result["stdout"])
 
         # Extract script output if present
         try:
@@ -1996,12 +2112,12 @@ def nmap_device_scan(self, device_id, nse_script=None):
 
             if not return_dict:
                 return_dict["State"] = "No script output"
-                return_dict["raw"] = nm.stdout[:2000]
+                return_dict["raw"] = nm_result["stdout"][:2000]
 
         except Exception as e:
             logger.warning("nmap_device_scan parse error: %s", e)
             return_dict["State"] = "Parse error: {}".format(str(e))
-            return_dict["raw"] = nm.stdout[:2000]
+            return_dict["raw"] = nm_result["stdout"][:2000]
 
         device.scan = json.dumps(return_dict)
         device.exploited_scanned = True
@@ -2025,20 +2141,41 @@ def scan(id):
     type = device1.type
 
     if type in ics_scan.keys():
-        nm = NmapProcess(ip, options="-p " + str(port) + " " + ics_scan[type])
-        nm.run_background()
+        # Security: validate ICS script paths stay within nmap_scripts/
+        safe_base = os.path.realpath(os.path.join(settings.BASE_DIR, "nmap_scripts"))
+        ics_opts = ics_scan[type]
+        script_match = re.search(r"--script=(.+)", ics_opts)
+        if script_match:
+            for script_path in script_match.group(1).split(","):
+                script_abs = os.path.realpath(
+                    os.path.join(settings.BASE_DIR, script_path.strip())
+                )
+                if not script_abs.startswith(safe_base + os.sep):
+                    return {"Error": "Invalid script path in ics_scan"}
 
-        while nm.is_running():
-            print("Nmap Scan running: ETC: {0} DONE: {1}%".format(nm.etc, nm.progress))
-            sleep(2)
+        options = "-p {} {}".format(port, ics_opts)
+        nm_result = _run_nmap_with_timeout(ip, options)
 
-        u = xmltodict.parse(nm.stdout)
-        print(u["nmaprun"])
+        if nm_result["error"]:
+            return_dict["Error"] = nm_result["error"]
+            if nm_result["stderr"]:
+                return_dict["stderr"] = nm_result["stderr"]
+            device1.scan = return_dict
+            device1.exploited_scanned = True
+            device1.save()
+            return return_dict
+
+        if not nm_result["stdout"]:
+            return_dict["Error"] = "No Nmap output"
+            device1.scan = return_dict
+            device1.exploited_scanned = True
+            device1.save()
+            return return_dict
+
+        u = xmltodict.parse(nm_result["stdout"])
 
         try:
             for i in u["nmaprun"]["host"]["ports"]["port"]["script"]:
-                print(i)
-
                 if i == "@output":
                     return_dict["ID"] = u["nmaprun"]["host"]["ports"]["port"]["script"][
                         "@id"
@@ -2067,14 +2204,17 @@ def scan(id):
             return return_dict
 
     else:
-        nm = NmapProcess(ip, options="-p " + str(port))
-        nm.run_background()
+        options = "-p {}".format(port)
+        nm_result = _run_nmap_with_timeout(ip, options)
 
-        while nm.is_running():
-            print("Nmap Scan running: ETC: {0} DONE: {1}%".format(nm.etc, nm.progress))
-            sleep(2)
+        if nm_result["error"] or not nm_result["stdout"]:
+            return_dict["Error"] = nm_result["error"] or "No Nmap output"
+            device1.scan = return_dict
+            device1.exploited_scanned = True
+            device1.save()
+            return return_dict
 
-        u = xmltodict.parse(nm.stdout)
+        u = xmltodict.parse(nm_result["stdout"])
 
         try:
             return_dict["State"] = u["nmaprun"]["host"]["ports"]["port"]["state"][
@@ -2469,14 +2609,16 @@ def nmap_rtsp_scan(id, ports=None, timing=None):
     elif device_type in ("dahua", "amcrest"):
         options += ",http-auth"
 
-    nm = NmapProcess(ip, options=options)
-    nm.run_background()
+    nm_result = _run_nmap_with_timeout(ip, options)
 
-    while nm.is_running():
-        sleep(2)
+    if nm_result["error"] or not nm_result["stdout"]:
+        return_dict["error"] = nm_result["error"] or "No Nmap output"
+        if nm_result["stderr"]:
+            return_dict["stderr"] = nm_result["stderr"]
+        return return_dict
 
     try:
-        parsed = NmapParser.parse(nm.stdout)
+        parsed = NmapParser.parse(nm_result["stdout"])
         for host in parsed.hosts:
             for svc in host.services:
                 return_dict["port_{}".format(svc.port)] = {
@@ -2731,46 +2873,20 @@ def deep_protocol_scan(device_id, protocol=None):
         options = "-p {} --script={}".format(scan_port, scripts)
 
         try:
-            nm = NmapProcess(ip, options=options)
-            nm.run_background()
+            nm_result = _run_nmap_with_timeout(ip, options)
 
-            start_time = time.time()
-            max_runtime = getattr(settings, "NMAP_MAX_RUNTIME", 300)
-            timed_out = False
-
-            while nm.is_running():
-                if time.time() - start_time > max_runtime:
-                    timed_out = True
-                    try:
-                        nm.stop()
-                    except Exception as stop_err:
-                        logger.warning(
-                            "Failed to stop timed-out nmap process for %s/%s: %s",
-                            ip,
-                            proto,
-                            stop_err,
-                        )
-                    logger.warning(
-                        "Deep protocol scan timeout for %s/%s after %s seconds",
-                        ip,
-                        proto,
-                        max_runtime,
-                    )
-                    results[proto] = {
-                        "error": "Nmap scan timeout after {} seconds".format(
-                            max_runtime
-                        )
-                    }
-                    break
-                sleep(2)
-
-            if timed_out:
+            if nm_result["error"]:
+                logger.warning(
+                    "Deep protocol scan error for %s/%s: %s",
+                    ip, proto, nm_result["error"],
+                )
+                results[proto] = {"error": nm_result["error"]}
                 continue
 
-            if not nm.stdout:
+            if not nm_result["stdout"]:
                 continue
 
-            raw_xml = nm.stdout
+            raw_xml = nm_result["stdout"]
             parsed_data = xmltodict.parse(raw_xml)
 
             # Extract script output from nmap XML

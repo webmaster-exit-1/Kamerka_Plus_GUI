@@ -162,6 +162,8 @@ from kamerka.tool_settings import (  # noqa: E402
     NUCLEI_BIN,
     NUCLEI_DEFAULT_TIMEOUT,
     WAPPALYZER_BIN,
+    NMAP_TIMEOUT,
+    NMAP_FALLBACK_TCP_CONNECT,
 )
 
 # ---------------------------------------------------------------------------

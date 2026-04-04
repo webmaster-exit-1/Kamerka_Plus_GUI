@@ -78,6 +78,20 @@ NUCLEI_BIN: str = os.environ.get("KAMERKA_NUCLEI_BIN", NUCLEI_DEFAULT)
 NUCLEI_DEFAULT_TIMEOUT: int = int(os.environ.get("KAMERKA_NUCLEI_TIMEOUT", "300"))
 
 # ---------------------------------------------------------------------------
+# Nmap
+# ---------------------------------------------------------------------------
+
+#: Maximum seconds an Nmap scan may run before being killed.
+#: Override via ``KAMERKA_NMAP_TIMEOUT`` env var.
+NMAP_TIMEOUT: int = int(os.environ.get("KAMERKA_NMAP_TIMEOUT", "300"))
+
+#: When True, retry a failed Nmap scan once with ``-sT`` (TCP-connect) in
+#: case the original scan required root privileges (e.g. ``-sS``).
+NMAP_FALLBACK_TCP_CONNECT: bool = os.environ.get(
+    "KAMERKA_NMAP_FALLBACK_TCP_CONNECT", "1"
+) in ("1", "true", "yes", "True")
+
+# ---------------------------------------------------------------------------
 # Wappalyzer
 # ---------------------------------------------------------------------------
 
