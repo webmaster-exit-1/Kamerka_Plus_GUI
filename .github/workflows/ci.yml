@@ -27,7 +27,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Install System Dependencies
       run: |
@@ -35,7 +35,7 @@ jobs:
         sudo apt-get install -y libpcap-dev nmap
 
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version: '1.26'
         check-latest: true
@@ -51,7 +51,7 @@ jobs:
         echo "$HOME/.pdtm/go/bin" >> $GITHUB_PATH
 
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: '3.12'
         cache: 'pip'
