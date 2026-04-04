@@ -16,6 +16,7 @@ Each test here would catch a real bug in the application:
 
 import json
 import os
+import re
 import subprocess
 from unittest.mock import patch, MagicMock, call
 
@@ -1261,3 +1262,40 @@ class SBOMResultsViewTest(TestCase):
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]["component_name"], "OpenSSL")
         self.assertEqual(data[0]["version"], "1.1.1")
+
+
+# ---------------------------------------------------------------------------
+# Homepage hamburger menu
+# ---------------------------------------------------------------------------
+class HomepageHamburgerMenuTest(TestCase):
+    """The search_main homepage must include a hamburger navigation menu."""
+
+    def test_hamburger_button_present(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        self.assertIn('id="kamerka-hamburger-btn"', content)
+        # Verify the ☰ icon is inside the button element, not just anywhere
+        # in the page (the entity also appears in the inline JS toggle).
+        btn_match = re.search(
+            r'<button[^>]*id="kamerka-hamburger-btn"[^>]*>&#9776;</button>',
+            content,
+        )
+        self.assertIsNotNone(btn_match, "&#9776; must appear inside the hamburger <button>")
+
+    def test_hamburger_overlay_present(self):
+        response = self.client.get("/")
+        content = response.content.decode()
+        self.assertIn('id="kamerka-hamburger-overlay"', content)
+        self.assertIn("kamerka-hamburger-overlay", content)
+
+    def test_nav_links_in_overlay(self):
+        response = self.client.get("/")
+        content = response.content.decode()
+        self.assertIn('/index', content)
+        self.assertIn('/history', content)
+        self.assertIn('/map', content)
+        self.assertIn('/globe', content)
+        self.assertIn('/gallery', content)
+        self.assertIn('/devices', content)
+        self.assertIn('/sources', content)

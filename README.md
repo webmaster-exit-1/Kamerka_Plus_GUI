@@ -30,7 +30,7 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 
 | Document | Description |
 | ---------- | ------------- |
-| [docs/INSTALL.md](docs/INSTALL.md) | Full installation guide, environment variables, running tests, Android/Termux setup |
+| [docs/INSTALL.md](docs/INSTALL.md) | Full installation guide, environment variables, API keys (Shodan, NVD, Pastebin), external tools (Nmap, Nuclei, Naabu), PostgreSQL setup, Android/Termux |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 3D globe, verification pipeline, tool path configuration, Celery/Redis architecture |
 | [docs/DATABASE.md](docs/DATABASE.md) | SQLite WAL concurrency mitigations and PostgreSQL migration guide |
 
@@ -54,6 +54,7 @@ git clone https://github.com/webmaster-exit-1/Kamerka_Plus_GUI.git
 cd Kamerka_Plus_GUI
 pip3 install -r requirements.txt
 export SHODAN_API_KEY=your_key_here
+# Optional: export NVD_API_KEY=your_nvd_key_here  (see docs/INSTALL.md)
 redis-server &
 python3 manage.py migrate
 python3 manage.py create_default_superuser
@@ -63,7 +64,9 @@ python3 manage.py runserver &
 celery --app kamerka worker --loglevel=info
 ```
 
-See [docs/INSTALL.md](docs/INSTALL.md) for the full installation guide.
+See [docs/INSTALL.md](docs/INSTALL.md) for the full installation guide, including
+PostgreSQL setup, Pastebin API configuration, NVD API keys, and external tool
+(`nmap`, `nuclei`, `naabu`) environment variables.
 
 ## NSA and CISA Advisory
 

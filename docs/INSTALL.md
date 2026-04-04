@@ -7,7 +7,9 @@
 - Celery (5.2+)
 - Redis (4.0+)
 - Shodan paid account
-- Pastebin PRO (Optional)
+- [Nmap](https://nmap.org/) (Required for NMAP scans and RTSP probes)
+- Pastebin PRO (Optional — see [Pastebin API setup](#pastebin-api-setup) below)
+- [NVD API key](https://nvd.nist.gov/developers/request-an-api-key) (Optional — raises NVD rate limit from 5 to 50 req/30 s)
 - [Wappalyzer CLI](https://github.com/AliasIO/wappalyzer) (Optional, for tech detection)
 - [Nuclei](https://github.com/projectdiscovery/nuclei) (Optional, for vulnerability scanning)
 - [Naabu](https://github.com/projectdiscovery/naabu) (Optional, for tiered liveness verification)
@@ -23,10 +25,16 @@ Export the required variables in your shell before starting the server:
 
 ```bash
 export SHODAN_API_KEY=your_shodan_api_key_here
-# optional:
-# export PASTEBIN_USER=your_pastebin_username
-# export PASTEBIN_PASSWORD=your_pastebin_password
-# export PASTEBIN_DEV_KEY=your_pastebin_developer_key
+
+# Optional – NVD vulnerability enrichment (request a key at
+# https://nvd.nist.gov/developers/request-an-api-key):
+# export NVD_API_KEY=your_nvd_api_key_here
+
+# Optional – Pastebin field-agent sync (see "Pastebin API setup" section below
+# and https://pastebin.com/doc_api for full details):
+# export PASTEBIN_API_DEV_KEY=your_unique_developer_api_key
+# export PASTEBIN_API_USER_NAME=your_pastebin_username
+# export PASTEBIN_API_USER_PASSWORD=your_pastebin_password
 ```
 
 **Making environment variables persistent (so you don't have to re-export in every new terminal)**
@@ -57,22 +65,63 @@ docker run -e SHODAN_API_KEY=your_key ...
 > export to `~/.bashrc`, open a *new* terminal (or run `source ~/.bashrc`) before
 > starting each process.
 
+### API Keys
+
 | Variable | Required | Description |
 |---|---|---|
 | `SHODAN_API_KEY` | ✅ | Shodan paid-account API key |
-| `PASTEBIN_USER` | optional | Pastebin username (field-agent sync) |
-| `PASTEBIN_PASSWORD` | optional | Pastebin password |
-| `PASTEBIN_DEV_KEY` | optional | Pastebin developer key |
+| `NVD_API_KEY` | optional | NIST NVD API key — raises rate limit from 5 to 50 req/30 s ([request one here](https://nvd.nist.gov/developers/request-an-api-key)) |
+| `PASTEBIN_API_DEV_KEY` | optional | Pastebin *Unique Developer API Key* — find it at <https://pastebin.com/doc_api#1> after signing up |
+| `PASTEBIN_API_USER_NAME` | optional | Pastebin account username (for field-agent sync) |
+| `PASTEBIN_API_USER_PASSWORD` | optional | Pastebin account password |
 | `DJANGO_SECRET_KEY` | optional | Override the auto-generated Django secret key |
 
-## GeoLite2 Database (Required for NMAP scan)
+### External Tool Paths
 
-NMAP XML uploads require MaxMind's GeoLite2 City database for IP geolocation.
-The `.mmdb` file is not bundled in this repository — download it for free:
+These are only needed if the tools are not on your `$PATH`.  See [docs/ARCHITECTURE.md](ARCHITECTURE.md) for full details.
 
-1. Register for a free MaxMind account at https://www.maxmind.com/en/geolite2/signup
+| Variable | Default | Description |
+|---|---|---|
+| `KAMERKA_NAABU_BIN` | `naabu` | Path to the [Naabu](https://github.com/projectdiscovery/naabu) binary |
+| `KAMERKA_NUCLEI_BIN` | `nuclei` | Path to the [Nuclei](https://github.com/projectdiscovery/nuclei) binary |
+| `KAMERKA_WAPPALYZER_BIN` | `wappalyzer` | Path to the [Wappalyzer](https://github.com/AliasIO/wappalyzer) binary |
+| `KAMERKA_NAABU_PORTS` | `top-100` | Default port spec for Naabu liveness checks |
+| `KAMERKA_NAABU_TIMEOUT` | `60` | Naabu subprocess timeout (seconds) |
+| `KAMERKA_NAABU_DISCOVERY_PORTS` | `1-65535` | Port range for on-demand device port discovery |
+| `KAMERKA_NAABU_DISCOVERY_TIMEOUT` | `120` | Timeout for full-range discovery scans (seconds) |
+| `KAMERKA_NUCLEI_TIMEOUT` | `300` | Nuclei subprocess timeout (seconds) |
+| `NMAP_MAX_RUNTIME` | `300` | Maximum seconds an Nmap scan may run before being killed |
+
+> **Nmap** is resolved from `$PATH` automatically. Raw-socket scan types
+> such as `-sS` and `-O` require additional privileges (`CAP_NET_RAW` /
+> `CAP_NET_ADMIN` or root), but scans that do not use those features can run
+> unprivileged. If you need raw-socket features, prefer granting the `nmap`
+> binary the required capabilities, for example:
+> `setcap cap_net_raw,cap_net_admin+eip $(which nmap)`.
+> Do **not** run the Celery worker as root solely to give Nmap these
+> permissions.
+
+## GeoLite2 / GeoIP Databases
+
+NMAP XML uploads and IP geolocation require MaxMind GeoLite2 `.mmdb` database files.
+These files are **not** bundled in this repository.
+
+### Option A — Download from MaxMind (official)
+
+1. Register for a free MaxMind account at <https://www.maxmind.com/en/geolite2/signup>
 2. After logging in, go to **Download Databases** → **GeoLite2 City** → **Download (mmdb)**
 3. Extract the archive and place **`GeoLite2-City.mmdb`** in the project root (`Kamerka_Plus_GUI/`)
+
+### Option B — Download from GitHub mirrors
+
+The three GeoLite2 `.mmdb` files (City, Country, ASN) are also available on GitHub:
+
+- <https://github.com/P3TERX/GeoLite.mmdb> (auto-updated mirror of all three databases)
+- <https://github.com/GitSquared/node-geolite2-redist> (npm-oriented redistribution)
+
+Download **GeoLite2-City.mmdb** and place it in the project root.
+The other two files (GeoLite2-Country.mmdb, GeoLite2-ASN.mmdb) are not
+currently used but may be useful for custom enrichment.
 
 ## Default Superuser
 
@@ -129,6 +178,91 @@ redis-server
 ```
 
 The server should be available at `http://localhost:8000/`
+
+## Database — PostgreSQL (Recommended for Production)
+
+The default database is SQLite, which works well for single-user setups.
+For multi-worker Celery deployments or heavy concurrent usage, switch to **PostgreSQL**.
+See [docs/DATABASE.md](DATABASE.md) for a detailed discussion of SQLite concurrency
+limitations and the full migration guide.
+
+### Quick PostgreSQL setup
+
+1. Install PostgreSQL (or run via Docker):
+
+```bash
+# Docker (fastest)
+docker run -d --name kamerka-pg \
+  -e POSTGRES_DB=kamerka \
+  -e POSTGRES_USER=kamerka \
+  -e POSTGRES_PASSWORD=CHANGE_ME \
+  -p 5432:5432 postgres:16
+
+# Or install natively (Debian/Ubuntu)
+sudo apt install postgresql postgresql-contrib
+sudo -u postgres createuser --createdb kamerka
+sudo -u postgres createdb -O kamerka kamerka
+```
+
+2. Install the Python PostgreSQL adapter:
+
+```bash
+pip3 install psycopg2-binary
+```
+
+3. Export the database environment variables before starting Django and Celery:
+
+```bash
+export DB_NAME=kamerka
+export DB_USER=kamerka
+export DB_PASSWORD=CHANGE_ME
+export DB_HOST=localhost
+export DB_PORT=5432
+```
+
+4. Update `kamerka/settings.py` `DATABASES` to use PostgreSQL (or see [DATABASE.md](DATABASE.md) for the snippet).
+
+5. Run migrations:
+
+```bash
+python3 manage.py migrate
+```
+
+## Pastebin API Setup
+
+The Pastebin integration lets you sync device notes with a Pastebin PRO account
+(the "field-agent" feature).  The Pastebin API is documented at
+<https://pastebin.com/doc_api>.
+
+### 1. Get your Unique Developer API Key
+
+Sign up or log in at <https://pastebin.com>, then visit
+<https://pastebin.com/doc_api#1>.  Your **Unique Developer API Key** is displayed
+on that page.  Export it as:
+
+```bash
+export PASTEBIN_API_DEV_KEY=your_unique_developer_api_key
+```
+
+### 2. Set your Pastebin credentials
+
+```bash
+export PASTEBIN_API_USER_NAME=your_pastebin_username
+export PASTEBIN_API_USER_PASSWORD=your_pastebin_password
+```
+
+These are used at runtime to obtain a short-lived **`api_user_key`** via the
+Pastebin login endpoint (`api_login.php`).  The user key is never stored on disk.
+
+### 3. Verify (optional)
+
+You can verify your credentials work by running the interactive setup helper:
+
+```bash
+python3 scripts/pastebin_setup.py
+```
+
+The helper walks you through obtaining and testing your API keys step by step.
 
 ## Running Tests
 
