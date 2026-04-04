@@ -86,3 +86,11 @@ NUCLEI_DEFAULT_TIMEOUT: int = int(os.environ.get("KAMERKA_NUCLEI_TIMEOUT", "300"
 WAPPALYZER_DEFAULT: str = "wappalyzer"
 
 WAPPALYZER_BIN: str = os.environ.get("KAMERKA_WAPPALYZER_BIN", WAPPALYZER_DEFAULT)
+
+# ---------------------------------------------------------------------------
+# Nmap
+# ---------------------------------------------------------------------------
+
+#: Maximum seconds an Nmap scan may run before being killed.
+#: Override via ``NMAP_MAX_RUNTIME`` env var.
+NMAP_MAX_RUNTIME: int = int(os.environ.get("NMAP_MAX_RUNTIME", "300"))

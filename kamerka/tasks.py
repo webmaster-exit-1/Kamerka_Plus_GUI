@@ -1743,12 +1743,12 @@ def send_to_field_agent_task(id, notes):
         )
 
     user_key = paste_login(
-        _get_env_key("PASTEBIN_USER"),
-        _get_env_key("PASTEBIN_PASSWORD"),
-        _get_env_key("PASTEBIN_DEV_KEY"),
+        _get_env_key("PASTEBIN_API_USER_NAME"),
+        _get_env_key("PASTEBIN_API_USER_PASSWORD"),
+        _get_env_key("PASTEBIN_API_DEV_KEY"),
     )
 
-    pastes = retrieve_pastes(_get_env_key("PASTEBIN_DEV_KEY"), user_key=user_key)
+    pastes = retrieve_pastes(_get_env_key("PASTEBIN_API_DEV_KEY"), user_key=user_key)
 
     ip = af.ip
     lat = af.lat
@@ -1782,16 +1782,16 @@ def send_to_field_agent_task(id, notes):
     print("\\xea\\x93\\x98amerka_" + af.ip)
     if "\\xea\\x93\\x98amerka_" + af.ip in pastes.keys():
         delete_paste(
-            _get_env_key("PASTEBIN_DEV_KEY"),
+            _get_env_key("PASTEBIN_API_DEV_KEY"),
             user_key,
             pastes["\\xea\\x93\\x98amerka_" + af.ip],
         )
         create_paste(
-            _get_env_key("PASTEBIN_DEV_KEY"), user_key, "ꓘamerka_" + af.ip, merge_string
+            _get_env_key("PASTEBIN_API_DEV_KEY"), user_key, "ꓘamerka_" + af.ip, merge_string
         )
     else:
         create_paste(
-            _get_env_key("PASTEBIN_DEV_KEY"), user_key, "ꓘamerka_" + af.ip, merge_string
+            _get_env_key("PASTEBIN_API_DEV_KEY"), user_key, "ꓘamerka_" + af.ip, merge_string
         )
 
 
