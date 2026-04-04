@@ -59,15 +59,61 @@ min-height: 58px;
     }
     </style>
     <style>
-        .kamerka-nav-link {
+        /* ── Hamburger menu ─────────────────────────────────────── */
+        .kamerka-hamburger-btn {
+            position: fixed;
+            top: 18px;
+            right: 18px;
+            z-index: 10001;
+            background: rgba(12, 16, 24, 0.85);
+            border: 1px solid #00e1ff;
+            border-radius: 6px;
             color: #00e1ff;
-            margin: 0 10px;
+            font-size: 28px;
+            width: 44px;
+            height: 44px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+            box-shadow: 0 0 10px rgba(0, 225, 255, 0.3);
+            transition: background 0.2s, box-shadow 0.2s;
+        }
+        .kamerka-hamburger-btn:hover {
+            background: rgba(0, 225, 255, 0.15);
+            box-shadow: 0 0 18px rgba(0, 225, 255, 0.5);
+        }
+        .kamerka-hamburger-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 240px;
+            height: 100%;
+            background: rgba(12, 16, 24, 0.97);
+            border-left: 1px solid #00e1ff;
+            z-index: 10000;
+            padding-top: 72px;
+            box-shadow: -4px 0 24px rgba(0, 100, 215, 0.3);
+        }
+        .kamerka-hamburger-overlay.open {
+            display: block;
+        }
+        .kamerka-nav-link {
+            display: block;
+            color: #00e1ff;
+            padding: 14px 28px;
             text-decoration: none;
             font-family: 'Poppins', sans-serif;
             font-size: 15px;
+            letter-spacing: 0.05em;
+            transition: background 0.2s, color 0.2s;
         }
         .kamerka-nav-link:hover {
-            text-decoration: underline;
+            background: rgba(0, 225, 255, 0.1);
+            color: #fff;
+            text-decoration: none;
         }
     </style>
 
@@ -147,12 +193,17 @@ font-size: 22px;
 
         <div class="wrapper wrapper--w900">
             <h1>ꓘamerka</h1>
-            <nav style="text-align:center;margin-bottom:18px;">
+            <!-- Hamburger menu button (top-right) -->
+            <button class="kamerka-hamburger-btn" id="kamerka-hamburger-btn" aria-label="Navigation menu" aria-expanded="false">&#9776;</button>
+            <!-- Slide-out navigation overlay -->
+            <nav class="kamerka-hamburger-overlay" id="kamerka-hamburger-overlay">
                 <a href="/index" class="kamerka-nav-link">&#x1f4ca; Dashboard</a>
                 <a href="/history" class="kamerka-nav-link">&#x1f4c2; History</a>
                 <a href="/map" class="kamerka-nav-link">&#x1f4cd; Map</a>
                 <a href="/globe" class="kamerka-nav-link">&#x1f30d; Globe</a>
                 <a href="/gallery" class="kamerka-nav-link">&#x1f4f7; Screenshots</a>
+                <a href="/devices" class="kamerka-nav-link">&#x1f50d; Search</a>
+                <a href="/sources" class="kamerka-nav-link">&#x1f4d6; Useful Links</a>
             </nav>
             <div class="card card-4">
                 <div class="card-body">
@@ -1037,6 +1088,28 @@ new Selectr('#cam', {
         modal.style.display = 'none';
         pendingForm = null;
     });
+})();
+</script>
+
+<script>
+(function() {
+    var btn = document.getElementById('kamerka-hamburger-btn');
+    var overlay = document.getElementById('kamerka-hamburger-overlay');
+    if (btn && overlay) {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var isOpen = overlay.classList.toggle('open');
+            btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            btn.innerHTML = isOpen ? '&times;' : '&#9776;';
+        });
+        document.addEventListener('click', function(e) {
+            if (!overlay.contains(e.target) && e.target !== btn) {
+                overlay.classList.remove('open');
+                btn.setAttribute('aria-expanded', 'false');
+                btn.innerHTML = '&#9776;';
+            }
+        });
+    }
 })();
 </script>
 
