@@ -29,29 +29,30 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '>=1.24.3'
+        go-version: '1.26'
         check-latest: true
         cache: false
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12' # Upgrade to 3.12 to match 2026 standards
+        cache: 'pip'
+
+    - name: Install ProjectDiscovery Tools
+      run: |
+        # Force the Go toolchain to latest for this specific command
+        GOTOOLCHAIN=go1.26.0 go install -v github.com/projectdiscovery/pdtm/cmd/pdtm@latest
+        $(go env GOPATH)/bin/pdtm -i nuclei,naabu
+        echo "$HOME/.pdtm/go/bin" >> $GITHUB_PATH
 
     - name: Install System Dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y nmap
-
-    - name: Install ProjectDiscovery Tools (Nuclei)
-      run: |
-        go install -v github.com/projectdiscovery/pdtm/cmd/pdtm@latest
-        export PATH=$PATH:$(go env GOPATH)/bin
-        pdtm -i nuclei
-        echo "$HOME/.pdtm/go/bin" >> $GITHUB_PATH
 
     - name: Install Python Dependencies
       run: |
