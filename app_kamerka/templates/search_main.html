@@ -846,6 +846,7 @@ font-size: 22px;' class="image-title">
                             <form method="POST" action="{% url 'shodan_custom_search' %}">
                                 {% csrf_token %}
                                 <div style="margin-bottom:12px;">
+                                    <label for="custom_shodan_query" style="display:block;font-size:0.95em;margin-bottom:4px;color:#ccc;">Query:</label>
                                     <input type="text" name="query" id="custom_shodan_query"
                                            placeholder="Enter Shodan query..."
                                            maxlength="500"

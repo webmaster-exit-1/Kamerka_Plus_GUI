@@ -144,7 +144,7 @@ class Command(BaseCommand):
 
         # Build options
         port_spec = ports or "21,22,23,80,102,443,502,1911,4911,8080,9600,20000,44818,47808"
-        if not re.match(r"^[\d,\-]+$", port_spec):
+        if not re.match(r"^[\d,-]+$", port_spec):
             return {"Error": "Invalid port specification: {}".format(port_spec)}
 
         options = "-p {}".format(port_spec)

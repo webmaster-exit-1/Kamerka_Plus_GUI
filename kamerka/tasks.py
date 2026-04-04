@@ -150,6 +150,9 @@ def _shodan_with_retry(fn, *args, retries=3, base_delay=2, **kwargs):
     """
     import shodan.exception  # local import to avoid module-level dependency
 
+    if retries < 1:
+        retries = 1
+
     last_exc = None
     for attempt in range(retries):
         try:
@@ -2229,7 +2232,7 @@ def nmap_custom_scan(self, device_id, ports=None, timing=None, extra_flags=None)
         port_spec = "21,22,23,80,102,443,502,1911,4911,8080,9600,20000,44818,47808"
 
     # Sanitize port spec (digits, commas, dashes only)
-    if not re.match(r'^[\d,\-]+$', port_spec):
+    if not re.match(r'^[\d,-]+$', port_spec):
         return {"Error": "Invalid port specification: {}".format(port_spec)}
 
     timing_flag = ""
