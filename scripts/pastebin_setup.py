@@ -106,14 +106,14 @@ def main():
         )
         sys.exit(1)
 
-    print(f"✓ Login successful!  User key: {user_key[:8]}…")
+    print("✓ Login successful!  Credentials verified.")
 
     # Step 4 — Export snippet
     print("\n─── Step 4: Environment Variables ───")
     snippet = (
         f'export PASTEBIN_API_DEV_KEY="{dev_key}"\n'
         f'export PASTEBIN_API_USER_NAME="{username}"\n'
-        f'export PASTEBIN_API_USER_PASSWORD="<your_password_here>"\n'
+        'export PASTEBIN_API_USER_PASSWORD="<your_password_here>"\n'
     )
     print("Add the following to your shell profile (e.g. ~/.bashrc):\n")
     print(snippet)
@@ -124,7 +124,7 @@ def main():
         "   credential store for production deployments.\n"
     )
 
-    answer = input("Append API key and username (without password) to ~/.bashrc? [y/N] ").strip().lower()
+    answer = input("Append API key and username (without password) to ~/.bashrc? [y/n] ").strip().lower()
     if answer == "y":
         home = os.path.expanduser("~")
         bashrc = os.path.join(home, ".bashrc")

@@ -190,7 +190,7 @@ limitations and the full migration guide.
 docker run -d --name kamerka-pg \
   -e POSTGRES_DB=kamerka \
   -e POSTGRES_USER=kamerka \
-  -e POSTGRES_PASSWORD=secret \
+  -e POSTGRES_PASSWORD=CHANGE_ME \
   -p 5432:5432 postgres:16
 
 # Or install natively (Debian/Ubuntu)
@@ -210,7 +210,7 @@ pip3 install psycopg2-binary
 ```bash
 export DB_NAME=kamerka
 export DB_USER=kamerka
-export DB_PASSWORD=secret
+export DB_PASSWORD=CHANGE_ME
 export DB_HOST=localhost
 export DB_PORT=5432
 ```
