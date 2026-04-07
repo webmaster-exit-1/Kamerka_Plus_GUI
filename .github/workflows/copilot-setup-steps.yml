@@ -68,6 +68,18 @@ jobs:
                   python manage.py check
                   python manage.py migrate --run-syncdb
 
+            - name: Start HexStrike API server (background)
+              run: |
+                  cd /tmp/hexstrike-ai && nohup python3 hexstrike_server.py --port 8888 > /tmp/hexstrike-server.log 2>&1 &
+                  echo "Waiting for HexStrike API server..."
+                  for i in $(seq 1 15); do
+                      if curl -sf http://127.0.0.1:8888/health >/dev/null 2>&1; then
+                          echo "HexStrike API server is ready on port 8888"
+                          break
+                      fi
+                      sleep 1
+                  done
+
             - name: Verify all security tools and scanning capabilities
               run: |
                   echo "══════════════════════════════════════════════════"
