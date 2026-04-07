@@ -1448,6 +1448,17 @@ class NmapFlagSanitizerTest(TestCase):
         with self.assertRaises(ValueError):
             _sanitize_nmap_flags("")
 
+    def test_invalid_timing_flag_blocked(self):
+        """T999 must be blocked — only -T0 through -T5 are valid."""
+        from kamerka.tasks import _sanitize_nmap_flags
+        with self.assertRaises(ValueError):
+            _sanitize_nmap_flags("-T999")
+
+    def test_port_spec_glued_to_flag(self):
+        from kamerka.tasks import _sanitize_nmap_flags
+        result = _sanitize_nmap_flags("-p80,443")
+        self.assertEqual(result, "-p80,443")
+
 
 # ---------------------------------------------------------------------------
 # Sources page — hamburger menu and Security Resources link

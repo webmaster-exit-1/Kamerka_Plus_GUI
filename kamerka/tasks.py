@@ -2038,7 +2038,7 @@ _NMAP_ALLOWED_FLAGS = {
 
 # Tokens that must never appear in user-supplied nmap args.
 _NMAP_BLOCKED_TOKENS = {
-    ";", "&&", "||", "|", "`", "$(", "$(",
+    ";", "&&", "||", "|", "`", "$(",
     ">", ">>", "<", "<<",
     "\n", "\r",
 }
@@ -2079,9 +2079,13 @@ def _sanitize_nmap_flags(raw_flags):
             if flag_name == allowed:
                 matched = True
                 break
-            # Allow -p80 style (flag prefix match for known single-char flags)
-            if allowed in ("-p", "-T0", "-T1", "-T2", "-T3", "-T4", "-T5"):
-                if part.startswith(allowed.rstrip("0123456789")):
+            # Allow -p80 style (port spec glued to -p)
+            if allowed == "-p" and re.match(r"^-p[\d,\-]+$", part):
+                matched = True
+                break
+            # Allow -T0 through -T5 exactly
+            if allowed.startswith("-T") and len(allowed) == 3:
+                if part == allowed:
                     matched = True
                     break
 
