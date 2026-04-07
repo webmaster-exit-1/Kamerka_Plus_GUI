@@ -4,9 +4,9 @@
       "type": "stdio",
       "command": "python3",
       "args": [
-        "/tmp/hexstrike-ai/hexstrike_mcp.py",
+        "${HEXSTRIKE_AI_MCP_SCRIPT:-/tmp/hexstrike-ai/hexstrike_mcp.py}",
         "--server",
-        "http://127.0.0.1:8888"
+        "${HEXSTRIKE_AI_SERVER_URL:-http://127.0.0.1:8888}"
       ],
       "tools": [
         "advanced_payload_generation",

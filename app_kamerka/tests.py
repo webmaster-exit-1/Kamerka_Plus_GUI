@@ -1459,6 +1459,57 @@ class NmapFlagSanitizerTest(TestCase):
         result = _sanitize_nmap_flags("-p80,443")
         self.assertEqual(result, "-p80,443")
 
+    def test_output_flags_blocked(self):
+        """-oN/-oX/-oG must be rejected (arbitrary file writes)."""
+        from kamerka.tasks import _sanitize_nmap_flags
+        for flag in ("-oN /tmp/out", "-oX /tmp/out.xml", "-oG /tmp/out"):
+            with self.assertRaises(ValueError, msg="Should block: " + flag):
+                _sanitize_nmap_flags(flag)
+
+    def test_positional_target_blocked(self):
+        """Bare positional tokens must be rejected to prevent scanning
+        arbitrary hosts."""
+        from kamerka.tasks import _sanitize_nmap_flags
+        with self.assertRaises(ValueError):
+            _sanitize_nmap_flags("-sV 192.168.1.1")
+
+    def test_script_from_catalog_allowed(self):
+        """Scripts in NSE_SCRIPT_CATALOG must be accepted."""
+        from kamerka.tasks import _sanitize_nmap_flags
+        result = _sanitize_nmap_flags("--script s7-info")
+        self.assertEqual(result, "--script s7-info")
+
+    def test_script_not_in_catalog_blocked(self):
+        """Arbitrary scripts must be rejected."""
+        from kamerka.tasks import _sanitize_nmap_flags
+        with self.assertRaises(ValueError):
+            _sanitize_nmap_flags("--script http-title")
+
+    def test_script_path_traversal_blocked(self):
+        """Path traversal in --script must be rejected."""
+        from kamerka.tasks import _sanitize_nmap_flags
+        with self.assertRaises(ValueError):
+            _sanitize_nmap_flags("--script ../../evil.nse")
+
+    def test_top_ports_validated(self):
+        from kamerka.tasks import _sanitize_nmap_flags
+        result = _sanitize_nmap_flags("--top-ports 100")
+        self.assertEqual(result, "--top-ports 100")
+        with self.assertRaises(ValueError):
+            _sanitize_nmap_flags("--top-ports abc")
+
+    def test_equals_syntax(self):
+        """--flag=value syntax must work for value flags."""
+        from kamerka.tasks import _sanitize_nmap_flags
+        result = _sanitize_nmap_flags("--min-rate=100")
+        self.assertEqual(result, "--min-rate=100")
+
+    def test_script_full_path_from_catalog_allowed(self):
+        """Full path nmap_scripts/s7-info.nse must be accepted."""
+        from kamerka.tasks import _sanitize_nmap_flags
+        result = _sanitize_nmap_flags("--script nmap_scripts/s7-info.nse")
+        self.assertEqual(result, "--script nmap_scripts/s7-info.nse")
+
 
 # ---------------------------------------------------------------------------
 # Sources page — hamburger menu and Security Resources link

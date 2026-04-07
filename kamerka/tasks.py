@@ -2029,12 +2029,22 @@ _NMAP_ALLOWED_FLAGS = {
     "-T0", "-T1", "-T2", "-T3", "-T4", "-T5",
     "-p", "-F", "-r", "--top-ports", "--open",
     "--version-intensity", "--version-light", "--version-all",
-    "-oN", "-oX", "-oG",
     "--traceroute", "--reason", "-v", "-vv", "-d",
     "--max-retries", "--host-timeout", "--scan-delay",
     "--min-rate", "--max-rate",
     "--script",
 }
+
+# Flags that consume the next token as a value.
+_NMAP_VALUE_FLAGS = {"-p", "--top-ports", "--min-rate", "--max-rate",
+                     "--max-retries", "--host-timeout", "--scan-delay",
+                     "--version-intensity", "--script"}
+
+# Build a set of allowed --script values from the curated catalog.
+_NMAP_ALLOWED_SCRIPTS = {
+    os.path.basename(p).replace(".nse", "")
+    for p in NSE_SCRIPT_CATALOG.values()
+} | set(NSE_SCRIPT_CATALOG.values())
 
 # Tokens that must never appear in user-supplied nmap args.
 _NMAP_BLOCKED_TOKENS = {
@@ -2044,11 +2054,70 @@ _NMAP_BLOCKED_TOKENS = {
 }
 
 
+def _validate_flag_value(flag_name, value):
+    """Validate the value associated with a specific flag.
+
+    Raises ``ValueError`` if the value is invalid.
+    """
+    if not value:
+        raise ValueError("Missing value for flag: {}".format(flag_name))
+
+    if flag_name == "-p":
+        if not re.fullmatch(r"[\d,-]+", value):
+            raise ValueError("Invalid port specification: {}".format(value))
+        return value
+
+    if flag_name == "--top-ports":
+        if not re.fullmatch(r"\d+", value):
+            raise ValueError("Invalid value for --top-ports: {}".format(value))
+        parsed_value = int(value)
+        if parsed_value < 1 or parsed_value > 65535:
+            raise ValueError("Invalid value for --top-ports: {}".format(value))
+        return value
+
+    if flag_name in ("--min-rate", "--max-rate"):
+        if not re.fullmatch(r"\d+", value):
+            raise ValueError("Invalid value for {}: {}".format(flag_name, value))
+        parsed_value = int(value)
+        if parsed_value < 1:
+            raise ValueError("Invalid value for {}: {}".format(flag_name, value))
+        return value
+
+    if flag_name in ("--max-retries", "--version-intensity"):
+        if not re.fullmatch(r"\d+", value):
+            raise ValueError("Invalid value for {}: {}".format(flag_name, value))
+        return value
+
+    if flag_name in ("--host-timeout", "--scan-delay"):
+        if not re.fullmatch(r"\d+[smh]?", value):
+            raise ValueError("Invalid value for {}: {}".format(flag_name, value))
+        return value
+
+    if flag_name == "--script":
+        if not re.fullmatch(r"[A-Za-z0-9_.,/+-]+", value):
+            raise ValueError("Invalid value for --script: {}".format(value))
+        # Only allow scripts from the curated NSE_SCRIPT_CATALOG
+        for script_part in value.split(","):
+            if script_part not in _NMAP_ALLOWED_SCRIPTS:
+                raise ValueError(
+                    "Script not in catalog: {}. "
+                    "Only curated NSE scripts are allowed.".format(script_part)
+                )
+        return value
+
+    raise ValueError("Flag does not accept a value: {}".format(flag_name))
+
+
 def _sanitize_nmap_flags(raw_flags):
     """Validate and sanitize user-supplied nmap flags.
 
     Returns a cleaned flags string or raises ``ValueError`` with a message
     describing the disallowed input.
+
+    Only flags from ``_NMAP_ALLOWED_FLAGS`` are accepted.  Flags that take a
+    value (listed in ``_NMAP_VALUE_FLAGS``) have their values validated via
+    ``_validate_flag_value``.  Standalone positional tokens (bare words that
+    are not flag values) are rejected to prevent scanning arbitrary hosts.
     """
     if not raw_flags or not raw_flags.strip():
         raise ValueError("No flags provided")
@@ -2062,42 +2131,66 @@ def _sanitize_nmap_flags(raw_flags):
 
     parts = raw_flags.split()
     validated = []
+    allowed_flags = _NMAP_ALLOWED_FLAGS
+    value_flags = _NMAP_VALUE_FLAGS
 
     i = 0
     while i < len(parts):
         part = parts[i]
 
-        # Flags with = embedded (e.g. --script=http-title)
-        if "=" in part:
-            flag_name = part.split("=", 1)[0]
-        else:
-            flag_name = part
+        # Handle --flag=value syntax
+        if part.startswith("--") and "=" in part:
+            flag_name, value = part.split("=", 1)
+            if flag_name not in allowed_flags:
+                raise ValueError("Disallowed flag: {}".format(flag_name))
+            if flag_name not in value_flags:
+                raise ValueError(
+                    "Flag does not accept a value: {}".format(flag_name)
+                )
+            validated.append(
+                "{}={}".format(flag_name, _validate_flag_value(flag_name, value))
+            )
+            i += 1
+            continue
 
-        # Check -p<port> style (flag and value glued together)
-        matched = False
-        for allowed in _NMAP_ALLOWED_FLAGS:
-            if flag_name == allowed:
-                matched = True
-                break
-            # Allow -p80 style (port spec glued to -p)
-            if allowed == "-p" and re.match(r"^-p[\d,-]+$", part):
-                matched = True
-                break
-            # Allow -T0 through -T5 exactly
-            if allowed.startswith("-T") and len(allowed) == 3:
-                if part == allowed:
-                    matched = True
-                    break
+        # Handle -p<port> glued syntax (e.g. -p80,443)
+        if part.startswith("-p") and part != "-p" and not part.startswith("-pn"):
+            if "-p" not in allowed_flags:
+                raise ValueError("Disallowed flag: -p")
+            validated.append(
+                "-p{}".format(_validate_flag_value("-p", part[2:]))
+            )
+            i += 1
+            continue
 
-        if matched:
+        # Handle value-consuming flags (flag followed by separate value)
+        if part in value_flags:
+            if part not in allowed_flags:
+                raise ValueError("Disallowed flag: {}".format(part))
+            if i + 1 >= len(parts):
+                raise ValueError("Missing value for flag: {}".format(part))
+            value = parts[i + 1]
+            if value.startswith("-"):
+                raise ValueError("Missing value for flag: {}".format(part))
             validated.append(part)
-        elif part.lstrip("-")[:1].isalpha() and part.startswith("-"):
+            validated.append(_validate_flag_value(part, value))
+            i += 2
+            continue
+
+        # Handle standalone boolean flags
+        if part in allowed_flags:
+            validated.append(part)
+            i += 1
+            continue
+
+        # Reject unknown flags
+        if part.startswith("-"):
             raise ValueError("Disallowed flag: {}".format(part))
-        else:
-            # It's a value argument (port spec, number, etc.)
-            validated.append(part)
 
-        i += 1
+        # Reject standalone positional arguments (could be extra targets)
+        raise ValueError(
+            "Standalone positional arguments are not allowed: {}".format(part)
+        )
 
     return " ".join(validated)
 
