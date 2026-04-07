@@ -2080,7 +2080,7 @@ def _sanitize_nmap_flags(raw_flags):
                 matched = True
                 break
             # Allow -p80 style (port spec glued to -p)
-            if allowed == "-p" and re.match(r"^-p[\d,\-]+$", part):
+            if allowed == "-p" and re.match(r"^-p[\d,-]+$", part):
                 matched = True
                 break
             # Allow -T0 through -T5 exactly

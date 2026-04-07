@@ -73,19 +73,20 @@ jobs:
                   echo "══════════════════════════════════════════════════"
                   echo "  HexStrike Security Tool Verification"
                   echo "══════════════════════════════════════════════════"
+                  FAIL_COUNT=0
 
                   echo ""
                   echo "── Network Scanning ─────────────────────────────"
                   echo "[nmap]"
-                  nmap --version
+                  nmap --version || { echo "  ✗ FAIL: nmap not found"; FAIL_COUNT=$((FAIL_COUNT+1)); }
                   echo ""
                   echo "[naabu]"
-                  naabu -version
+                  naabu -version || { echo "  ✗ FAIL: naabu not found"; FAIL_COUNT=$((FAIL_COUNT+1)); }
                   echo ""
 
                   echo "── Vulnerability Scanning ───────────────────────"
                   echo "[nuclei]"
-                  nuclei -version
+                  nuclei -version || { echo "  ✗ FAIL: nuclei not found"; FAIL_COUNT=$((FAIL_COUNT+1)); }
                   echo ""
                   echo "[nuclei templates – china-iot]"
                   nuclei -validate -t nuclei_templates/china-iot/ || true
@@ -98,27 +99,104 @@ jobs:
 
                   echo "── NSE Script Inventory ─────────────────────────"
                   echo "Custom NSE scripts:"
-                  ls -1 nmap_scripts/*.nse 2>/dev/null | wc -l
+                  NSE_COUNT=$(ls -1 nmap_scripts/*.nse 2>/dev/null | wc -l)
+                  echo "  Found: $NSE_COUNT scripts"
                   ls -1 nmap_scripts/*.nse 2>/dev/null
+                  if [ "$NSE_COUNT" -eq 0 ]; then
+                      echo "  ✗ FAIL: no NSE scripts found"
+                      FAIL_COUNT=$((FAIL_COUNT+1))
+                  fi
                   echo ""
 
                   echo "── Python Security Libraries ────────────────────"
-                  echo "[shodan]"
-                  python -c "import shodan; print('Shodan', shodan.__version__)" 2>/dev/null || echo "  NOT INSTALLED"
-                  echo "[ipwhois]"
-                  python -c "import ipwhois; print('ipwhois OK')" 2>/dev/null || echo "  NOT INSTALLED"
-                  echo "[selenium]"
-                  python -c "import selenium; print('Selenium', selenium.__version__)" 2>/dev/null || echo "  NOT INSTALLED"
-                  echo "[libnmap]"
-                  python -c "from libnmap.process import NmapProcess; print('libnmap OK')" 2>/dev/null || echo "  NOT INSTALLED"
-                  echo "[xmltodict]"
-                  python -c "import xmltodict; print('xmltodict OK')" 2>/dev/null || echo "  NOT INSTALLED"
+                  for lib in shodan ipwhois selenium xmltodict; do
+                      python -c "import $lib; print('  ✓ $lib')" 2>/dev/null || echo "  ✗ $lib: NOT INSTALLED"
+                  done
+                  python -c "from libnmap.process import NmapProcess; print('  ✓ libnmap')" 2>/dev/null || echo "  ✗ libnmap: NOT INSTALLED"
                   echo ""
 
                   echo "── HexStrike MCP Server ─────────────────────────"
-                  ls /tmp/hexstrike-ai/hexstrike_server.py && echo "hexstrike_server.py: PRESENT" || echo "hexstrike_server.py: MISSING"
-                  ls /tmp/hexstrike-ai/hexstrike_mcp.py && echo "hexstrike_mcp.py: PRESENT" || echo "hexstrike_mcp.py: MISSING"
-                  python -c "import fastmcp; print('fastmcp OK')" 2>/dev/null || echo "  fastmcp: NOT INSTALLED (non-critical)"
+                  test -f /tmp/hexstrike-ai/hexstrike_server.py && echo "  ✓ hexstrike_server.py" || { echo "  ✗ hexstrike_server.py: MISSING"; FAIL_COUNT=$((FAIL_COUNT+1)); }
+                  test -f /tmp/hexstrike-ai/hexstrike_mcp.py && echo "  ✓ hexstrike_mcp.py" || { echo "  ✗ hexstrike_mcp.py: MISSING"; FAIL_COUNT=$((FAIL_COUNT+1)); }
+                  python -c "import fastmcp; print('  ✓ fastmcp')" 2>/dev/null || echo "  ✗ fastmcp: NOT INSTALLED (non-critical)"
+
+                  # Start hexstrike server and verify endpoints return real success
+                  echo ""
+                  echo "── HexStrike Endpoint Validation ────────────────"
+                  cd /tmp/hexstrike-ai && python3 hexstrike_server.py --port 9999 &
+                  HEXSTRIKE_PID=$!
+                  sleep 6
+
+                  # /health must return HTTP 200 AND valid JSON with status=healthy
+                  HEALTH=$(curl -sf http://127.0.0.1:9999/health 2>/dev/null)
+                  if [ $? -ne 0 ]; then
+                      echo "  ✗ FAIL: /health returned non-200 or connection refused"
+                      FAIL_COUNT=$((FAIL_COUNT+1))
+                  else
+                      STATUS=$(echo "$HEALTH" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null)
+                      if [ "$STATUS" = "healthy" ]; then
+                          TOOLS_AVAIL=$(echo "$HEALTH" | python3 -c "import sys,json; print(json.load(sys.stdin).get('total_tools_available',0))" 2>/dev/null)
+                          echo "  ✓ /health: status=$STATUS, tools_available=$TOOLS_AVAIL"
+                      else
+                          echo "  ✗ FAIL: /health status='$STATUS' (expected 'healthy')"
+                          FAIL_COUNT=$((FAIL_COUNT+1))
+                      fi
+                  fi
+
+                  # /api/command must execute nmap and return real output (not empty with exit 0)
+                  CMD_RESP=$(curl -sf -X POST http://127.0.0.1:9999/api/command \
+                      -H "Content-Type: application/json" \
+                      -d '{"command": "nmap --version"}' 2>/dev/null)
+                  if [ $? -ne 0 ]; then
+                      echo "  ✗ FAIL: /api/command returned non-200"
+                      FAIL_COUNT=$((FAIL_COUNT+1))
+                  else
+                      HAS_OUTPUT=$(echo "$CMD_RESP" | python3 -c "
+                  import sys,json
+                  d=json.load(sys.stdin)
+                  stdout=d.get('stdout','')
+                  rc=d.get('return_code',-1)
+                  if rc==0 and 'Nmap version' in stdout:
+                      print('OK')
+                  else:
+                      print('FAIL:rc=%s,stdout_len=%d' % (rc, len(stdout)))
+                  " 2>/dev/null)
+                      if [ "$HAS_OUTPUT" = "OK" ]; then
+                          echo "  ✓ /api/command nmap: returned valid output"
+                      else
+                          echo "  ✗ FAIL: /api/command nmap: $HAS_OUTPUT (false positive — exit 0 but no real output)"
+                          FAIL_COUNT=$((FAIL_COUNT+1))
+                      fi
+                  fi
+
+                  # Check visual endpoints — known broken in hexstrike v6.0 (methods missing)
+                  for endpoint in "/api/visual/vulnerability-card" "/api/visual/summary-report" "/api/visual/tool-output"; do
+                      HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:9999$endpoint" \
+                          -H "Content-Type: application/json" \
+                          -d '{"tool":"nmap","output":"test","title":"test","findings":[],"vulnerability":{"title":"test","severity":"high"}}' 2>/dev/null)
+                      if [ "$HTTP_CODE" = "200" ]; then
+                          echo "  ✓ $endpoint: HTTP $HTTP_CODE"
+                      elif [ "$HTTP_CODE" = "500" ]; then
+                          echo "  ⚠ $endpoint: HTTP $HTTP_CODE (known hexstrike v6.0 bug — ModernVisualEngine missing methods)"
+                      else
+                          echo "  ✗ $endpoint: HTTP $HTTP_CODE"
+                      fi
+                  done
+
+                  # Check intelligence endpoints
+                  for endpoint in "/api/intelligence/analyze-target" "/api/intelligence/select-tools" "/api/intelligence/create-attack-chain"; do
+                      HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:9999$endpoint" \
+                          -H "Content-Type: application/json" \
+                          -d '{"target":"127.0.0.1","objective":"recon","phases":["reconnaissance"]}' 2>/dev/null)
+                      if [ "$HTTP_CODE" = "200" ]; then
+                          echo "  ✓ $endpoint: HTTP $HTTP_CODE"
+                      else
+                          echo "  ✗ $endpoint: HTTP $HTTP_CODE"
+                      fi
+                  done
+
+                  kill $HEXSTRIKE_PID 2>/dev/null || true
+                  cd "$GITHUB_WORKSPACE"
                   echo ""
 
                   echo "── Celery Task Scanning Capabilities ────────────"
@@ -146,6 +224,11 @@ jobs:
                   echo ""
 
                   echo "══════════════════════════════════════════════════"
-                  echo "  All security tools verified successfully"
+                  if [ "$FAIL_COUNT" -gt 0 ]; then
+                      echo "  ⚠ Verification complete with $FAIL_COUNT failure(s)"
+                      echo "  Some tools may need manual installation"
+                  else
+                      echo "  ✓ All security tools verified successfully"
+                  fi
                   echo "══════════════════════════════════════════════════"
 
