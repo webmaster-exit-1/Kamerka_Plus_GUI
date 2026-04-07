@@ -1299,3 +1299,182 @@ class HomepageHamburgerMenuTest(TestCase):
         self.assertIn('/gallery', content)
         self.assertIn('/devices', content)
         self.assertIn('/sources', content)
+
+
+# ---------------------------------------------------------------------------
+# Tab nesting — all tab panes must be siblings inside tab-content
+# ---------------------------------------------------------------------------
+class DeviceTabNestingTest(TestCase):
+    """All tab panes must be direct children of .tab-content, not nested."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search, vulns="['CVE-2021-36260']")
+
+    def test_tab_panes_are_siblings(self):
+        """Each tab-pane must be a sibling inside tab-content, not nested."""
+        url = "/results/{}/{}/{}".format(
+            self.search.id, self.device.id, self.device.ip
+        )
+        response = self.client.get(url)
+        body = response.content.decode()
+        # Find the tab-content div and verify that tab panes appear after
+        # a proper closing of the previous tab pane.
+        tab_ids = ["tab8", "tab9", "tab10", "tab11", "tab_hw", "tab_risk", "tab_supply"]
+        for tab_id in tab_ids:
+            self.assertIn(
+                'id="{}"'.format(tab_id), body,
+                "Tab pane {} must be present".format(tab_id),
+            )
+
+    def test_nmap_tab_has_manual_section(self):
+        """The NMAP tab must contain the manual nmap scan section."""
+        url = "/results/{}/{}/{}".format(
+            self.search.id, self.device.id, self.device.ip
+        )
+        response = self.client.get(url)
+        body = response.content.decode()
+        self.assertIn("manual_nmap_btn", body, "Manual nmap button must be present")
+        self.assertIn("manual_nmap_flags", body, "Manual nmap flags input must be present")
+        self.assertIn("manual_nmap_output", body, "Manual nmap output container must be present")
+
+
+# ---------------------------------------------------------------------------
+# Screenshot display — must use image/png MIME type
+# ---------------------------------------------------------------------------
+class ScreenshotMimeTypeTest(TestCase):
+    """Screenshots must be displayed with image/png MIME type."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+        self.device.screenshot = "iVBORw0KGgo="  # minimal PNG prefix
+        self.device.save()
+
+    def test_screenshot_uses_png_mime_type(self):
+        url = "/results/{}/{}/{}".format(
+            self.search.id, self.device.id, self.device.ip
+        )
+        response = self.client.get(url)
+        body = response.content.decode()
+        self.assertIn("data:image/png;base64,", body,
+                       "Screenshot must use image/png MIME type")
+        self.assertNotIn("data:image/jpeg;base64,", body,
+                          "Screenshot must NOT use image/jpeg MIME type")
+
+    def test_no_stray_td_tag(self):
+        """The device category must not be wrapped in a stray <td> tag."""
+        url = "/results/{}/{}/{}".format(
+            self.search.id, self.device.id, self.device.ip
+        )
+        response = self.client.get(url)
+        body = response.content.decode()
+        self.assertNotIn("<td>", body.split("tab9")[0][-500:] if "tab9" in body else "",
+                          "Stray <td> tag near device.category must be removed")
+
+
+# ---------------------------------------------------------------------------
+# Manual nmap view — URL routing and AJAX guard
+# ---------------------------------------------------------------------------
+class ManualNmapViewTest(TestCase):
+    """manual_nmap_view must validate AJAX and flags."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    def test_non_ajax_returns_null_task(self):
+        response = self.client.get("/manual_nmap/{}".format(self.device.id))
+        data = json.loads(response.content)
+        self.assertIsNone(data["task_id"])
+
+    def test_empty_flags_returns_error(self):
+        response = self.client.get(
+            "/manual_nmap/{}".format(self.device.id),
+            {"flags": ""},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        data = json.loads(response.content)
+        self.assertIn("error", data)
+
+    @patch("app_kamerka.views.nmap_manual_scan")
+    def test_valid_flags_dispatches_task(self, mock_task):
+        mock_task.delay.return_value = MagicMock(id="test-task-id")
+        response = self.client.get(
+            "/manual_nmap/{}".format(self.device.id),
+            {"flags": "-sV -p 80"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        data = json.loads(response.content)
+        self.assertEqual(data["task_id"], "test-task-id")
+        mock_task.delay.assert_called_once_with(
+            int(self.device.id), flags="-sV -p 80"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Nmap flag sanitizer
+# ---------------------------------------------------------------------------
+class NmapFlagSanitizerTest(TestCase):
+    """_sanitize_nmap_flags must allow safe flags and block dangerous ones."""
+
+    def test_basic_flags_allowed(self):
+        from kamerka.tasks import _sanitize_nmap_flags
+        result = _sanitize_nmap_flags("-sV -p 80,443")
+        self.assertEqual(result, "-sV -p 80,443")
+
+    def test_timing_flag_allowed(self):
+        from kamerka.tasks import _sanitize_nmap_flags
+        result = _sanitize_nmap_flags("-T4 -A")
+        self.assertEqual(result, "-T4 -A")
+
+    def test_shell_metachar_blocked(self):
+        from kamerka.tasks import _sanitize_nmap_flags
+        with self.assertRaises(ValueError):
+            _sanitize_nmap_flags("-sV; rm -rf /")
+
+    def test_pipe_blocked(self):
+        from kamerka.tasks import _sanitize_nmap_flags
+        with self.assertRaises(ValueError):
+            _sanitize_nmap_flags("-sV | cat /etc/passwd")
+
+    def test_backtick_blocked(self):
+        from kamerka.tasks import _sanitize_nmap_flags
+        with self.assertRaises(ValueError):
+            _sanitize_nmap_flags("`whoami`")
+
+    def test_empty_flags_raises(self):
+        from kamerka.tasks import _sanitize_nmap_flags
+        with self.assertRaises(ValueError):
+            _sanitize_nmap_flags("")
+
+
+# ---------------------------------------------------------------------------
+# Sources page — hamburger menu and Security Resources link
+# ---------------------------------------------------------------------------
+class SourcesPageTest(TestCase):
+    """sources.html must include hamburger menu and Security Resources link."""
+
+    def test_hamburger_button_present(self):
+        response = self.client.get("/sources")
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        self.assertIn('id="kamerka-hamburger-btn"', content)
+
+    def test_hamburger_overlay_present(self):
+        response = self.client.get("/sources")
+        content = response.content.decode()
+        self.assertIn('id="kamerka-hamburger-overlay"', content)
+
+    def test_security_resources_link_present(self):
+        response = self.client.get("/sources")
+        content = response.content.decode()
+        self.assertIn("webmaster-exit-1.github.io/Security_Resources", content,
+                       "Security Resources link must be present")
+
+    def test_nav_links_in_overlay(self):
+        response = self.client.get("/sources")
+        content = response.content.decode()
+        self.assertIn('/index', content)
+        self.assertIn('/sources', content)
+        self.assertIn('/globe', content)

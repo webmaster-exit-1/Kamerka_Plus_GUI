@@ -1,0 +1,142 @@
+name: "Copilot Setup Steps"
+
+on:
+    workflow_dispatch:
+    push:
+        paths:
+            - .github/workflows/copilot-setup-steps.yml
+    pull_request:
+        paths:
+            - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+    copilot-setup-steps:
+        runs-on: ubuntu-latest
+
+        permissions:
+            contents: read
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v6
+
+            - name: Set up Python
+              uses: actions/setup-python@v6
+              with:
+                  python-version: "3.12"
+                  cache: "pip"
+
+            - name: Install project dependencies
+              run: pip install -r requirements.txt
+
+            - name: Install system security tools
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y nmap libpcap-dev
+
+            - name: Install HexStrike AI MCP server
+              run: |
+                  git clone https://github.com/0x4m4/hexstrike-ai.git /tmp/hexstrike-ai
+                  pip install -r /tmp/hexstrike-ai/requirements.txt
+                  # Make hexstrike available on PATH
+                  echo "/tmp/hexstrike-ai" >> $GITHUB_PATH
+
+            - name: Set up Go
+              uses: actions/setup-go@v6
+              with:
+                  go-version: "1.26"
+                  check-latest: true
+                  cache: false
+
+            - name: Install ProjectDiscovery tools
+              run: |
+                  GOTOOLCHAIN=go1.26.0 go install -v github.com/projectdiscovery/pdtm/cmd/pdtm@latest
+                  $(go env GOPATH)/bin/pdtm -i nuclei,naabu
+                  echo "$HOME/.pdtm/go/bin" >> $GITHUB_PATH
+
+            - name: Django setup
+              run: |
+                  python manage.py check
+                  python manage.py migrate --run-syncdb
+
+            - name: Verify all security tools and scanning capabilities
+              run: |
+                  echo "══════════════════════════════════════════════════"
+                  echo "  HexStrike Security Tool Verification"
+                  echo "══════════════════════════════════════════════════"
+
+                  echo ""
+                  echo "── Network Scanning ─────────────────────────────"
+                  echo "[nmap]"
+                  nmap --version
+                  echo ""
+                  echo "[naabu]"
+                  naabu -version
+                  echo ""
+
+                  echo "── Vulnerability Scanning ───────────────────────"
+                  echo "[nuclei]"
+                  nuclei -version
+                  echo ""
+                  echo "[nuclei templates – china-iot]"
+                  nuclei -validate -t nuclei_templates/china-iot/ || true
+                  echo ""
+
+                  echo "── Web Application Analysis ─────────────────────"
+                  echo "[wappalyzer]"
+                  pip show wappalyzer | head -3
+                  echo ""
+
+                  echo "── NSE Script Inventory ─────────────────────────"
+                  echo "Custom NSE scripts:"
+                  ls -1 nmap_scripts/*.nse 2>/dev/null | wc -l
+                  ls -1 nmap_scripts/*.nse 2>/dev/null
+                  echo ""
+
+                  echo "── Python Security Libraries ────────────────────"
+                  echo "[shodan]"
+                  python -c "import shodan; print('Shodan', shodan.__version__)" 2>/dev/null || echo "  NOT INSTALLED"
+                  echo "[ipwhois]"
+                  python -c "import ipwhois; print('ipwhois OK')" 2>/dev/null || echo "  NOT INSTALLED"
+                  echo "[selenium]"
+                  python -c "import selenium; print('Selenium', selenium.__version__)" 2>/dev/null || echo "  NOT INSTALLED"
+                  echo "[libnmap]"
+                  python -c "from libnmap.process import NmapProcess; print('libnmap OK')" 2>/dev/null || echo "  NOT INSTALLED"
+                  echo "[xmltodict]"
+                  python -c "import xmltodict; print('xmltodict OK')" 2>/dev/null || echo "  NOT INSTALLED"
+                  echo ""
+
+                  echo "── HexStrike MCP Server ─────────────────────────"
+                  ls /tmp/hexstrike-ai/hexstrike_server.py && echo "hexstrike_server.py: PRESENT" || echo "hexstrike_server.py: MISSING"
+                  ls /tmp/hexstrike-ai/hexstrike_mcp.py && echo "hexstrike_mcp.py: PRESENT" || echo "hexstrike_mcp.py: MISSING"
+                  python -c "import fastmcp; print('fastmcp OK')" 2>/dev/null || echo "  fastmcp: NOT INSTALLED (non-critical)"
+                  echo ""
+
+                  echo "── Celery Task Scanning Capabilities ────────────"
+                  python -c "
+                  from kamerka.tasks import (
+                      nmap_device_scan, nmap_manual_scan, nmap_rtsp_scan,
+                      deep_protocol_scan, nuclei_scan, port_scan_task,
+                      wappalyzer_scan, capture_screenshot, exploitdb_search,
+                      nvd_lookup, honeypot_check, sbom_lookup, gfw_check,
+                      NSE_SCRIPT_CATALOG,
+                  )
+                  tasks = [
+                      'nmap_device_scan', 'nmap_manual_scan', 'nmap_rtsp_scan',
+                      'deep_protocol_scan', 'nuclei_scan', 'port_scan_task',
+                      'wappalyzer_scan', 'capture_screenshot', 'exploitdb_search',
+                      'nvd_lookup', 'honeypot_check', 'sbom_lookup', 'gfw_check',
+                  ]
+                  print('Registered Celery scan tasks:')
+                  for t in tasks:
+                      print(f'  ✓ {t}')
+                  print(f'\nNSE Script Catalog: {len(NSE_SCRIPT_CATALOG)} scripts')
+                  for name, path in NSE_SCRIPT_CATALOG.items():
+                      print(f'  • {name}: {path}')
+                  "
+                  echo ""
+
+                  echo "══════════════════════════════════════════════════"
+                  echo "  All security tools verified successfully"
+                  echo "══════════════════════════════════════════════════"
+

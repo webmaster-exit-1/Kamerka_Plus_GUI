@@ -2023,6 +2023,162 @@ def nmap_device_scan(self, device_id, nse_script=None):
         return {"Error": str(e)}
 
 
+# ── Allow-list of safe Nmap flags for manual scans ──────────────────────
+_NMAP_ALLOWED_FLAGS = {
+    "-sT", "-sS", "-sU", "-sV", "-sC", "-sn", "-Pn", "-O", "-A",
+    "-T0", "-T1", "-T2", "-T3", "-T4", "-T5",
+    "-p", "-F", "-r", "--top-ports", "--open",
+    "--version-intensity", "--version-light", "--version-all",
+    "-oN", "-oX", "-oG",
+    "--traceroute", "--reason", "-v", "-vv", "-d",
+    "--max-retries", "--host-timeout", "--scan-delay",
+    "--min-rate", "--max-rate",
+    "--script",
+}
+
+# Tokens that must never appear in user-supplied nmap args.
+_NMAP_BLOCKED_TOKENS = {
+    ";", "&&", "||", "|", "`", "$(", "$(",
+    ">", ">>", "<", "<<",
+    "\n", "\r",
+}
+
+
+def _sanitize_nmap_flags(raw_flags):
+    """Validate and sanitize user-supplied nmap flags.
+
+    Returns a cleaned flags string or raises ``ValueError`` with a message
+    describing the disallowed input.
+    """
+    if not raw_flags or not raw_flags.strip():
+        raise ValueError("No flags provided")
+
+    # Block shell meta-characters
+    for token in _NMAP_BLOCKED_TOKENS:
+        if token in raw_flags:
+            raise ValueError(
+                "Disallowed character sequence: {}".format(repr(token))
+            )
+
+    parts = raw_flags.split()
+    validated = []
+
+    i = 0
+    while i < len(parts):
+        part = parts[i]
+
+        # Flags with = embedded (e.g. --script=http-title)
+        if "=" in part:
+            flag_name = part.split("=", 1)[0]
+        else:
+            flag_name = part
+
+        # Check -p<port> style (flag and value glued together)
+        matched = False
+        for allowed in _NMAP_ALLOWED_FLAGS:
+            if flag_name == allowed:
+                matched = True
+                break
+            # Allow -p80 style (flag prefix match for known single-char flags)
+            if allowed in ("-p", "-T0", "-T1", "-T2", "-T3", "-T4", "-T5"):
+                if part.startswith(allowed.rstrip("0123456789")):
+                    matched = True
+                    break
+
+        if matched:
+            validated.append(part)
+        elif part.lstrip("-")[:1].isalpha() and part.startswith("-"):
+            raise ValueError("Disallowed flag: {}".format(part))
+        else:
+            # It's a value argument (port spec, number, etc.)
+            validated.append(part)
+
+        i += 1
+
+    return " ".join(validated)
+
+
+@shared_task(bind=True)
+def nmap_manual_scan(self, device_id, flags=""):
+    """Run an Nmap scan with user-supplied flags against a device.
+
+    Flags are validated via ``_sanitize_nmap_flags`` allow-list.
+    Returns the raw stdout/stderr output and parsed results.
+    """
+    progress_recorder = ProgressRecorder(self)
+    progress_recorder.set_progress(0, 4, description="Validating flags…")
+
+    device = Device.objects.get(id=device_id)
+    ip = device.ip
+
+    import ipaddress as _ipa
+
+    try:
+        _ipa.ip_address(ip)
+    except ValueError:
+        return {"error": "Invalid IP address: {}".format(ip)}
+
+    try:
+        clean_flags = _sanitize_nmap_flags(flags)
+    except ValueError as e:
+        return {"error": "Invalid flags: {}".format(str(e))}
+
+    progress_recorder.set_progress(
+        1, 4, description="Starting Nmap: nmap {} {}".format(clean_flags, ip)
+    )
+
+    try:
+        nm = NmapProcess(ip, options=clean_flags)
+        nm.run_background()
+
+        start_time = time.time()
+        max_runtime = getattr(settings, "NMAP_MAX_RUNTIME", 300)
+        while nm.is_running():
+            elapsed = time.time() - start_time
+            if elapsed > max_runtime:
+                try:
+                    nm.stop()
+                except Exception:
+                    pass
+                return {
+                    "error": "Scan timed out after {} seconds".format(max_runtime),
+                    "command": "nmap {} {}".format(clean_flags, ip),
+                    "output": nm.stdout or "",
+                }
+            progress_recorder.set_progress(
+                2, 4, description="Scanning… {:.0f}s elapsed".format(elapsed)
+            )
+            sleep(2)
+
+        progress_recorder.set_progress(3, 4, description="Processing results…")
+
+        raw_output = nm.stdout or ""
+        raw_stderr = nm.stderr or ""
+        command_str = "nmap {} {}".format(clean_flags, ip)
+
+        result = {
+            "command": command_str,
+            "output": raw_output,
+            "stderr": raw_stderr,
+            "return_code": nm.rc,
+        }
+
+        # Try to parse XML output for structured data
+        if raw_output:
+            try:
+                parsed = xmltodict.parse(raw_output)
+                result["parsed"] = parsed.get("nmaprun", {})
+            except Exception:
+                pass
+
+        progress_recorder.set_progress(4, 4, description="Done")
+        return result
+
+    except Exception as e:
+        logger.warning("nmap_manual_scan error for %s: %s", ip, e)
+        return {"error": str(e), "command": "nmap {} {}".format(clean_flags, ip)}
+
+
 @shared_task(bind=False)
 def scan(id):
     """Legacy synchronous Nmap scan — prefer nmap_device_scan() Celery task."""

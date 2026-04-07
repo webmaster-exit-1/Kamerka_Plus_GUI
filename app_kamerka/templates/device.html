@@ -292,7 +292,7 @@
                                 </div>
                             </div>
                                 </div>
-
+</div><!-- end tab8 -->
 
 
 
@@ -353,10 +353,10 @@
 
                                      {{ device.data }}<br>
                                         {{ device.ssl }}
-                                                                                    <td>{{ device.category }}</td><br>
+                                        {{ device.category }}<br>
 
                                     {% if device.screenshot %}
-                                    <img src="data:image/jpeg;base64,{{ device.screenshot }}">
+                                    <img src="data:image/png;base64,{{ device.screenshot }}" style="max-width:100%;">
                                     {% endif %}
 </center>
                                     </div>
@@ -455,6 +455,39 @@
                             <!-- END USERS ACTIVITY BLOCK -->
 
                         </div>
+</div>
+
+<!-- MANUAL NMAP SCAN -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="panel panel-default">
+            <div class="panel-heading ui-draggable-handle">
+                <div class="panel-title-box">
+                    <h3>&#9000; Manual Nmap</h3>
+                </div>
+            </div>
+            <div class="panel-body padding-2">
+                <p style="color:#888;font-size:0.9em;margin-bottom:8px;">
+                    Run a custom Nmap scan against <b style="color:#00e1ff;">{{ device.ip }}</b>.
+                    Enter flags below (e.g. <code style="color:#ffe600;">-sV -p 80,443</code> or <code style="color:#ffe600;">-A -T4</code>).
+                </p>
+                <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px;">
+                    <input type="text" id="manual_nmap_flags" placeholder="-sV -p 80,443 --open"
+                           style="flex:1 1 300px;min-width:200px;padding:6px 10px;background:#0a0a1a;color:#c8d6e5;border:1px solid #0064d7;font-family:'Share Tech Mono',monospace;font-size:14px;" />
+                    <button type="button" id="manual_nmap_btn" class="btn btn-primary active" style="background:#ff2050;border-color:#ff2050;font-weight:bold;">
+                        &#9889; Run Nmap
+                    </button>
+                </div>
+                <progress id="progress-bar-manual-nmap" value="0" max="100" style="display:none; margin-bottom:1em; width:100%;"></progress>
+                <div id="manual_nmap_command" style="display:none;margin-bottom:8px;">
+                    <span style="color:#888;font-size:0.85em;">Command:</span>
+                    <code id="manual_nmap_cmd_text" style="color:#00e1ff;font-family:monospace;background:rgba(0,100,215,0.1);padding:2px 8px;border-radius:3px;"></code>
+                </div>
+                <pre id="manual_nmap_output" style="display:none;background:#0a0a1a;color:#00ff88;border:1px solid #0064d7;border-radius:4px;padding:12px;font-family:'Share Tech Mono',monospace;font-size:0.85em;max-height:600px;overflow:auto;white-space:pre-wrap;word-break:break-all;"></pre>
+                <div id="manual_nmap_error" style="display:none;color:#ff2050;font-weight:bold;margin-top:8px;"></div>
+            </div>
+        </div>
+    </div>
 </div>
                                         </div>
 
@@ -808,8 +841,6 @@
     </div>
 </div>
 </div>
-
-                                                          </div>
 
 
                                 </div>
@@ -1533,6 +1564,58 @@ $('#exploitdb_search_btn').on('click', function(){
             }
         },
         error: function () { console.log("ExploitDB search error"); }
+    });
+    return false;
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// MANUAL NMAP SCAN BUTTON
+// ═══════════════════════════════════════════════════════════════════
+$('#manual_nmap_btn').on('click', function(){
+    var flags = $('#manual_nmap_flags').val();
+    if (!flags || !flags.trim()) {
+        noty({text: "Enter nmap flags first", layout: 'topRight', type: 'error', timeout: 3000});
+        return false;
+    }
+    var pgrbar_mnmap = $('#progress-bar-manual-nmap');
+    $('#manual_nmap_output').css('display', 'none').text('');
+    $('#manual_nmap_error').css('display', 'none').text('');
+    $('#manual_nmap_command').css('display', 'none');
+    $.ajax({
+        type: "GET",
+        url: "/manual_nmap/{{device.id}}",
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        data: { flags: flags },
+        success: function (data) {
+            if (data.task_id != null) {
+                pgrbar_mnmap.css('display', 'block');
+                get_task_info(data.task_id, pgrbar_mnmap, 0, function(result) {
+                    if (result && result.error) {
+                        $('#manual_nmap_error').css('display', 'block').text(result.error);
+                        if (result.output) {
+                            $('#manual_nmap_output').css('display', 'block').text(result.output);
+                        }
+                        noty({text: result.error, layout: 'topRight', type: 'error', timeout: 6000});
+                    } else if (result) {
+                        if (result.command) {
+                            $('#manual_nmap_cmd_text').text(result.command);
+                            $('#manual_nmap_command').css('display', 'block');
+                        }
+                        var output = result.output || '';
+                        if (result.stderr) { output += '\n--- STDERR ---\n' + result.stderr; }
+                        $('#manual_nmap_output').css('display', 'block').text(output || 'No output');
+                        noty({text: "Manual Nmap scan complete", layout: 'topRight', type: 'success', timeout: 4000});
+                    }
+                });
+                noty({text: "Manual Nmap scan started…", layout: 'topRight', type: 'success', timeout: 3000});
+            } else if (data.error) {
+                $('#manual_nmap_error').css('display', 'block').text(data.error);
+                noty({text: data.error, layout: 'topRight', type: 'error', timeout: 4000});
+            }
+        },
+        error: function () {
+            noty({text: "Manual Nmap request failed", layout: 'topRight', type: 'error', timeout: 4000});
+        }
     });
     return false;
 });
