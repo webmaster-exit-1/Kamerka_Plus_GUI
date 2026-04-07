@@ -2094,9 +2094,9 @@ def _validate_flag_value(flag_name, value):
         return value
 
     if flag_name == "--script":
-        if not re.fullmatch(r"[A-Za-z0-9_.,/+-]+", value):
-            raise ValueError("Invalid value for --script: {}".format(value))
-        # Only allow scripts from the curated NSE_SCRIPT_CATALOG
+        # Only allow scripts from the curated NSE_SCRIPT_CATALOG.
+        # Validate each comma-separated script name against the catalog
+        # before accepting.
         for script_part in value.split(","):
             if script_part not in _NMAP_ALLOWED_SCRIPTS:
                 raise ValueError(
@@ -2154,7 +2154,7 @@ def _sanitize_nmap_flags(raw_flags):
             continue
 
         # Handle -p<port> glued syntax (e.g. -p80,443)
-        if part.startswith("-p") and part != "-p" and not part.startswith("-pn"):
+        if part.startswith("-p") and part != "-p" and re.match(r"^-p[\d,-]+$", part):
             if "-p" not in allowed_flags:
                 raise ValueError("Disallowed flag: -p")
             validated.append(
@@ -2171,7 +2171,9 @@ def _sanitize_nmap_flags(raw_flags):
                 raise ValueError("Missing value for flag: {}".format(part))
             value = parts[i + 1]
             if value.startswith("-"):
-                raise ValueError("Missing value for flag: {}".format(part))
+                raise ValueError(
+                    "Invalid value for flag {} (value cannot start with -)".format(part)
+                )
             validated.append(part)
             validated.append(_validate_flag_value(part, value))
             i += 2
