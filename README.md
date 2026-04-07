@@ -1,6 +1,6 @@
 # ꓘamerka Plus GUI
 
-## Ultimate Internet of Things/Industrial Control Systems reconnaissance tool. Upgraded Edition
+## Ultimate Internet of Things & Industrial Control Systems reconnaissance tool. Upgraded Edition
 
 [![Kamerka Plus GUI CI](https://github.com/webmaster-exit-1/Kamerka_Plus_GUI/actions/workflows/ci.yml/badge.svg)](https://github.com/webmaster-exit-1/Kamerka_Plus_GUI/actions/workflows/ci.yml)
 
