@@ -1,4 +1,4 @@
-# .github/workflows/hexstrike-agent-audit.yml
+# .github/workflows/hexstrike_audit.yml
 
 name: HexStrike Agent Audit
 
@@ -6,19 +6,24 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
 jobs:
   hexstrike-agent-audit:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
-      - name: Install HexStrike MCP server
+      - name: Install and start HexStrike MCP server
         run: |
           git clone https://github.com/0x4m4/hexstrike-ai.git /tmp/hexstrike-ai
           cd /tmp/hexstrike-ai
@@ -26,7 +31,14 @@ jobs:
           . venv/bin/activate
           pip install -r requirements.txt
           nohup python3 hexstrike_server.py --port 8888 &
-          sleep 15
+          # Wait for the server to become ready (up to 30 s)
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8888/ > /dev/null 2>&1; then
+              echo "HexStrike server is ready"
+              break
+            fi
+            sleep 1
+          done
 
       - name: Discover OSINT/exploit files
         id: discover
@@ -50,11 +62,11 @@ jobs:
             echo "### $FILE" >> hexstrike_audit.md
             for TOOL in $TOOLS; do
               echo "**$TOOL**" >> hexstrike_audit.md
-              OUT=$(python3 /tmp/hexstrike-ai/hexstrike_mcp.py --server $HEXSTRIKE_MCP_URL --tool $TOOL --file $FILE 2>&1 || echo "Error running $TOOL")
+              OUT=$(python3 /tmp/hexstrike-ai/hexstrike_mcp.py --server "$HEXSTRIKE_MCP_URL" --tool "$TOOL" --file "$FILE" 2>&1 || echo "Error running $TOOL")
               echo "$OUT" >> hexstrike_audit.md
               echo "" >> hexstrike_audit.md
 
-              # Detect critical results and possible code suggestions -- adjust grep/parsing as needed!
+              # Detect critical results and possible code suggestions
               if echo "$OUT" | grep -iq 'CRITICAL'; then
                 echo "$FILE, $TOOL" >> critical_findings.txt
                 echo "$OUT" >> critical_findings.txt
@@ -69,12 +81,14 @@ jobs:
           done
 
       - name: Upload report as workflow artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: hexstrike-audit-report
           path: hexstrike_audit.md
 
       - name: Post HexStrike summary as PR comment
+        if: always()
         uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ github.event.pull_request.number }}
@@ -95,21 +109,25 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Parse critical findings and open issues for each (max. 10 issues for demo; refine as needed)
-          c=0
+          # Parse critical findings and open issues for each (max 10)
           awk '/^\[HexStrikeFindings\]/{flag=1; next}/^\[FileFixSuggestions\]/{flag=0}flag' critical_findings.txt | \
-          awk 'BEGIN{FS="\n"; RS="---\n"} {print $0}' | while read -r block; do
+          awk 'BEGIN{FS="\n"; RS="---\n"} {print $0}' > /tmp/hexstrike_blocks.txt
+
+          c=0
+          while IFS= read -r block; do
             [ -z "$block" ] && continue
-            ((c++))
-            if (( c > 10 )); then break; fi
+            c=$((c + 1))
+            if [ "$c" -gt 10 ]; then break; fi
             TITLE_LINE=$(echo "$block" | head -n1)
             ISSUE_TITLE="HexStrike Critical Security Issue: $TITLE_LINE"
-            ISSUE_BODY="$block Automated by HexStrike Agent. Please review and remediate ASAP."
-            gh issue create --repo ${{ github.repository }} --title "$ISSUE_TITLE" --body "$ISSUE_BODY" --label "security, urgent"
-          done
+            ISSUE_BODY="$block
+
+          Automated by HexStrike Agent. Please review and remediate ASAP."
+            gh issue create --repo "${{ github.repository }}" --title "$ISSUE_TITLE" --body "$ISSUE_BODY" --label "security" --label "urgent" || true
+          done < /tmp/hexstrike_blocks.txt
 
       - name: Suggest code fixes as PR review comments (demo)
         if: always()
-        uses: thollander/actions-comment-pull-request@v2
+        uses: thollander/actions-comment-pull-request@v3
         with:
           filePath: fix_suggestions.txt
