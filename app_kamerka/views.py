@@ -56,6 +56,7 @@ from kamerka.tasks import (
     gfw_check,
     check_search_cost,
     nmap_device_scan,
+    nmap_manual_scan,
     NSE_SCRIPT_CATALOG,
     exploitdb_search,
     capture_screenshot,
@@ -900,6 +901,27 @@ def scan_dev(request, id):
         return HttpResponse(
             json.dumps({"task_id": None}), content_type="application/json"
         )
+
+
+def manual_nmap_view(request, id):
+    """Run a manual Nmap scan with user-supplied flags."""
+    if (
+        request.method == "GET"
+        and request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    ):
+        flags = request.GET.get("flags", "")
+        if not flags.strip():
+            return HttpResponse(
+                json.dumps({"error": "No flags provided"}),
+                content_type="application/json",
+            )
+        task = nmap_manual_scan.delay(int(id), flags=flags)
+        return HttpResponse(
+            json.dumps({"task_id": task.id}), content_type="application/json"
+        )
+    return HttpResponse(
+        json.dumps({"task_id": None}), content_type="application/json"
+    )
 
 
 def exploit_dev(request, id):

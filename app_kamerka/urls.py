@@ -52,6 +52,7 @@ urlpatterns = [
     path("whois/<id>", views.whois, name="whois"),
     path("get_whois/<id>", views.get_whois, name="get_whois"),
     path("scan/<id>", views.scan_dev, name="scan"),
+    path("manual_nmap/<id>", views.manual_nmap_view, name="manual_nmap"),
     path("exploit/<id>", views.exploit_dev, name="exploit"),
     path("port_scan/<id>", views.port_scan_view, name="port_scan"),
     path("port_scan/ip/<target_ip>", views.port_scan_ip_view, name="port_scan_ip"),
