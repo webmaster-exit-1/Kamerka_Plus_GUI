@@ -6,6 +6,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+
 permissions:
   contents: read
   issues: write
@@ -32,13 +36,21 @@ jobs:
           pip install -r requirements.txt
           nohup python3 hexstrike_server.py --port 8888 &
           # Wait for the server to become ready (up to 30 s)
+          ready=false
           for i in $(seq 1 30); do
             if curl -sf http://127.0.0.1:8888/ > /dev/null 2>&1; then
               echo "HexStrike server is ready"
+              ready=true
               break
             fi
             sleep 1
           done
+          if [ "$ready" != "true" ]; then
+            echo "::error::HexStrike server failed to start within 30 s"
+            # Show last few log lines for debugging
+            tail -20 nohup.out 2>/dev/null || true
+            exit 1
+          fi
 
       - name: Discover OSINT/exploit files
         id: discover
@@ -57,7 +69,8 @@ jobs:
           echo "[HexStrikeFindings]" > critical_findings.txt
           echo "[FileFixSuggestions]" > fix_suggestions.txt
 
-          for FILE in $(cat hexstrike_targets.txt); do
+          while IFS= read -r FILE; do
+            [ -z "$FILE" ] && continue
             echo "" >> hexstrike_audit.md
             echo "### $FILE" >> hexstrike_audit.md
             for TOOL in $TOOLS; do
@@ -78,7 +91,7 @@ jobs:
                 echo "---" >> fix_suggestions.txt
               fi
             done
-          done
+          done < hexstrike_targets.txt
 
       - name: Upload report as workflow artifact
         if: always()
@@ -109,22 +122,35 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Parse critical findings and open issues for each (max 10)
+          # Parse critical findings into NUL-delimited records for safe multi-line iteration
           awk '/^\[HexStrikeFindings\]/{flag=1; next}/^\[FileFixSuggestions\]/{flag=0}flag' critical_findings.txt | \
-          awk 'BEGIN{FS="\n"; RS="---\n"} {print $0}' > /tmp/hexstrike_blocks.txt
+          awk 'BEGIN{RS="---\n"; ORS="\0"} NF{print}' > /tmp/hexstrike_blocks.bin
 
           c=0
-          while IFS= read -r block; do
+          while IFS= read -r -d '' block; do
             [ -z "$block" ] && continue
             c=$((c + 1))
             if [ "$c" -gt 10 ]; then break; fi
             TITLE_LINE=$(echo "$block" | head -n1)
             ISSUE_TITLE="HexStrike Critical Security Issue: $TITLE_LINE"
-            ISSUE_BODY="$block
-
-          Automated by HexStrike Agent. Please review and remediate ASAP."
-            gh issue create --repo "${{ github.repository }}" --title "$ISSUE_TITLE" --body "$ISSUE_BODY" --label "security" --label "urgent" || true
-          done < /tmp/hexstrike_blocks.txt
+            ISSUE_BODY="$(printf '%s\n\nAutomated by HexStrike Agent. Please review and remediate ASAP.' "$block")"
+            issue_output=$(gh issue create --repo "${{ github.repository }}" --title "$ISSUE_TITLE" --body "$ISSUE_BODY" --label "security" --label "urgent" 2>&1)
+            issue_status=$?
+            if [ "$issue_status" -ne 0 ]; then
+              if echo "$issue_output" | grep -Eqi 'label.*not found|could not resolve to a label|invalid label'; then
+                echo "Issue labels missing; retrying without labels for: $ISSUE_TITLE"
+                retry_output=$(gh issue create --repo "${{ github.repository }}" --title "$ISSUE_TITLE" --body "$ISSUE_BODY" 2>&1)
+                retry_status=$?
+                if [ "$retry_status" -ne 0 ]; then
+                  echo "$retry_output"
+                  exit "$retry_status"
+                fi
+              else
+                echo "$issue_output"
+                exit "$issue_status"
+              fi
+            fi
+          done < /tmp/hexstrike_blocks.bin
 
       - name: Suggest code fixes as PR review comments (demo)
         if: always()
