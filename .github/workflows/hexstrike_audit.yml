@@ -27,6 +27,13 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Initialize report files
+        run: |
+          echo "## HexStrike Automated Audit" > hexstrike_audit.md
+          echo "(No audit results — HexStrike server or scan did not run.)" >> hexstrike_audit.md
+          echo "[HexStrikeFindings]" > critical_findings.txt
+          echo "[FileFixSuggestions]" > fix_suggestions.txt
+
       - name: Install and start HexStrike MCP server
         run: |
           git clone https://github.com/0x4m4/hexstrike-ai.git /tmp/hexstrike-ai
@@ -35,10 +42,12 @@ jobs:
           . venv/bin/activate
           pip install -r requirements.txt
           nohup python3 hexstrike_server.py --port 8888 &
-          # Wait for the server to become ready (up to 30 s)
+          # Wait for the server to accept connections (up to 30 s).
+          # The root endpoint may return 404, so we only check that the
+          # server is listening (no -f flag) rather than requiring 2xx.
           ready=false
           for i in $(seq 1 30); do
-            if curl -sf http://127.0.0.1:8888/ > /dev/null 2>&1; then
+            if curl -s -o /dev/null http://127.0.0.1:8888/; then
               echo "HexStrike server is ready"
               ready=true
               break
@@ -156,4 +165,4 @@ jobs:
         if: always()
         uses: thollander/actions-comment-pull-request@v3
         with:
-          filePath: fix_suggestions.txt
+          file-path: fix_suggestions.txt
