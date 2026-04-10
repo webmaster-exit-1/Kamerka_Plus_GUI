@@ -778,6 +778,7 @@ def shodan_search(
 
 
 def check_credits():
+    keys_list = []
     try:
         SHODAN_API_KEY = _get_env_key("SHODAN_API_KEY", required=True)
         if not SHODAN_API_KEY:
@@ -3137,7 +3138,7 @@ def nvd_lookup(device_id):
     kev_set = _fetch_kev_list()
 
     results = []
-    nvd_api_key = _get_env_key("NVD_API_KEY", "")
+    nvd_api_key = _get_env_key("NVD_API_KEY")
     # NVD rate limits: 5 req/30s without key, 50 req/30s with key
     rate_delay = 0.7 if nvd_api_key else 6.5
 

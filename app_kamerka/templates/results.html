@@ -132,7 +132,7 @@
                                             <tr>
                                                     <th>IP</th>
                                                     <th>Type</th>
-                                                    <th>{% if device.nmap %} Ports {% else %} Product {% endif %}</th>
+                                                    <th>Product / Ports</th>
                                                     <th>Port</th>
                                                     <th>City</th>
                                                     <th>Latitude</th>
@@ -390,6 +390,24 @@ document.addEventListener('DOMContentLoaded', function() {
         <script type="text/javascript" src="{% static 'js/actions.js' %}"></script>
         <script type="text/javascript" src="{% static 'js/draw_charts_results.js' %}"></script>
                 <script>drawCharts({{ports|safe}}, {{city|safe}},{{category|safe}});</script>
+
+        {% if task_id %}
+        <script src="{% static 'celery_progress/celery_progress.js' %}"></script>
+        <script>
+        var progressUrl = "{% url 'celery_progress:task_status' task_id %}";
+        CeleryProgressBar.initProgressBar(progressUrl, {
+            progressBarId: 'progress-bar',
+            progressBarMessageId: 'progress-bar-message',
+            onProgress: function(progressBarElement, progressBarMessageElement, progress) {
+                progressBarElement.style.width = Math.round(progress.percent) + '%';
+                progressBarMessageElement.innerHTML = 'Scan in progress: ' + Math.round(progress.percent) + '%';
+            },
+            onSuccess: function() {
+                window.location.reload();
+            }
+        });
+        </script>
+        {% endif %}
 
         <!-- END TEMPLATE -->
 
