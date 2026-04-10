@@ -170,9 +170,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Prevent browsers from MIME-sniffing the content type.
 SECURE_CONTENT_TYPE_NOSNIFF = True
 
-# Send the X-XSS-Protection header (legacy browsers).
-SECURE_BROWSER_XSS_FILTER = True
-
 # Clickjacking protection — also enforced by XFrameOptionsMiddleware above.
 X_FRAME_OPTIONS = 'DENY'
 
