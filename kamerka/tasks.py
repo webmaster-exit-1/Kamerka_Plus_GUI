@@ -851,8 +851,9 @@ def shodan_search_worker(
             shodan_helpers.write_banner(fout, result)
 
             # ── Parse into Device record (existing app logic) ──────────
-            lat = result["location"]["latitude"]
-            lon = result["location"]["longitude"]
+            location = result.get("location") or {}
+            lat = location.get("latitude")
+            lon = location.get("longitude")
             city = ""
             indicator = []
 
@@ -2613,8 +2614,7 @@ def bosch_check(id):
                 continue
     except Exception as exc:
         logger.warning("bosch_check failed for %s: %s", ip, exc)
-
-    if return_dict:
+        return {"error": str(exc)}
         device1.exploit = return_dict
         device1.exploited_scanned = True
         device1.save()
