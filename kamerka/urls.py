@@ -14,7 +14,8 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
+from django.contrib.staticfiles.views import serve as staticfiles_serve
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -23,4 +24,10 @@ urlpatterns = [
          )
     # the endpoint is configurabl)
 
+]
+
+# Serve static files via Django's staticfiles finders regardless of DEBUG mode.
+# This is equivalent to `runserver --insecure` and is safe for a local dev tool.
+urlpatterns += [
+    re_path(r'^static/(?P<path>.*)$', staticfiles_serve, {'insecure': True}),
 ]
