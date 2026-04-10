@@ -778,6 +778,7 @@ def shodan_search(
 
 
 def check_credits():
+    keys_list = []
     try:
         SHODAN_API_KEY = _get_env_key("SHODAN_API_KEY", required=True)
         if not SHODAN_API_KEY:
