@@ -279,7 +279,7 @@
 
 
                                                                     <button type="button" id="show_nearby_devices" class="btn btn-primary active">Show</button>
-
+                                    <div id="nearby_devices_result" style="display:none;"></div>
 
                                     <button type="button" id="add_nearby_devices" class="btn btn-primary active">Add</button>
 
@@ -867,9 +867,15 @@ marker.bindPopup('{{ device.type|escapejs }} — {{ device.ip|escapejs }}').open
 var heatPoints = [[{{ safe_lat }}, {{ safe_lon }}, 0.8]];
 
 {% for dev in nearby %}
-var nearby_marker = L.marker([{{ dev.lat }}, {{ dev.lon }}]).addTo(map);
-nearby_marker.bindPopup('{{ dev.product|escapejs }} — {{ dev.ip|escapejs }}');
-heatPoints.push([{{ dev.lat }}, {{ dev.lon }}, 0.4]);
+{% if dev.lat and dev.lon %}(function(){
+    var dlat = parseFloat('{{ dev.lat|escapejs }}');
+    var dlon = parseFloat('{{ dev.lon|escapejs }}');
+    if (!isNaN(dlat) && !isNaN(dlon)) {
+        var nearby_marker = L.marker([dlat, dlon]).addTo(map);
+        nearby_marker.bindPopup('{{ dev.product|escapejs }} — {{ dev.ip|escapejs }}');
+        heatPoints.push([dlat, dlon, 0.4]);
+    }
+})();{% endif %}
 {% endfor %}
 
 var heatLayer = L.heatLayer(heatPoints, {
@@ -1196,27 +1202,6 @@ if (x.style.display === "none") {
 
 
 var frm = $('#generate-user-form');
-    var pgrbar = $('#progress-bar');
-    $('#nearby_flickr').on('click', function(){
-        $.ajax({
-        type: "GET",
-        url: "/{{device.id}}/flickr/nearby",
-        success: function (data) {
-                if (data.task_id != null) {
-                    get_task_info(data.task_id,pgrbar);
-                }
-                else if (data.Error){
-                noty({text: data.Error , layout: 'topRight', type: 'error', timeout: 1000});
-                }
-            },
-            error: function (data) {
-                console.log("Something went wrong!");
-            }
-        });
-        return false;
-    });
-
-var frm = $('#generate-user-form');
 function get_task_info(task_id, pgrbar, attempts, onComplete) {
     attempts = attempts || 0;
     var MAX_ATTEMPTS = 600; // ~10 minutes at 1 s interval
@@ -1309,32 +1294,8 @@ $('#nuclei_show_btn').on('click', function(){
 
 
 
-$('#bosch_show').on('click', function(){
-var x = document.getElementById("bosch_results");
-if (x.style.display === "none") {
-    x.style.display = "block";
-  } else {
-    x.style.display = "none";
-  } if(x.innerHTML == ""){
-        $.ajax({
-            url: "/show_bosch_usernames/{{device.id}}",
-            type: "get",
-            success: function(response) {
-            $.each(response, function(key, val) {
-              $.each(val.fields, function(fieldname, field) {
-                 // response is form in html format
-                 if (fieldname=="device"){ {} }
-                 else {
-                 $("#bosch_results").append("<p><b>" + fieldname + ' </b><br> ' + field + " </p>");
-}
-            }  );$("#bosch_results").append('------------------');
 
-              }
-              )
-            }
-        })
-        }
-  });
+
 
 $('#show_nearby_devices').on('click', function(){
 var x = document.getElementById("nearby_devices_result");

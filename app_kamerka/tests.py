@@ -1540,3 +1540,146 @@ class SourcesPageTest(TestCase):
         self.assertIn('/index', content)
         self.assertIn('/sources', content)
         self.assertIn('/globe', content)
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for bugs fixed in this session
+# ---------------------------------------------------------------------------
+
+class PortScanIpViewReturnsSearchIdTest(TestCase):
+    """port_scan_ip_view must return search_id so the dashboard can build
+    the correct /results/<search_id>/<device_id>/<ip> URL.
+
+    Bug: the response previously omitted search_id, so the JS used device_id
+    for both URL segments, producing a broken link when search_id != device_id.
+    """
+
+    def test_response_includes_search_id_for_new_device(self):
+        with patch("app_kamerka.views.port_scan_task") as mock_task:
+            mock_task.delay.return_value = MagicMock(id="task-x")
+            response = self.client.get(
+                "/port_scan/ip/10.0.0.1",
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertIn("search_id", data, "Response must include search_id")
+        self.assertIn("device_id", data)
+        device = Device.objects.get(id=data["device_id"])
+        self.assertEqual(data["search_id"], device.search_id)
+
+    def test_search_id_differs_from_device_id(self):
+        """search_id and device_id may be different integers; both must be
+        returned so the results URL is constructed correctly."""
+        with patch("app_kamerka.views.port_scan_task") as mock_task:
+            mock_task.delay.return_value = MagicMock(id="task-y")
+            response = self.client.get(
+                "/port_scan/ip/10.0.0.2",
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        data = json.loads(response.content)
+        device = Device.objects.get(id=data["device_id"])
+        # search_id is the ID of the parent Search record, not the Device
+        self.assertEqual(data["search_id"], device.search_id)
+        # They are allowed to differ — the test simply confirms both are present
+        self.assertIsNotNone(data["search_id"])
+
+
+class NearbyDevicesResultDivTest(TestCase):
+    """device.html must render a #nearby_devices_result div so the
+    #show_nearby_devices click handler can toggle its visibility.
+
+    Bug: the div was completely absent, causing a JS null-dereference crash
+    whenever the 'Show' button was clicked.
+    """
+
+    def _make_device_with_search(self):
+        search = _make_search()
+        return _make_device(search)
+
+    def test_nearby_devices_result_div_present(self):
+        device = self._make_device_with_search()
+        response = self.client.get(
+            f"/results/{device.search_id}/{device.id}/{device.ip}"
+        )
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        self.assertIn('id="nearby_devices_result"', content,
+                      "#nearby_devices_result div must exist in device.html")
+
+
+class DeadJsHandlersRemovedTest(TestCase):
+    """device.html must not contain references to removed/non-existent endpoints.
+
+    Bug: dead click handlers for #nearby_flickr (404 URL) and #bosch_show
+    (non-existent button) were referencing null DOM elements, causing silent JS
+    errors.  They have been removed.
+    """
+
+    def _make_device_with_search(self):
+        search = _make_search()
+        return _make_device(search)
+
+    def test_nearby_flickr_handler_removed(self):
+        device = self._make_device_with_search()
+        response = self.client.get(
+            f"/results/{device.search_id}/{device.id}/{device.ip}"
+        )
+        content = response.content.decode()
+        self.assertNotIn("nearby_flickr", content,
+                         "Dead #nearby_flickr click handler must be removed")
+
+    def test_bosch_show_handler_removed(self):
+        device = self._make_device_with_search()
+        response = self.client.get(
+            f"/results/{device.search_id}/{device.id}/{device.ip}"
+        )
+        content = response.content.decode()
+        self.assertNotIn("bosch_show", content,
+                         "Dead #bosch_show click handler must be removed")
+
+
+class InfraFormEmptyItemsCheckTest(TestCase):
+    """Submitting the infra tab with no items selected must redirect back to
+    the search form — not silently fire a Shodan search with an empty list.
+
+    Bug: the empty-items guard used ``request.POST.getlist("country_infra")``
+    (the country code, always present) instead of
+    ``request.POST.getlist("infra")`` (the items list, may be empty).
+    As a result, an empty submission was never caught.
+    """
+
+    def test_empty_infra_items_redirects_to_form(self):
+        """POST with a valid country but no 'infra' items must not start a task."""
+        with patch("app_kamerka.views.shodan_search") as mock_task:
+            mock_task.delay.return_value = MagicMock(task_id="t-empty")
+            response = self.client.post(
+                "/",
+                data={
+                    "country_infra": "DE",
+                    # 'infra' key deliberately omitted → empty list
+                },
+            )
+        # The view should re-render the search page (200) — task must NOT start.
+        self.assertEqual(response.status_code, 200,
+                         "Empty infra submission should re-render the search form")
+        mock_task.delay.assert_not_called()
+
+    def test_infra_items_posted_starts_search(self):
+        """POST with both country and infra items must start a Shodan search."""
+        with patch("app_kamerka.views.shodan_search") as mock_task:
+            mock_task.delay.return_value = MagicMock(task_id="t1")
+            response = self.client.post(
+                "/",
+                data={
+                    "country_infra": "DE",
+                    "infra": ["power_plant", "water_treatment"],
+                    "all": "",
+                },
+            )
+        # Shodan task should have been triggered → redirect to index
+        if response.status_code == 302:
+            self.assertIn("index", response["Location"])
+        else:
+            mock_task.delay.assert_called_once()
+

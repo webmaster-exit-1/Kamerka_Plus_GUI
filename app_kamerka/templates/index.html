@@ -463,7 +463,7 @@ $(document).ready(function(){
             headers: {'X-Requested-With': 'XMLHttpRequest'},
             success: function(data) {
                 if (data.task_id) {
-                    pollPortScan(data.task_id, 0, data.device_id);
+                    pollPortScan(data.task_id, 0, data.device_id, data.search_id);
                 } else {
                     $('#cp-port-scan-status').html('<span class="cp-warn">[ ERROR ]</span> ' + (data.Error || 'Failed to start task.'));
                 }
@@ -472,7 +472,7 @@ $(document).ready(function(){
         });
     });
 
-    function pollPortScan(taskId, attempts, deviceId) {
+    function pollPortScan(taskId, attempts, deviceId, searchId) {
         if (attempts > 300) {
             $('#cp-port-scan-status').html('<span class="cp-warn">[ TIMEOUT ]</span>');
             $('#cp-port-scan-bar-wrap').hide();
@@ -489,21 +489,22 @@ $(document).ready(function(){
                     var desc = (data.result && data.result.description) ? data.result.description : 'Scanning…';
                     $('#cp-port-scan-bar').css('width', pct + '%').attr('aria-valuenow', pct);
                     $('#cp-port-scan-status').html('<span class="cp-cyan">[ ' + pct + '% ]</span> ' + desc);
-                    setTimeout(function(){ pollPortScan(taskId, attempts+1, deviceId); }, 1000);
+                    setTimeout(function(){ pollPortScan(taskId, attempts+1, deviceId, searchId); }, 1000);
                 } else if (data.state === 'SUCCESS') {
                     $('#cp-port-scan-bar').css('width','100%');
                     var doneMsg = '<span class="cp-ok">[ COMPLETE ]</span> Port scan done.';
-                    if (deviceId) { doneMsg += ' <a href="/results/' + deviceId + '/' + deviceId + '/' + targetIp + '" style="color:var(--cp-cyan);">View results on device page.</a>'; }
+                    var sid = searchId || deviceId;
+                    if (deviceId) { doneMsg += ' <a href="/results/' + sid + '/' + deviceId + '/' + encodeURIComponent(targetIp) + '" style="color:var(--cp-cyan);">View results on device page.</a>'; }
                     $('#cp-port-scan-status').html(doneMsg);
                     setTimeout(function(){ $('#cp-port-scan-bar-wrap').hide(); }, 4000);
                 } else if (data.state === 'PENDING') {
-                    setTimeout(function(){ pollPortScan(taskId, attempts+1, deviceId); }, 1000);
+                    setTimeout(function(){ pollPortScan(taskId, attempts+1, deviceId, searchId); }, 1000);
                 } else {
                     $('#cp-port-scan-status').html('<span class="cp-warn">[ ' + data.state + ' ]</span>');
                     $('#cp-port-scan-bar-wrap').hide();
                 }
             },
-            error: function() { setTimeout(function(){ pollPortScan(taskId, attempts+1, deviceId); }, 2000); }
+            error: function() { setTimeout(function(){ pollPortScan(taskId, attempts+1, deviceId, searchId); }, 2000); }
         });
     }
 });

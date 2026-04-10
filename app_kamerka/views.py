@@ -290,15 +290,14 @@ def search_main(request):
 
             code = infra_form.cleaned_data["country_infra"]
 
-            infra_country = request.POST.getlist("country_infra")
+            post = request.POST.getlist("infra")
 
-            if len(infra_country) == 0:
+            if len(post) == 0:
                 form = forms.CountryForm()
                 return render(request, "search_main.html", {"form": form})
 
-            search = Search(country=code, ics=infra_country)
+            search = Search(country=code, ics=post)
             search.save()
-            post = request.POST.getlist("infra")
 
             if infra_form.cleaned_data["all"] == True:
                 all_results = True
@@ -1019,7 +1018,11 @@ def port_scan_ip_view(request, target_ip):
             device.save()
         scan_task = port_scan_task.delay(device.id)
         return HttpResponse(
-            json.dumps({"task_id": scan_task.id, "device_id": device.id}),
+            json.dumps({
+                "task_id": scan_task.id,
+                "device_id": device.id,
+                "search_id": device.search_id,
+            }),
             content_type="application/json",
         )
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
