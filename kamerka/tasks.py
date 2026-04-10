@@ -722,8 +722,8 @@ def shodan_search(
                             all_results=all_results,
                         )
                         progress_recorder.set_progress(c + 1, total=total)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.warning("shodan_search_worker failed for healthcare query '%s': %s", i, exc)
             else:
 
                 if i in ics_queries:
@@ -738,8 +738,8 @@ def shodan_search(
                             all_results=all_results,
                         )
                         progress_recorder.set_progress(c + 1, total=total)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.warning("shodan_search_worker failed for ics query '%s': %s", i, exc)
 
                 if i in attackers_infra_queries:
                     try:
@@ -772,13 +772,12 @@ def shodan_search(
                         all_results=all_results,
                     )
                     progress_recorder.set_progress(c + 1, total=total)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("shodan_search_worker failed for coordinates query '%s': %s", i, exc)
     return result
 
 
 def check_credits():
-    keys_list = []
     try:
         SHODAN_API_KEY = _get_env_key("SHODAN_API_KEY", required=True)
         if not SHODAN_API_KEY:
@@ -852,8 +851,9 @@ def shodan_search_worker(
             shodan_helpers.write_banner(fout, result)
 
             # ── Parse into Device record (existing app logic) ──────────
-            lat = str(result["location"]["latitude"])
-            lon = str(result["location"]["longitude"])
+            location = result.get("location") or {}
+            lat = location.get("latitude")
+            lon = location.get("longitude")
             city = ""
             indicator = []
 
@@ -885,8 +885,8 @@ def shodan_search_worker(
             try:
                 if "hostnames" in result:
                     hostnames = result["hostnames"][0]
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Could not extract hostname for %s: %s", result.get("ip_str", "?"), exc)
 
             try:
                 if "SAILOR" in result["http"]["title"]:
@@ -900,8 +900,8 @@ def shodan_search_worker(
                         else:
                             lon = space[2][:-1]
                         lat = space[0][:-1]
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Could not parse SAILOR GPS coordinates for %s: %s", result.get("ip_str", "?"), exc)
 
             if "opts" in result:
                 try:
@@ -915,16 +915,16 @@ def shodan_search_worker(
                         fh.write(base64.b64decode(screenshot))
                     for i in result["opts"]["screenshot"]["labels"]:
                         indicator.append(i)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Could not save screenshot for %s: %s", result.get("ip_str", "?"), exc)
 
             if query == "Niagara Web Server":
                 try:
                     soup = BeautifulSoup(result["http"]["html"], features="html.parser")
                     nws = soup.find("div", {"class": "top"})
                     indicator.append(nws.contents[0])
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Could not parse Niagara Web Server indicator for %s: %s", result.get("ip_str", "?"), exc)
 
             if "SOURCETABLE" in query:
                 data = result["data"].split(";")
@@ -933,8 +933,8 @@ def shodan_search_worker(
                         indicator.append(data[9] + "," + data[10])
                         lat = data[9]
                         lon = data[10]
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Could not parse SOURCETABLE coordinates for %s: %s", result.get("ip_str", "?"), exc)
 
             # get indicator from niagara fox
             if result["port"] == 1911 or result["port"] == 4911:
@@ -944,31 +944,31 @@ def shodan_search_worker(
                         if "station.name" in i:
                             splitted = i.split(":")
                             indicator.append(splitted[1])
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Could not parse Niagara Fox station name for %s: %s", result.get("ip_str", "?"), exc)
 
             # get indicator from tank
             if result["port"] == 10001 and "Siemens" not in query:
                 try:
                     tank_info = result["data"].split("\r\n\r\n")
                     indicator.append(tank_info[1])
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Could not parse tank indicator for %s: %s", result.get("ip_str", "?"), exc)
 
             if result["port"] == 2000:
                 try:
                     ta_data = result["data"].split("\\n")
                     indicator.append(ta_data[1][:-3])
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Could not parse port 2000 indicator for %s: %s", result.get("ip_str", "?"), exc)
 
             if result["port"] == 502:
                 try:
                     sch_el = result["data"].split("\n")
                     if sch_el[4].startswith("-- Project"):
                         indicator.append(sch_el[4].split(": ")[1])
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Could not parse port 502 project name for %s: %s", result.get("ip_str", "?"), exc)
 
             if "GPGGA" in result["data"]:
                 try:
@@ -979,8 +979,8 @@ def shodan_search_worker(
                             lat = msg.latitude
                             lon = msg.longitude
                             break
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Could not parse GPGGA coordinates for %s: %s", result.get("ip_str", "?"), exc)
 
             if result["port"] == 102:
                 try:
@@ -992,8 +992,8 @@ def shodan_search_worker(
                             indicator.append(i.split(":")[1])
                         if i.startswith("Module name"):
                             indicator.append(i.split(":")[1])
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Could not parse S7 PLC indicator for %s: %s", result.get("ip_str", "?"), exc)
 
             # get indicator from bacnet
             if result["port"] == 47808:
@@ -1009,8 +1009,8 @@ def shodan_search_worker(
                         if "Location" in i:
                             splitted3 = i.split(":")
                             indicator.append(splitted3[1])
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Could not parse BACnet indicator for %s: %s", result.get("ip_str", "?"), exc)
 
             device = Device(
                 search=search,
@@ -1079,8 +1079,8 @@ def nmap_host_worker(host_arg, max_reader, search):
         port=ports_string,
         type="NMAP",
         city="NMAP",
-        lat=lat if lat is not None else "",
-        lon=lon if lon is not None else "",
+        lat=lat if lat is not None else None,
+        lon=lon if lon is not None else None,
         country_code=country_code,
         query="NMAP SCAN",
         category="NMAP",
@@ -1948,8 +1948,8 @@ def nmap_device_scan(self, device_id, nse_script=None):
             if elapsed > max_runtime:
                 try:
                     nm.stop()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Could not stop nmap scan process: %s", exc)
                 return {
                     "Error": "Nmap scan timed out after {} seconds".format(max_runtime)
                 }
@@ -2237,8 +2237,8 @@ def nmap_manual_scan(self, device_id, flags=""):
             if elapsed > max_runtime:
                 try:
                     nm.stop()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Could not stop nmap scan process: %s", exc)
                 return {
                     "error": "Scan timed out after {} seconds".format(max_runtime),
                     "command": "nmap {} {}".format(clean_flags, ip),
@@ -2267,10 +2267,8 @@ def nmap_manual_scan(self, device_id, flags=""):
             try:
                 parsed = xmltodict.parse(raw_output)
                 result["parsed"] = parsed.get("nmaprun", {})
-            except Exception:
-                pass
-
-        progress_recorder.set_progress(4, 4, description="Done")
+            except Exception as exc:
+                logger.debug("Could not parse nmap XML output for %s: %s", ip, exc)
         return result
 
     except Exception as e:
@@ -2350,8 +2348,8 @@ def scan(id):
             device1.exploited_scanned = True
             device1.save()
             return return_dict
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("scan task: failed to save result for device %s: %s", device1.ip if device1 else id, exc)
 
 
 @shared_task(bind=False)
@@ -2611,13 +2609,12 @@ def bosch_check(id):
                         username=username[:100],
                         defaults={"password": password[:100]},
                     )
-            except Exception:
+            except Exception as exc:
+                logger.debug("Skipping Bosch credential entry for %s: %s", ip, exc)
                 continue
     except Exception as exc:
         logger.warning("bosch_check failed for %s: %s", ip, exc)
         return {"error": str(exc)}
-
-    if return_dict:
         device1.exploit = return_dict
         device1.exploited_scanned = True
         device1.save()
@@ -3112,10 +3109,8 @@ def nvd_lookup(device_id):
             vulns_list = ast.literal_eval(device.vulns)
             if isinstance(vulns_list, list):
                 cve_ids.extend(vulns_list)
-        except Exception:
-            pass
-
-    # Also try to get CVEs from CPE string
+        except Exception as exc:
+            logger.debug("Could not parse vulns field for device %s: %s", device.ip, exc)
     cpe = device.cpe or ""
     if cpe and not cve_ids:
         try:
@@ -3376,10 +3371,8 @@ def honeypot_check(device_id):
             reasons.append(
                 "Suspiciously static response time: {:.3f}ms".format(response_time_ms)
             )
-    except Exception:
-        pass
-
-    # Check banner density in /24 subnet
+    except Exception as exc:
+        logger.debug("Response time check failed for %s: %s", ip, exc)
     ip_parts = device.ip.split(".")
     subnet_count = 0
     if len(ip_parts) == 4:
