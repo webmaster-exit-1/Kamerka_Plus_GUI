@@ -1223,6 +1223,7 @@ function get_task_info(task_id, pgrbar, attempts, onComplete) {
     if (attempts >= MAX_ATTEMPTS) {
         pgrbar.css('display', 'none');
         noty({text: "Task exceeded maximum wait time.", layout: 'topRight', type: 'error', timeout: 4000});
+        if (typeof onComplete === 'function') { onComplete(null); }
         return;
     }
     $.ajax({
@@ -1248,6 +1249,7 @@ function get_task_info(task_id, pgrbar, attempts, onComplete) {
                 pgrbar.css('display', 'none');
                 var errMsg = (data.result && data.result.error) ? data.result.error : ('Task ended: ' + data.state);
                 noty({text: errMsg, layout: 'topRight', type: 'error', timeout: 4000});
+                if (typeof onComplete === 'function') { onComplete(null); }
             }
         },
         error: function () {

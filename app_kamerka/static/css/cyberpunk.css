@@ -618,7 +618,7 @@ code {
     display: flex !important;
   }
   /* Dim overlay behind open sidebar */
-  .page-container.cp-mob-nav-open > .cp-mob-sidebar-overlay {
+  body:has(.page-container.cp-mob-nav-open) > .cp-mob-sidebar-overlay {
     display: block;
   }
 }
