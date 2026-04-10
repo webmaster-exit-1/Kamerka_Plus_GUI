@@ -3,14 +3,14 @@
 ## Requirements
 
 - Python 3
-- Django (3.2 – 4.x)
+- Django (4.2+)
 - Celery (5.2+)
 - Redis (4.0+)
 - Shodan paid account
 - [Nmap](https://nmap.org/) (Required for NMAP scans and RTSP probes)
 - Pastebin PRO (Optional — see [Pastebin API setup](#pastebin-api-setup) below)
 - [NVD API key](https://nvd.nist.gov/developers/request-an-api-key) (Optional — raises NVD rate limit from 5 to 50 req/30 s)
-- [Wappalyzer CLI](https://github.com/AliasIO/wappalyzer) (Optional, for tech detection)
+- [Wappalyzer CLI](https://github.com/AliasIO/wappalyzer) (Optional, for tech detection — see [Wappalyzer install](#wappalyzer-cli-install) below)
 - [Nuclei](https://github.com/projectdiscovery/nuclei) (Optional, for vulnerability scanning)
 - [Naabu](https://github.com/projectdiscovery/naabu) (Optional, for tiered liveness verification)
 - **PyVista / PyQt6** (Optional, for the native 3D globe viewer — see below)
@@ -94,12 +94,41 @@ These are only needed if the tools are not on your `$PATH`.  See [docs/ARCHITECT
 
 > **Nmap** is resolved from `$PATH` automatically. Raw-socket scan types
 > such as `-sS` and `-O` require additional privileges (`CAP_NET_RAW` /
-> `CAP_NET_ADMIN` or root), but scans that do not use those features can run
-> unprivileged. If you need raw-socket features, prefer granting the `nmap`
-> binary the required capabilities, for example:
-> `setcap cap_net_raw,cap_net_admin+eip $(which nmap)`.
+> `CAP_NET_ADMIN`). The recommended approach is to grant `nmap` the required
+> Linux capabilities so **no root is needed**:
+>
+> ```bash
+> sudo setcap cap_net_raw,cap_net_admin+eip $(which nmap)
+> ```
+>
+> Apply the same for Naabu if you use SYN scanning:
+>
+> ```bash
+> sudo setcap cap_net_raw,cap_net_admin+eip $(which naabu)
+> ```
+>
+> On Android / Termux (where `setcap` is unavailable) scans automatically
+> fall back to TCP connect mode, which works without root but is slower.
 > Do **not** run the Celery worker as root solely to give Nmap these
 > permissions.
+
+## Wappalyzer CLI Install
+
+Wappalyzer is an optional tool for web technology fingerprinting. Install it
+via npm (Node.js ≥ 18 required):
+
+```bash
+npm install -g wappalyzer
+```
+
+Verify the install:
+
+```bash
+wappalyzer --version
+```
+
+The binary path can be overridden with the `KAMERKA_WAPPALYZER_BIN` env var
+if `wappalyzer` is not on your `$PATH`.
 
 ## GeoLite2 / GeoIP Databases
 

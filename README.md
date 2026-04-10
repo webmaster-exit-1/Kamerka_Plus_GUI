@@ -59,8 +59,6 @@ redis-server &
 python3 manage.py migrate
 python3 manage.py create_default_superuser
 python3 manage.py runserver &
-# Run the Celery worker as root — required for Nmap raw-socket scans (-sS, -O)
-# Execute this command as the root user (or from a root shell)
 celery --app kamerka worker --loglevel=info
 ```
 

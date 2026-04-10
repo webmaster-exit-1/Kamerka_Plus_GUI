@@ -13,15 +13,15 @@ class Search(models.Model):
 
 class Device(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
-    ip = models.CharField(max_length=100, default="")
+    ip = models.CharField(max_length=100, default="", db_index=True)
     product = models.CharField(max_length=500, default="")
     org = models.CharField(max_length=100, default="", null=True)
-    data = models.CharField(max_length=1000, default="")
+    data = models.TextField(default="")
     port = models.TextField(default="")
     type = models.CharField(max_length=100, default="")
     city = models.CharField(max_length=100, default="", null=True)
-    lon = models.CharField(max_length=100, default="")
-    lat = models.CharField(max_length=100, default="")
+    lon = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, default=None)
+    lat = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, default=None)
     country_code = models.CharField(max_length=100, default="")
     query = models.CharField(max_length=100, default="")
     category = models.CharField(max_length=100, default="")
@@ -30,15 +30,16 @@ class Device(models.Model):
     hostnames = models.CharField(max_length=500, default="")
     isp = models.CharField(max_length=200, default="")
     cpe = models.CharField(max_length=500, default="")
-    screenshot = models.CharField(max_length=100000, default="")
+    screenshot = models.TextField(default="")
     located = models.BooleanField(default=False, null=True)
     notes = models.CharField(max_length=1000, default="")
-    scan = models.CharField(max_length=100000, default="")
-    exploit = models.CharField(max_length=10000, default="")
+    scan = models.TextField(default="")
+    exploit = models.TextField(default="")
     exploited_scanned = models.BooleanField(default=False)
     last_scanned = models.DateTimeField(
         null=True,
         blank=True,
+        db_index=True,
         help_text=(
             "Timestamp of the most recent Shodan API scan for this IP. "
             "Used by verification.shodan_analytics.should_skip_ip() to avoid "
