@@ -114,10 +114,9 @@ body {
   letter-spacing: 0.1em;
 }
 
-/* ── Top nav panel ──────────────────────────────────────────── */
+/* ── Top nav panel — hidden; sidebar is the sole navigation ── */
 .x-navigation-panel {
-  background: #0c1018 !important;
-  border-bottom: 1px solid var(--cp-border) !important;
+  display: none !important;
 }
 
 /* ── Main page title ────────────────────────────────────────── */
@@ -566,4 +565,72 @@ code {
   .world-coverage-map {
     min-height: 160px;
   }
+}
+
+/* ── Mobile sidebar / hamburger toggle ──────────────────────── */
+.cp-mob-nav-btn {
+  display: none;
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  z-index: 10001;
+  background: rgba(8, 12, 20, 0.92);
+  border: 1px solid var(--cp-cyan);
+  border-radius: 4px;
+  color: var(--cp-cyan);
+  font-size: 22px;
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 10px rgba(0, 225, 255, 0.25);
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.cp-mob-nav-btn:hover {
+  background: rgba(0, 225, 255, 0.12);
+  box-shadow: 0 0 16px rgba(0, 225, 255, 0.4);
+}
+
+@media (max-width: 767px) {
+  /* Slide sidebar off-screen on mobile */
+  .page-sidebar {
+    position: fixed !important;
+    left: -240px !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    height: 100% !important;
+    z-index: 9999 !important;
+    overflow-y: auto !important;
+    transition: left 0.28s ease !important;
+  }
+  /* Slide in when mobile nav is open */
+  .page-container.cp-mob-nav-open .page-sidebar {
+    left: 0 !important;
+    box-shadow: 4px 0 24px rgba(0, 100, 215, 0.4) !important;
+  }
+  /* Content uses full width on mobile */
+  .page-content {
+    margin-left: 0 !important;
+  }
+  /* Show the mobile hamburger toggle */
+  .cp-mob-nav-btn {
+    display: flex !important;
+  }
+  /* Dim overlay behind open sidebar */
+  body:has(.page-container.cp-mob-nav-open) > .cp-mob-sidebar-overlay {
+    display: block;
+  }
+}
+
+/* Overlay element inserted by JS */
+.cp-mob-sidebar-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 9998;
 }

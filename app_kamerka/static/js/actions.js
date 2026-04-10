@@ -536,3 +536,43 @@ Object.size = function(obj) {
     return size;
 };
 /* EOF NEW OBJECT(GET SIZE OF ARRAY) */
+/* ── Mobile sidebar toggle ──────────────────────────────────── */
+/* Inserts a hamburger button on narrow screens so the sidebar   */
+/* can be toggled without a top navigation bar.                  */
+$(document).ready(function () {
+    if (!$('.page-sidebar').length) { return; }
+
+    // Create overlay element and mobile toggle button
+    var $overlay = $('<div class="cp-mob-sidebar-overlay"></div>');
+    var $btn = $('<button class="cp-mob-nav-btn" id="cp-mob-nav-btn" aria-label="Toggle navigation" aria-expanded="false">&#9776;</button>');
+    $('body').prepend($overlay).prepend($btn);
+
+    function openSidebar() {
+        $('.page-container').addClass('cp-mob-nav-open');
+        $btn.html('&times;').attr('aria-expanded', 'true');
+        $overlay.show();
+    }
+
+    function closeSidebar() {
+        $('.page-container').removeClass('cp-mob-nav-open');
+        $btn.html('&#9776;').attr('aria-expanded', 'false');
+        $overlay.hide();
+    }
+
+    $btn.on('click', function (e) {
+        e.stopPropagation();
+        if ($('.page-container').hasClass('cp-mob-nav-open')) {
+            closeSidebar();
+        } else {
+            openSidebar();
+        }
+    });
+
+    // Close when clicking the overlay
+    $overlay.on('click', function () { closeSidebar(); });
+
+    // Close sidebar when a nav link inside it is clicked (mobile UX)
+    $('.page-sidebar').on('click', 'a', function () {
+        if ($(window).width() <= 767) { closeSidebar(); }
+    });
+});
