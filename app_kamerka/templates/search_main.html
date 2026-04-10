@@ -232,6 +232,7 @@ font-size: 22px;
                                                                            <h3><center style="color: #00E1FF;">Country</center></h3>
                             <form method="POST" action="">
 {% csrf_token %}
+                                <select class="countries countrypicker" name="country" data-default="US"></select>
 	 <select class="selectpicker countrypicker" name='country' id='country' data-default="CA" data-flag="true" ></select>
 
 <br>
