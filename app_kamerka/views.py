@@ -300,7 +300,7 @@ def search_main(request):
             search.save()
             post = request.POST.getlist("infra")
 
-            if ics_form.cleaned_data["all"] == True:
+            if infra_form.cleaned_data["all"] == True:
                 all_results = True
             else:
                 all_results = False
@@ -506,6 +506,8 @@ def results(request, id):
     # Filter to devices with valid numeric coordinates for the map
     map_devices = _devices_with_valid_coords(all_devices)
 
+    task = request.session.pop("task_id", None)
+
     context = {
         "search": all_devices,
         "map_devices": map_devices,
@@ -513,6 +515,7 @@ def results(request, id):
         "vulns": sort,
         "category": categories_list,
         "city": cities_list,
+        "task_id": task,
     }
 
     return render(request, "results.html", context)
@@ -552,7 +555,7 @@ def update_coordinates(request, id, coordinates):
         )
     else:
         return HttpResponse(
-            json.dumps({"Status": "NO OK"}), content_type="application/json"
+            json.dumps({"Status": "Not OK"}), content_type="application/json"
         )
 
 
@@ -853,7 +856,7 @@ def get_task_info(request):
                 content_type="application/json",
             )
     except Exception as e:
-        logger.warning("get_task_info: %s", e)
+        _views_logger.warning("get_task_info: %s", e)
         return HttpResponse(
             json.dumps({"state": "FAILURE", "result": {"error": str(e)}}),
             content_type="application/json",
@@ -937,6 +940,9 @@ def exploit_dev(request, id):
                 json.dumps({"Error": "Connection Error"}),
                 content_type="application/json",
             )
+    return HttpResponse(
+        json.dumps({"task_id": None}), content_type="application/json"
+    )
 
 
 def port_scan_view(request, id):

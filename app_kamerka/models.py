@@ -25,7 +25,7 @@ class Device(models.Model):
     country_code = models.CharField(max_length=100, default="")
     query = models.CharField(max_length=100, default="")
     category = models.CharField(max_length=100, default="")
-    vulns = models.CharField(max_length=100, default="")
+    vulns = models.TextField(default="")
     indicator = models.CharField(max_length=100, default="")
     hostnames = models.CharField(max_length=500, default="")
     isp = models.CharField(max_length=200, default="")
@@ -89,7 +89,7 @@ class ShodanScan(models.Model):
     tags = models.CharField(max_length=100)
     products = models.CharField(max_length=100)
     module = models.CharField(max_length=100)
-    vulns = models.CharField(max_length=100)
+    vulns = models.TextField(default="")
 
 
 class Whois(models.Model):
