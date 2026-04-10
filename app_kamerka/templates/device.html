@@ -185,12 +185,6 @@
             <!-- PAGE CONTENT -->
             <div class="page-content" style="height: 100%">
 
-                <!-- START X-NAVIGATION VERTICAL -->
-                <ul class="x-navigation x-navigation-horizontal x-navigation-panel">
-                    <!-- TOGGLE NAVIGATION -->
-
-
-                </ul>
                 <!-- START BREADCRUMB -->
 <ul class="breadcrumb">
 
@@ -1024,42 +1018,54 @@ var marker;
             <script type="text/javascript">
     var pgrbar2 = $('#progress-bar2');
     $('#shodan_scan').on('click', function(){
+        var $btn = $(this);
+        $btn.prop('disabled', true).text('⏳ Scanning…');
         $.ajax({
         type: "GET",
         url: "/{{device.id}}/shodan/scan",
         success: function (data) {
                 if (data.task_id != null) {
-                    get_task_info(data.task_id,pgrbar2);
+                    get_task_info(data.task_id, pgrbar2, 0, function() {
+                        $btn.prop('disabled', false).text('Scan');
+                    });
                 noty({text: "Wait couple sec and click Display" , layout: 'topRight', type: 'success', timeout: 4000});
                 }
                 else if (data.Error){
+                $btn.prop('disabled', false).text('Scan');
                 noty({text: data.Error , layout: 'topRight', type: 'error', timeout: 1000});
                 }
             },
             error: function (data) {
-                console.log("Something went wrong!");
+                $btn.prop('disabled', false).text('Scan');
+                console.error("Shodan scan request failed", data);
+                noty({text: "Shodan scan request failed", layout: 'topRight', type: 'error', timeout: 3000});
             }
         });
         return false;
     });
-        var pgrbar6 = $('#progress-bar6');
+    var pgrbar6 = $('#progress-bar6');
 
 $('#whois_scan').on('click', function(){
+       var $btn = $(this);
+       $btn.prop('disabled', true).text('⏳ Scanning…');
        $.ajax({
         type: "GET",
         url: "/whois/{{device.id}}",
         success: function (data) {
-
-
                 if (data.task_id != null) {
-                    get_task_info(data.task_id,pgrbar6);
+                    get_task_info(data.task_id, pgrbar6, 0, function() {
+                        $btn.prop('disabled', false).text('Scan');
+                    });
                 }
                 else if (data.Error){
+                $btn.prop('disabled', false).text('Scan');
                 noty({text: data.Error , layout: 'topRight', type: 'error', timeout: 1000});
                 }
             },
             error: function (data) {
-                console.log("Something went wrong!");
+                $btn.prop('disabled', false).text('Scan');
+                console.error("WHOIS scan request failed", data);
+                noty({text: "WHOIS scan request failed", layout: 'topRight', type: 'error', timeout: 3000});
             }
         });
         return false;
@@ -1067,10 +1073,12 @@ $('#whois_scan').on('click', function(){
 
 
 $('#scan').on('click', function(){
+       var $btn = $(this);
        var nse = $('#nse_script_select').val();
        var scanUrl = "/scan/{{device.id}}";
        if (nse) { scanUrl += "?nse_script=" + encodeURIComponent(nse); }
        var pgrbar7 = $('#progress-bar7');
+       $btn.prop('disabled', true).text('⏳ Scanning…');
        $.ajax({
         type: "GET",
         url: scanUrl,
@@ -1079,6 +1087,7 @@ $('#scan').on('click', function(){
             if (data.task_id != null) {
                 pgrbar7.css('display', 'block');
                 get_task_info(data.task_id, pgrbar7, 0, function(result) {
+                    $btn.prop('disabled', false).text('Scan');
                     if (result) {
                         $('#scan_results').html(library.json.prettyPrint(result));
                     }
@@ -1090,11 +1099,13 @@ $('#scan').on('click', function(){
                 });
                 noty({text: "Nmap scan started", layout: 'topRight', type: 'success', timeout: 3000});
             } else {
+                $btn.prop('disabled', false).text('Scan');
                 noty({text: "Failed to start scan", layout: 'topRight', type: 'error', timeout: 4000});
             }
         },
         error: function (data) {
-            console.log("Something went wrong!");
+            $btn.prop('disabled', false).text('Scan');
+            console.error("Nmap scan request failed", data);
             noty({text: "Scan request failed", layout: 'topRight', type: 'error', timeout: 4000});
         }
     });
@@ -1102,24 +1113,25 @@ $('#scan').on('click', function(){
 });
 
 $('#exploit').on('click', function(){
+       var $btn = $(this);
+       $btn.prop('disabled', true).text('⏳ Running…');
        $.ajax({
         type: "GET",
         url: "/exploit/{{device.id}}",
         success: function (data) {
-           console.log(data);
+           $btn.prop('disabled', false).text('Exploit');
            $('#exploit_results').html(library.json.prettyPrint(data));
-
         if (data.Success){
-                console.log(data);
                 noty({text: data.Success , layout: 'topRight', type: 'success', timeout: 10000});
-
-}
+        }
                 if (data.Error){
                 noty({text: data.Error , layout: 'topRight', type: 'error', timeout: 10000});
                 }
             },
             error: function (data) {
-                console.log("Something went wrong!");
+                $btn.prop('disabled', false).text('Exploit');
+                console.error("Exploit request failed", data);
+                noty({text: "Exploit request failed — check console for details", layout: 'topRight', type: 'error', timeout: 4000});
             }
         });
         return false;
