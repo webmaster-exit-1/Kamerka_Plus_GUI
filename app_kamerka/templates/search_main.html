@@ -231,8 +231,7 @@ font-size: 22px;
                         <div class="tab-pane active" id="tab1">
                                                                            <h3><center style="color: #00E1FF;">Country</center></h3>
                             <form method="POST" action="">
-
-	 <select class="selectpicker countrypicker" name='country' id='country' data-default="CA" data-flag="true" ></select>
+{% csrf_token %}
 
 <br>
                                 <br>
@@ -443,6 +442,7 @@ font-size: 22px;
 
 
                                                         <form method="POST" action="">
+{% csrf_token %}
                                                            <h3><center style="color:#00E1FF;">Coordinates</center></h3>
 
                                                             <section class="webdesigntuts-workshop">
@@ -709,7 +709,7 @@ font-size: 22px;
                          <div class="tab-pane" id="tab3">
                                                                            <h3><center style="color: #00E1FF;">Country</center></h3>
                             <form method="POST" action="">
-
+{% csrf_token %}
 	 <select class="selectpicker countrypicker" name='country_healthcare' id='country_healthcare' data-default="CA" data-flag="true" ></select>
 
 <br>
@@ -834,9 +834,7 @@ font-size: 22px;
 
                             <div class="tab-pane" id="tab5">
                             <form method="post" action="" enctype="multipart/form-data">
-
-
-<!--  <button class="file-upload-btn" type="button" onclick="$('.file-upload-input').trigger( 'click' )">Add Image</button>-->
+{% csrf_token %}
   <div class="image-upload-wrap">
     <input class="file-upload-input" type='file' name="myfile" onchange="readURL(this);"/>
     <div class="drag-text">
@@ -863,7 +861,7 @@ font-size: 22px;' class="image-title">
                         <div class="tab-pane" id="tab8">
                                                                            <h3><center style="color: #00E1FF;">Country</center></h3>
                             <form method="POST" action="">
-
+{% csrf_token %}
 	 <select class="selectpicker countrypicker" name='country_infra' id='country_infra' data-default="CA" data-flag="true" ></select>
 
 <br>

@@ -114,10 +114,9 @@ body {
   letter-spacing: 0.1em;
 }
 
-/* ── Top nav panel ──────────────────────────────────────────── */
+/* ── Top nav panel — hidden; sidebar is the sole navigation ── */
 .x-navigation-panel {
-  background: #0c1018 !important;
-  border-bottom: 1px solid var(--cp-border) !important;
+  display: none !important;
 }
 
 /* ── Main page title ────────────────────────────────────────── */
@@ -569,13 +568,6 @@ code {
 }
 
 /* ── Mobile sidebar / hamburger toggle ──────────────────────── */
-/* The top horizontal nav panel is not used for navigation;       */
-/* hide it so only the sidebar provides navigation.               */
-.x-navigation-panel {
-  display: none !important;
-}
-
-/* Mobile-only sidebar toggle button */
 .cp-mob-nav-btn {
   display: none;
   position: fixed;
