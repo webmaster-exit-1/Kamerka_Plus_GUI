@@ -37,8 +37,9 @@ else:
     SECRET_KEY = _raw_secret_key
 
 # SECURITY WARNING: don't run with debug turned on in production!
-# Default is False; set DEBUG=true (or 1/yes) via env var for development only.
-DEBUG = os.environ.get('DEBUG', 'False').lower() in ('true', '1', 'yes')
+# Default is True for the local development server.  Set DEBUG=false (or 0/no)
+# via env var when deploying behind a real web server.
+DEBUG = os.environ.get('DEBUG', 'True').lower() in ('true', '1', 'yes')
 
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h.strip()]
 

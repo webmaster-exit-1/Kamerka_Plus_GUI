@@ -14,10 +14,9 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import path, include, re_path
-from django.contrib.staticfiles.urls import staticfiles_urlpatterns
-from django.contrib.staticfiles.views import serve as staticfiles_serve
+from django.urls import path, include
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -29,13 +28,4 @@ urlpatterns = [
 ]
 
 if settings.DEBUG:
-    # Standard static-file serving when DEBUG is on.
-    urlpatterns += staticfiles_urlpatterns()
-else:
-    # When DEBUG=False the development server skips static files by default.
-    # insecure=True re-enables serving via Django's staticfiles finders so the
-    # local runserver still works.  In production behind nginx/Apache this route
-    # is never reached because the web server handles /static/ directly.
-    urlpatterns += [
-        re_path(r'^static/(?P<path>.*)$', staticfiles_serve, {'insecure': True}),
-    ]
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
