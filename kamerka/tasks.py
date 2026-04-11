@@ -375,220 +375,6 @@ coordinates_queries = {
     "rdp": "has_screenshot:true port:3389",
     "vnc": "has_screenshot:true port:5901",
     "screenshot": "has_screenshot:true !port:3389 !port:3388 !port:5900",
-    "bbvs": "Server: BBVS",
-    "baudisch": "http.favicon.hash:746882768",
-    "loxone_intercom": "title:'Loxone Intercom Video'",
-    "idss": "Intelligent Digital Security System",
-    "webiopi": "webiopi 200 ok",
-    "iobroker": "ioBroker.admin",
-    "comelit": "html:comelit",
-    "niagara": "port:1911,4911 product:Niagara",
-    "bacnet": '"Instance ID:" "Object Name:"',
-    "modbus": "Unit ID: 0",
-    "siemens": "Original Siemens Equipment Basic Firmware:",
-    "dnp3": "port:20000 source address",
-    "ethernetip": '"Product name:" "Vendor ID:"',
-    "gestrip": 'port:18245,18246 product:"general electric"',
-    "hart": "port:5094 hart-ip",
-    "pcworx": "port:1962 PLC",
-    "mitsubishi": "port:5006,5007 product:mitsubishi",
-    "omron": "port:9600 response code",
-    "redlion": 'port:789 product:"Red Lion Controls"',
-    "codesys": "port:2455 operating system",
-    "iec": "port:2404 asdu address",
-    "proconos": "port:20547 PLC",
-    "plantvisor": "Server: CarelDataServer",
-    "iologik": "iologik",
-    "moxa": "Moxa",
-    "akcp": "Server: AKCP Embedded Web Server",
-    "spidercontrol": "powered by SpiderControl TM",
-    "tank": "port:10001 tank",
-    "iq3": "Server: IQ3",
-    "is2": "IS2 Web Server",
-    "vtscada": "Server: VTScada",
-    "zworld": "Z-World Rabbit",
-    "nordex": "html:nordex",
-    "axc": "PLC Type: AXC",
-    "modicon": "modicon",
-    "xp277": "HMI, XP277",
-    "vxworks": "vxworks",
-    "eig": "EIG Embedded Web Server",
-    "digi": "TransPort WR21",
-    "windweb": "server: WindWeb",
-    "moxahttp": "MoxaHttp",
-    "lantronix": "lantronix",
-    "entelitouch": "Server: DELTA enteliTOUCH",
-    "energyict_rtu": "EnergyICT RTU",
-    "crestron": "crestron",
-    "wince": 'Server: "Microsoft-WinCE"',
-    "ipc@chip": "IPC@CHIP",
-    "addup": "addUPI",
-    "anybus": '"anybus-s"',
-    "windriver": "WindRiver-WebServer",
-    "wago": "wago",
-    "niagara_audit": "niagara_audit",
-    "niagara_web_server": "Niagara Web Server",
-    "trendnet": "trendnet",
-    "stulz_klimatechnik": "Stulz GmbH Klimatechnik",
-    "somfy": "title:Somfy",
-    "scalance": "scalance",
-    "simatic": "simatic",
-    "simatic_s7": "Portal0000",
-    "schneider_electric": "Schneider Electric",
-    "power_measurement": "Power Measurement Ltd",
-    "power_logic": "title:PowerLogic",
-    "telemecanique_bxm": "TELEMECANIQUE BMX",
-    "schneider_web": "Schneider-WEB",
-    "fujitsu_serverview": "serverview",
-    "eiportal": "eiPortal",
-    "ilon": "i.LON",
-    "Webvisu": "Webvisu",
-    "total_access": "ta gen3 port:2000",
-    "vantage_infusion": "http.html:'InFusion Controller'",
-    "sensoteq": "title:'sensoteq'",
-    "sicon-8": "sicon-8",
-    "automation_direct_hmi": "Server: EA-HTTP/1.0",
-    "flotrac": "FloTrac",
-    "innotech_bms": "http.title:'Innotech BMS'",
-    "skylog": "http.title:skylog",
-    "miele@home": "title:Miele@home",
-    "alphacom": "http.title:Alphacom",
-    "simplex_grinnell": "http.html:SimplexGrinnell title:login",
-    "bosch_security": "http.html:'Bosch Security'",
-    "fronius": "title:fronius",
-    "webview": "http.favicon.hash:207964650",
-    "siemens_Sm@rtClient": "title:'Siemens Sm@rtClient'",
-    "WAGO": "title:'wago ethernet'",
-    "sensatronics": "html:sensatronics",
-    "extron": "Extron Electronics",
-    "mikrotik_streetlighs": "mikrotik streetlight",
-    "kesseltronics": "Kesseltronics",
-    "unitronics": "title:'Unitronics PLC'",
-    "atvise": "Server: atvise",
-    "clearSCADA": "ClearSCADA",
-    "youless": "title:YouLess",
-    "DLILPC": "DLILPC",
-    "intelliSlot": "title:IntelliSlot",
-    "temperature_monitor": "title:'Temperature Monitor' !title:avtech",
-    "CirCarLife": "CirCarLife",
-    "web_scada": "title:'web scada'",
-    "kaco": "kaco",
-    "indect_parkway": "title:indect",
-    "intuitive_Controller": "http.favicon.hash:1434282111",
-    "intuitive_controller_2": "http.favicon.hash:-1011909571",
-    "homeLYnk": "homeLYnk",
-    "APC": "Location: home.htm Content-Length: 0 WebServer",
-    "netio": "title:netio",
-    "asi_controls": "title:'ASI Controls'",
-    "myscada": "title:myscada",
-    "iB-COM": "title:iB-COM",
-    "building_operation_webstation": "title:'building operation'",
-    "ftp_scada": "scada login",
-    "apc_ftp": "APC FTP server",
-    "network_management_card": "Network Management Card",
-    "wemo_insight": "Belkin WeMo",
-    "connect_ups": "title:ConnectUPS",
-    "upshttpd": "Server: upshttpd",
-    "poweragent": "PowerAgent",
-    "CS121": "title:'CS121 SNMP/Web Adapter'",
-    "ab_ethernet": "cspv4",
-    "climatix": "Siemens Building Technologies Climatix",
-    "bas_scada": "BAS SCADA Service",
-    "watt_router": "SOLAR controls product server",
-    "doors": '"HID VertX" port:4070',
-    "saferoads": "Saferoads VMS",
-    "xzeres": 'title:"XZERES Wind"',
-    "doorbird": "html:DoorBird",
-    "jeedom": 'title:"Jeedom"',
-    "pwrctrl": "NET-PwrCtrl",
-    "heatmiser_thermostat": 'title:"Heatmiser Wifi Thermostat"',
-    "xpanel": "title:xpanel",
-    "c4_max": "[1m[35mWelcome on console",
-    "universal_devices": "ucos",
-    "dasdec": "dasdec",
-    "brightsign": 'title:"BrightSign&reg;"',
-    "leica": "title:leica title:interface",
-    "hughesnet": "html:hughesnet",
-    "skyline": "server: skyline",
-    "beward_door": "DS06A(P) SIP Door Station",
-    "wallbox": "http.title:wallbox",
-    "acadia": "acadia",
-    "walchem": "html:walchem",
-    "gnss": '"NTRIP" "SOURCETABLE"',
-    "traccar": "title:traccar",
-    "trimble": 'html:"trimble Navigation"',
-    "spacelynk": "title:spaceLYnk",
-    # --- Cameras / DVR ---
-    "dahua": 'http.title:"Dahua"',
-    "foscam": 'title:"Foscam"',
-    "reolink": 'title:"Reolink"',
-    "flir": 'title:"FLIR"',
-    "android_ip_webcam": '"Server: IP Webcam Server"',
-    "dvr_h264": 'html:"DVR_H264 ActiveX"',
-    "geovision": 'title:"GeoVision"',
-    "acti": 'title:"ACTi"',
-    "tplink_cam": '"TP-LINK IP-Camera"',
-    # --- NAS ---
-    "synology_nas": 'http.title:"Synology DiskStation"',
-    "qnap_nas": 'http.title:"QNAP"',
-    "western_digital_nas": 'title:"My Cloud"',
-    # --- Smart Home ---
-    "chromecast": '"Chromecast" port:8008',
-    "home_assistant": 'title:"Home Assistant"',
-    "samsung_tv": '"Samsung AllShare" port:7676',
-    "roku": '"Roku" port:8060',
-    "sonos": '"Sonos" port:1400',
-    # --- Network / IoT ---
-    "docker_api": '"Docker Containers:" port:2375',
-    "pi_hole": 'title:"Pi-hole Admin Console"',
-    "unprotected_vnc": '"authentication disabled" "RFB 003.008"',
-    "android_adb": '"Android Debug Bridge" port:5555',
-    "elasticsearch": "product:Elastic port:9200",
-    "mongodb": 'product:"MongoDB"',
-    "couchdb": 'product:"CouchDB"',
-    "redis": "product:Redis",
-    "memcached": "product:Memcached port:11211",
-    # --- ICS (mirror) ---
-    "abb_ac800m": 'title:"ABB AC 800M"',
-    "abb_rtu560": '"ABB RTU560"',
-    "abb_srea": '"SREA-01"',
-    "rockwell_micrologix": '"Rockwell Automation" "MicroLogix"',
-    "allen_bradley": '"Allen-Bradley"',
-    "ge_cimplicity": 'title:"CIMPLICITY"',
-    "ge_proficy": '"Proficy HMI/SCADA"',
-    "siemens_s7_200": '"S7-200"',
-    "siemens_s7_300": '"S7-300"',
-    "siemens_s7_1200": '"S7-1200"',
-    "siemens_s7_1500": '"S7-1500"',
-    "schneider_citectscada": '"CitectSCADA"',
-    "schneider_modicon_m340": '"Modicon M340"',
-    "schneider_egx300": '"EGX300"',
-    "schneider_tsxety": '"TSXETY"',
-    "honeywell_xl_web": '"Honeywell" "XL Web"',
-    "honeywell_falcon": '"Honeywell" "Falcon"',
-    "phoenix_ilc": '"ILC 150"',
-    "mitsubishi_melsec": '"MELSEC-Q"',
-    "moxa_oncell": '"OnCell"',
-    "moxa_nport": '"NPort" "Moxa"',
-    "cimetrics": '"Cimetrics Eplus Web Server"',
-    "delta_controls": '"Delta Controls"',
-    "carel_pcoweb": '"pCOWeb"',
-    "veeder_root_tls": '"Veeder-Root" port:10001',
-    "adcon_telemetry": '"adcon Telemetry"',
-    "sma_solar_inverter": 'title:"SMA Solar Inverter"',
-    "enercon_wind": 'title:"ENERCON"',
-    "samsung_billboard": '"Server: Prismview Player"',
-    "gas_station_pump": '"in-tank inventory" port:10001',
-    "anpr_alpr": 'P372 "ANPR enabled"',
-    "tesla_powerpack": 'http.title:"Tesla PowerPack System"',
-    "ev_charger": '"Server: gSOAP/2.8" "Content-Length: 583"',
-    "railroad_management": 'title:"Railroad Management"',
-    "tridium_niagara4": '"Niagara 4"',
-    "carrier_i_vu": 'title:"Carrier i-Vu"',
-    "automated_logic": 'title:"Automated Logic WebCTRL"',
-    "tracer_sc": 'title:"Tracer SC"',
-    "mqtt_1883": "product:MQTT port:1883",
-    "mqtt_8883": "product:MQTT port:8883",
 }
 
 attackers_infra_queries = {
@@ -640,9 +426,14 @@ def _get_env_key(name, *, required=False):
 
 @shared_task(bind=False)
 def devices_nearby(lat, lon, id, query):
+
     SHODAN_API_KEY = _get_env_key("SHODAN_API_KEY", required=True)
 
     device = Device.objects.get(id=id)
+
+    # Ensure lat/lon are strings for concatenation
+    lat = str(lat)
+    lon = str(lon)
 
     api = Shodan(SHODAN_API_KEY)
     fail = 0
@@ -723,7 +514,11 @@ def shodan_search(
                         )
                         progress_recorder.set_progress(c + 1, total=total)
                     except Exception as exc:
-                        logger.warning("shodan_search_worker failed for healthcare query '%s': %s", i, exc)
+                        logger.warning(
+                            "shodan_search_worker failed for healthcare query '%s': %s",
+                            i,
+                            exc,
+                        )
             else:
 
                 if i in ics_queries:
@@ -739,7 +534,9 @@ def shodan_search(
                         )
                         progress_recorder.set_progress(c + 1, total=total)
                     except Exception as exc:
-                        logger.warning("shodan_search_worker failed for ics query '%s': %s", i, exc)
+                        logger.warning(
+                            "shodan_search_worker failed for ics query '%s': %s", i, exc
+                        )
 
                 if i in attackers_infra_queries:
                     try:
@@ -773,7 +570,11 @@ def shodan_search(
                     )
                     progress_recorder.set_progress(c + 1, total=total)
                 except Exception as exc:
-                    logger.warning("shodan_search_worker failed for coordinates query '%s': %s", i, exc)
+                    logger.warning(
+                        "shodan_search_worker failed for coordinates query '%s': %s",
+                        i,
+                        exc,
+                    )
     return result
 
 
@@ -887,7 +688,11 @@ def shodan_search_worker(
                 if "hostnames" in result:
                     hostnames = result["hostnames"][0]
             except Exception as exc:
-                logger.debug("Could not extract hostname for %s: %s", result.get("ip_str", "?"), exc)
+                logger.debug(
+                    "Could not extract hostname for %s: %s",
+                    result.get("ip_str", "?"),
+                    exc,
+                )
 
             try:
                 if "SAILOR" in result["http"]["title"]:
@@ -902,7 +707,11 @@ def shodan_search_worker(
                             lon = space[2][:-1]
                         lat = space[0][:-1]
             except Exception as exc:
-                logger.debug("Could not parse SAILOR GPS coordinates for %s: %s", result.get("ip_str", "?"), exc)
+                logger.debug(
+                    "Could not parse SAILOR GPS coordinates for %s: %s",
+                    result.get("ip_str", "?"),
+                    exc,
+                )
 
             if "opts" in result:
                 try:
@@ -917,7 +726,11 @@ def shodan_search_worker(
                     for i in result["opts"]["screenshot"]["labels"]:
                         indicator.append(i)
                 except Exception as exc:
-                    logger.debug("Could not save screenshot for %s: %s", result.get("ip_str", "?"), exc)
+                    logger.debug(
+                        "Could not save screenshot for %s: %s",
+                        result.get("ip_str", "?"),
+                        exc,
+                    )
 
             if query == "Niagara Web Server":
                 try:
@@ -925,7 +738,11 @@ def shodan_search_worker(
                     nws = soup.find("div", {"class": "top"})
                     indicator.append(nws.contents[0])
                 except Exception as exc:
-                    logger.debug("Could not parse Niagara Web Server indicator for %s: %s", result.get("ip_str", "?"), exc)
+                    logger.debug(
+                        "Could not parse Niagara Web Server indicator for %s: %s",
+                        result.get("ip_str", "?"),
+                        exc,
+                    )
 
             if "SOURCETABLE" in query:
                 data = result["data"].split(";")
@@ -935,7 +752,11 @@ def shodan_search_worker(
                         lat = data[9]
                         lon = data[10]
                 except Exception as exc:
-                    logger.debug("Could not parse SOURCETABLE coordinates for %s: %s", result.get("ip_str", "?"), exc)
+                    logger.debug(
+                        "Could not parse SOURCETABLE coordinates for %s: %s",
+                        result.get("ip_str", "?"),
+                        exc,
+                    )
 
             # get indicator from niagara fox
             if result["port"] == 1911 or result["port"] == 4911:
@@ -946,7 +767,11 @@ def shodan_search_worker(
                             splitted = i.split(":")
                             indicator.append(splitted[1])
                 except Exception as exc:
-                    logger.debug("Could not parse Niagara Fox station name for %s: %s", result.get("ip_str", "?"), exc)
+                    logger.debug(
+                        "Could not parse Niagara Fox station name for %s: %s",
+                        result.get("ip_str", "?"),
+                        exc,
+                    )
 
             # get indicator from tank
             if result["port"] == 10001 and "Siemens" not in query:
@@ -954,14 +779,22 @@ def shodan_search_worker(
                     tank_info = result["data"].split("\r\n\r\n")
                     indicator.append(tank_info[1])
                 except Exception as exc:
-                    logger.debug("Could not parse tank indicator for %s: %s", result.get("ip_str", "?"), exc)
+                    logger.debug(
+                        "Could not parse tank indicator for %s: %s",
+                        result.get("ip_str", "?"),
+                        exc,
+                    )
 
             if result["port"] == 2000:
                 try:
                     ta_data = result["data"].split("\\n")
                     indicator.append(ta_data[1][:-3])
                 except Exception as exc:
-                    logger.debug("Could not parse port 2000 indicator for %s: %s", result.get("ip_str", "?"), exc)
+                    logger.debug(
+                        "Could not parse port 2000 indicator for %s: %s",
+                        result.get("ip_str", "?"),
+                        exc,
+                    )
 
             if result["port"] == 502:
                 try:
@@ -969,7 +802,11 @@ def shodan_search_worker(
                     if sch_el[4].startswith("-- Project"):
                         indicator.append(sch_el[4].split(": ")[1])
                 except Exception as exc:
-                    logger.debug("Could not parse port 502 project name for %s: %s", result.get("ip_str", "?"), exc)
+                    logger.debug(
+                        "Could not parse port 502 project name for %s: %s",
+                        result.get("ip_str", "?"),
+                        exc,
+                    )
 
             if "GPGGA" in result["data"]:
                 try:
@@ -981,7 +818,11 @@ def shodan_search_worker(
                             lon = msg.longitude
                             break
                 except Exception as exc:
-                    logger.debug("Could not parse GPGGA coordinates for %s: %s", result.get("ip_str", "?"), exc)
+                    logger.debug(
+                        "Could not parse GPGGA coordinates for %s: %s",
+                        result.get("ip_str", "?"),
+                        exc,
+                    )
 
             if result["port"] == 102:
                 try:
@@ -994,7 +835,11 @@ def shodan_search_worker(
                         if i.startswith("Module name"):
                             indicator.append(i.split(":")[1])
                 except Exception as exc:
-                    logger.debug("Could not parse S7 PLC indicator for %s: %s", result.get("ip_str", "?"), exc)
+                    logger.debug(
+                        "Could not parse S7 PLC indicator for %s: %s",
+                        result.get("ip_str", "?"),
+                        exc,
+                    )
 
             # get indicator from bacnet
             if result["port"] == 47808:
@@ -1011,7 +856,11 @@ def shodan_search_worker(
                             splitted3 = i.split(":")
                             indicator.append(splitted3[1])
                 except Exception as exc:
-                    logger.debug("Could not parse BACnet indicator for %s: %s", result.get("ip_str", "?"), exc)
+                    logger.debug(
+                        "Could not parse BACnet indicator for %s: %s",
+                        result.get("ip_str", "?"),
+                        exc,
+                    )
 
             device = Device(
                 search=search,
@@ -1796,11 +1645,17 @@ def send_to_field_agent_task(id, notes):
             pastes["\\xea\\x93\\x98amerka_" + af.ip],
         )
         create_paste(
-            _get_env_key("PASTEBIN_API_DEV_KEY"), user_key, "ꓘamerka_" + af.ip, merge_string
+            _get_env_key("PASTEBIN_API_DEV_KEY"),
+            user_key,
+            "ꓘamerka_" + af.ip,
+            merge_string,
         )
     else:
         create_paste(
-            _get_env_key("PASTEBIN_API_DEV_KEY"), user_key, "ꓘamerka_" + af.ip, merge_string
+            _get_env_key("PASTEBIN_API_DEV_KEY"),
+            user_key,
+            "ꓘamerka_" + af.ip,
+            merge_string,
         )
 
 
@@ -2026,32 +1881,74 @@ def nmap_device_scan(self, device_id, nse_script=None):
 
 # ── Allow-list of safe Nmap flags for manual scans ──────────────────────
 _NMAP_ALLOWED_FLAGS = {
-    "-sT", "-sS", "-sU", "-sV", "-sC", "-sn", "-Pn", "-O", "-A",
-    "-T0", "-T1", "-T2", "-T3", "-T4", "-T5",
-    "-p", "-F", "-r", "--top-ports", "--open",
-    "--version-intensity", "--version-light", "--version-all",
-    "--traceroute", "--reason", "-v", "-vv", "-d",
-    "--max-retries", "--host-timeout", "--scan-delay",
-    "--min-rate", "--max-rate",
+    "-sT",
+    "-sS",
+    "-sU",
+    "-sV",
+    "-sC",
+    "-sn",
+    "-Pn",
+    "-O",
+    "-A",
+    "-T0",
+    "-T1",
+    "-T2",
+    "-T3",
+    "-T4",
+    "-T5",
+    "-p",
+    "-F",
+    "-r",
+    "--top-ports",
+    "--open",
+    "--version-intensity",
+    "--version-light",
+    "--version-all",
+    "--traceroute",
+    "--reason",
+    "-v",
+    "-vv",
+    "-d",
+    "--max-retries",
+    "--host-timeout",
+    "--scan-delay",
+    "--min-rate",
+    "--max-rate",
     "--script",
 }
 
 # Flags that consume the next token as a value.
-_NMAP_VALUE_FLAGS = {"-p", "--top-ports", "--min-rate", "--max-rate",
-                     "--max-retries", "--host-timeout", "--scan-delay",
-                     "--version-intensity", "--script"}
+_NMAP_VALUE_FLAGS = {
+    "-p",
+    "--top-ports",
+    "--min-rate",
+    "--max-rate",
+    "--max-retries",
+    "--host-timeout",
+    "--scan-delay",
+    "--version-intensity",
+    "--script",
+}
 
 # Build a set of allowed --script values from the curated catalog.
 _NMAP_ALLOWED_SCRIPTS = {
-    os.path.basename(p).replace(".nse", "")
-    for p in NSE_SCRIPT_CATALOG.values()
+    os.path.basename(p).replace(".nse", "") for p in NSE_SCRIPT_CATALOG.values()
 } | set(NSE_SCRIPT_CATALOG.values())
 
 # Tokens that must never appear in user-supplied nmap args.
 _NMAP_BLOCKED_TOKENS = {
-    ";", "&&", "||", "|", "`", "$(",
-    ">", ">>", "<", "<<",
-    "\n", "\r",
+    ";",
+    "&&",
+    "||",
+    "|",
+    "`",
+    "$(",
+    ">",
+    ">>",
+    "<",
+    "<<",
+    "\n",
+    "\r",
 }
 
 
@@ -2126,9 +2023,7 @@ def _sanitize_nmap_flags(raw_flags):
     # Block shell meta-characters
     for token in _NMAP_BLOCKED_TOKENS:
         if token in raw_flags:
-            raise ValueError(
-                "Disallowed character sequence: {}".format(repr(token))
-            )
+            raise ValueError("Disallowed character sequence: {}".format(repr(token)))
 
     parts = raw_flags.split()
     validated = []
@@ -2145,9 +2040,7 @@ def _sanitize_nmap_flags(raw_flags):
             if flag_name not in allowed_flags:
                 raise ValueError("Disallowed flag: {}".format(flag_name))
             if flag_name not in value_flags:
-                raise ValueError(
-                    "Flag does not accept a value: {}".format(flag_name)
-                )
+                raise ValueError("Flag does not accept a value: {}".format(flag_name))
             validated.append(
                 "{}={}".format(flag_name, _validate_flag_value(flag_name, value))
             )
@@ -2158,9 +2051,7 @@ def _sanitize_nmap_flags(raw_flags):
         if part.startswith("-p") and part != "-p" and re.match(r"^-p[\d,-]+$", part):
             if "-p" not in allowed_flags:
                 raise ValueError("Disallowed flag: -p")
-            validated.append(
-                "-p{}".format(_validate_flag_value("-p", part[2:]))
-            )
+            validated.append("-p{}".format(_validate_flag_value("-p", part[2:])))
             i += 1
             continue
 
@@ -2350,7 +2241,11 @@ def scan(id):
             device1.save()
             return return_dict
         except Exception as exc:
-            logger.warning("scan task: failed to save result for device %s: %s", device1.ip if device1 else id, exc)
+            logger.warning(
+                "scan task: failed to save result for device %s: %s",
+                device1.ip if device1 else id,
+                exc,
+            )
 
 
 @shared_task(bind=False)
@@ -2509,7 +2404,7 @@ def whois_ip(id):
         val = val.strip()
         if not val:
             continue
-        key = key.strip().lower()
+        key = key.strip().lower().replace(" ", "_")
         if key in ("netname", "name", "orgname", "owner") and not name:
             name = val[:100]
         elif key in ("org", "organisation", "organization") and not org:
@@ -3111,7 +3006,9 @@ def nvd_lookup(device_id):
             if isinstance(vulns_list, list):
                 cve_ids.extend(vulns_list)
         except Exception as exc:
-            logger.debug("Could not parse vulns field for device %s: %s", device.ip, exc)
+            logger.debug(
+                "Could not parse vulns field for device %s: %s", device.ip, exc
+            )
     cpe = device.cpe or ""
     if cpe and not cve_ids:
         try:
@@ -3771,8 +3668,15 @@ def capture_screenshot(self, device_id):
         chrome_options.add_argument("--ignore-certificate-errors")
         chrome_options.page_load_strategy = "eager"
 
-        driver = webdriver.Chrome(options=chrome_options)
+        from selenium.webdriver.chrome.service import Service
+
+        executable_path = "/usr/bin/chromedriver"
+        service = Service()
+
+        driver = webdriver.Chrome(service=service, options=chrome_options)
         driver.set_page_load_timeout(20)
+        driver.set_script_timeout(20.0)
+        driver.implicitly_wait(5.0)
         try:
             driver.get(target_url)
             sleep(2)  # Wait for dynamic content
