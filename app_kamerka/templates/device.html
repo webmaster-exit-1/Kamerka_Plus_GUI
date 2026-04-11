@@ -508,9 +508,7 @@
                                         <select id="exploit_select" style="padding:4px;margin-right:8px;">
                                             <option value="auto">Run default exploit check</option>
                                             {% for vi in vuln_intel %}
-                                            {% if vi.exploit_available %}
-                                            <option value="{{ vi.cve_id }}">{{ vi.cve_id }} — CVSS {{ vi.cvss_score|floatformat:1 }}{% if vi.kev_listed %} [KEV]{% endif %}</option>
-                                            {% endif %}
+                                            <option value="{{ vi.cve_id }}">{{ vi.cve_id }} — CVSS {{ vi.cvss_score|floatformat:1 }}{% if vi.kev_listed %} [KEV]{% endif %}{% if vi.exploit_available %} [Exploit]{% endif %}</option>
                                             {% endfor %}
                                         </select>
                                         <button type="button" id="exploit" class="btn btn-primary active" style="background:#ffe600;border-color:#ffe600;color:#000;font-weight:bold;"> Exploit </button>
@@ -807,6 +805,9 @@
                     <button type="button" id="sbom_scan_btn" class="btn btn-primary active" style="background:#00ff88;border-color:#00ff88;color:#000;font-weight:bold;">
                         &#128270; SBOM Lookup
                     </button>
+                    <a href="/report/device/{{ device.id }}" class="btn btn-primary active" style="margin-left:6px;background:#00e1ff;border-color:#00e1ff;color:#000;font-weight:bold;">
+                        &#128196; Download Report
+                    </a>
                     <progress id="progress-bar-sbom" value="0" max="100" style="display:none; margin-left:8px;"></progress>
                 </div>
 
@@ -1243,6 +1244,130 @@ function get_task_info(task_id, pgrbar, attempts, onComplete) {
     });
 }
 
+function updateExploitDropdownFromVuln(vulnRows) {
+    var $sel = $('#exploit_select');
+    if (!$sel.length) { return; }
+    $sel.find('option').not('[value="auto"]').remove();
+    $.each(vulnRows || [], function(_, row) {
+        var label = row.cve_id + ' — CVSS ' + (row.cvss_score || 0);
+        if (row.kev_listed) { label += ' [KEV]'; }
+        if (row.exploit_available) { label += ' [Exploit]'; }
+        $sel.append($('<option>', { value: row.cve_id, text: label }));
+    });
+}
+
+function renderVulnIntel(vulnRows) {
+    var $risk = $('#risk_results');
+    if (!$risk.length) { return; }
+    if (!vulnRows || vulnRows.length === 0) {
+        $risk.css('display', 'block').html('<p style="color:#888;">No CVE intelligence records found.</p>');
+        updateExploitDropdownFromVuln([]);
+        return;
+    }
+    var html = '<h4 style="color:#ff2050;margin:0 0 8px;">CVE Intelligence (Live)</h4>';
+    html += '<div style="border:1px solid #0064d7;border-radius:4px;padding:10px;background:rgba(0,100,215,0.08);">';
+    html += '<table style="width:100%;font-size:0.92em;"><thead><tr><th style="text-align:left;color:#00e1ff;">CVE</th><th style="text-align:left;color:#00e1ff;">CVSS</th><th style="text-align:left;color:#00e1ff;">EPSS</th><th style="text-align:left;color:#00e1ff;">KEV</th><th style="text-align:left;color:#00e1ff;">Exploit</th></tr></thead><tbody>';
+    $.each(vulnRows, function(_, v) {
+        html += '<tr>';
+        html += '<td style="padding:3px 0;">' + (v.cve_id || '') + '</td>';
+        html += '<td>' + (v.cvss_score || 0) + '</td>';
+        html += '<td>' + (v.epss_score || 0) + '</td>';
+        html += '<td>' + (v.kev_listed ? 'Yes' : 'No') + '</td>';
+        html += '<td>' + (v.exploit_available ? 'Yes' : 'No') + '</td>';
+        html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+    $risk.css('display', 'block').html(html);
+    updateExploitDropdownFromVuln(vulnRows);
+}
+
+function fetchVulnIntel() {
+    $.ajax({
+        type: 'GET',
+        url: '/get_vuln_intel/{{device.id}}',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        success: function(rows) { renderVulnIntel(rows || []); },
+        error: function() { noty({text: 'Could not fetch CVE intelligence', layout: 'topRight', type: 'error', timeout: 3000}); }
+    });
+}
+
+function fetchHoneypotResult() {
+    $.ajax({
+        type: 'GET',
+        url: '/get_honeypot_result/{{device.id}}',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        success: function(row) {
+            if (!row || !Object.keys(row).length) { return; }
+            var pct = Math.round((row.probability || 0) * 100);
+            var color = pct >= 50 ? '#ff2050' : (pct >= 20 ? '#ffe600' : '#00ff88');
+            var html = '<div style="border:1px solid ' + color + ';border-radius:4px;padding:12px;margin-top:12px;background:rgba(0,0,0,0.2);">';
+            html += '<h4 style="margin:0 0 8px;color:' + color + ';">&#128373; Honeypot Analysis (Live)</h4>';
+            html += '<p><b>Probability:</b> <span style="font-size:1.2em;font-weight:bold;">' + pct + '%</span></p>';
+            html += '<p><b>Identical banners in /24:</b> ' + (row.banner_count_in_subnet || 0) + '</p>';
+            if (row.is_conpot) { html += '<p style="color:#ff2050;">&#9888; Matches Conpot signatures</p>'; }
+            if (row.is_cowrie) { html += '<p style="color:#ff2050;">&#9888; Matches Cowrie signatures</p>'; }
+            if (row.reasons && row.reasons.length) {
+                html += '<div style="margin-top:8px;"><b>Detection reasons:</b><ul style="margin:4px 0 0 16px;padding:0;">';
+                $.each(row.reasons, function(_, reason) { html += '<li style="color:#ccc;font-size:0.9em;">' + reason + '</li>'; });
+                html += '</ul></div>';
+            }
+            html += '</div>';
+            $('#risk_results').css('display', 'block').append(html);
+        }
+    });
+}
+
+function fetchGfwStatus() {
+    $.ajax({
+        type: 'GET',
+        url: '/get_gfw_status/{{device.id}}',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        success: function(row) {
+            if (!row || !Object.keys(row).length) { return; }
+            var ok = !!row.reachable;
+            var color = ok ? '#00ff88' : '#ff2050';
+            var html = '<div style="border:1px solid ' + color + ';border-radius:4px;padding:12px;margin-top:12px;background:rgba(0,0,0,0.2);">';
+            html += '<h4 style="margin:0 0 8px;color:' + color + ';">&#127464;&#127475; Great Firewall Status (Live)</h4>';
+            html += ok
+                ? '<p style="color:#00ff88;font-weight:bold;">&#9989; Reachable from China</p>'
+                : '<p style="color:#ff2050;font-weight:bold;">&#10060; Blocked by Great Firewall</p>';
+            if (row.blocking_type) { html += '<p><b>Blocking type:</b> ' + row.blocking_type + '</p>'; }
+            if (row.ooni_report_id) { html += '<p><b>Report:</b> ' + row.ooni_report_id + '</p>'; }
+            html += '</div>';
+            $('#risk_results').css('display', 'block').append(html);
+        }
+    });
+}
+
+function fetchSbomResults() {
+    $.ajax({
+        type: 'GET',
+        url: '/get_sbom_results/{{device.id}}',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        success: function(rows) {
+            var $box = $('#sbom_results');
+            if (!$box.length) { return; }
+            if (!rows || rows.length === 0) {
+                $box.css('display', 'block').html('<p style="color:#888;">No SBOM components found.</p>');
+                return;
+            }
+            var html = '<h4 style="color:#00e1ff;margin:0 0 8px;">SBOM Components (Live)</h4>';
+            html += '<ul style="list-style:none;padding:0;">';
+            $.each(rows, function(_, c) {
+                html += '<li style="padding:6px 0;border-bottom:1px solid rgba(0,100,215,0.15);">';
+                html += '<span style="color:#00e1ff;font-weight:bold;">' + (c.component_name || '') + '</span>';
+                if (c.version) { html += '<span style="color:#ffe600;margin-left:8px;font-family:monospace;">v' + c.version + '</span>'; }
+                html += '<span style="color:#888;margin-left:8px;font-size:0.85em;">[' + (c.component_type || 'library') + ']</span>';
+                if (c.cpe_string) { html += '<br><span style="color:#666;font-family:monospace;font-size:0.8em;margin-left:16px;">' + c.cpe_string + '</span>'; }
+                html += '</li>';
+            });
+            html += '</ul>';
+            $box.css('display', 'block').html(html);
+        },
+        error: function() { noty({text: 'Could not fetch SBOM results', layout: 'topRight', type: 'error', timeout: 3000}); }
+    });
+}
+
 $('#nuclei_scan_btn').on('click', function(){
     var tpl = $('#nuclei_template_select').val();
     var pgrbar_nuclei = $('#progress-bar-nuclei');
@@ -1400,8 +1525,9 @@ $('#nvd_scan_btn').on('click', function(){
             if (data.task_id != null) {
                 pgrbar_risk.css('display', 'inline-block');
                 get_task_info(data.task_id, pgrbar_risk, 0, function() {
-                    noty({text: "CVE data loaded — refreshing page…", layout: 'topRight', type: 'success', timeout: 2000});
-                    setTimeout(function(){ location.reload(); }, 1500);
+                    $('#risk_results').css('display', 'none').html('');
+                    fetchVulnIntel();
+                    noty({text: "CVE intelligence loaded", layout: 'topRight', type: 'success', timeout: 2000});
                 });
                 noty({text: "CVE intelligence lookup started", layout: 'topRight', type: 'success', timeout: 3000});
             }
@@ -1422,7 +1548,10 @@ $('#honeypot_scan_btn').on('click', function(){
         success: function (data) {
             if (data.task_id != null) {
                 pgrbar_risk.css('display', 'inline-block');
-                get_task_info(data.task_id, pgrbar_risk);
+                get_task_info(data.task_id, pgrbar_risk, 0, function() {
+                    fetchHoneypotResult();
+                    noty({text: "Honeypot analysis loaded", layout: 'topRight', type: 'success', timeout: 2000});
+                });
                 noty({text: "Honeypot analysis started", layout: 'topRight', type: 'success', timeout: 3000});
             }
         },
@@ -1442,7 +1571,10 @@ $('#gfw_check_btn').on('click', function(){
         success: function (data) {
             if (data.task_id != null) {
                 pgrbar_risk.css('display', 'inline-block');
-                get_task_info(data.task_id, pgrbar_risk);
+                get_task_info(data.task_id, pgrbar_risk, 0, function() {
+                    fetchGfwStatus();
+                    noty({text: "GFW status loaded", layout: 'topRight', type: 'success', timeout: 2000});
+                });
                 noty({text: "GFW reachability check started", layout: 'topRight', type: 'success', timeout: 3000});
             }
         },
@@ -1463,8 +1595,8 @@ $('#sbom_scan_btn').on('click', function(){
             if (data.task_id != null) {
                 pgrbar_sbom.css('display', 'inline-block');
                 get_task_info(data.task_id, pgrbar_sbom, 0, function() {
-                    noty({text: "SBOM lookup complete — refreshing…", layout: 'topRight', type: 'success', timeout: 2000});
-                    setTimeout(function(){ location.reload(); }, 1500);
+                    fetchSbomResults();
+                    noty({text: "SBOM lookup complete", layout: 'topRight', type: 'success', timeout: 2000});
                 });
                 noty({text: "SBOM component lookup started", layout: 'topRight', type: 'success', timeout: 3000});
             }
@@ -1578,6 +1710,16 @@ $('#manual_nmap_btn').on('click', function(){
                         }
                         var output = result.output || '';
                         if (result.stderr) { output += '\n--- STDERR ---\n' + result.stderr; }
+                        if (result.report) {
+                            output += '\n\n--- REPORT ---\n';
+                            output += 'Host status: ' + (result.report.host_status || 'unknown') + '\n';
+                            output += 'Open port count: ' + (result.report.open_port_count || 0) + '\n';
+                            if (result.report.open_ports && result.report.open_ports.length) {
+                                $.each(result.report.open_ports, function(_, p) {
+                                    output += '- ' + p.port + '/' + p.protocol + ' ' + p.service + (p.details ? (' ' + p.details) : '') + '\n';
+                                });
+                            }
+                        }
                         $('#manual_nmap_output').css('display', 'block').text(output || 'No output');
                         noty({text: "Manual Nmap scan complete", layout: 'topRight', type: 'success', timeout: 4000});
                     }

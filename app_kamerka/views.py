@@ -2,6 +2,7 @@ import ast
 import json
 import logging
 import os
+import time
 from collections import Counter
 from django.conf import settings
 from django.core.files.storage import FileSystemStorage
@@ -921,9 +922,7 @@ def manual_nmap_view(request, id):
         return HttpResponse(
             json.dumps({"task_id": task.id}), content_type="application/json"
         )
-    return HttpResponse(
-        json.dumps({"task_id": None}), content_type="application/json"
-    )
+    return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
 
 
 def exploit_dev(request, id):
@@ -939,9 +938,7 @@ def exploit_dev(request, id):
                 json.dumps({"Error": "Connection Error"}),
                 content_type="application/json",
             )
-    return HttpResponse(
-        json.dumps({"task_id": None}), content_type="application/json"
-    )
+    return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
 
 
 def port_scan_view(request, id):
@@ -1018,11 +1015,13 @@ def port_scan_ip_view(request, target_ip):
             device.save()
         scan_task = port_scan_task.delay(device.id)
         return HttpResponse(
-            json.dumps({
-                "task_id": scan_task.id,
-                "device_id": device.id,
-                "search_id": device.search_id,
-            }),
+            json.dumps(
+                {
+                    "task_id": scan_task.id,
+                    "device_id": device.id,
+                    "search_id": device.search_id,
+                }
+            ),
             content_type="application/json",
         )
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
@@ -1418,6 +1417,55 @@ def get_sbom_results(request, id):
     return HttpResponse(json.dumps([]), content_type="application/json")
 
 
+def get_honeypot_result(request, id):
+    """Return honeypot analysis for a device."""
+    if (
+        request.method == "GET"
+        and request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    ):
+        honeypot = HoneypotAnalysis.objects.filter(device_id=id).first()
+        if not honeypot:
+            return HttpResponse(json.dumps({}), content_type="application/json")
+        reasons = []
+        if honeypot.reasons:
+            try:
+                reasons = json.loads(honeypot.reasons)
+            except Exception:
+                reasons = []
+        data = {
+            "probability": honeypot.probability,
+            "reasons": reasons,
+            "banner_count_in_subnet": honeypot.banner_count_in_subnet,
+            "is_conpot": honeypot.is_conpot,
+            "is_cowrie": honeypot.is_cowrie,
+            "response_time_ms": honeypot.response_time_ms,
+            "scan_date": honeypot.scan_date.isoformat() if honeypot.scan_date else "",
+        }
+        return HttpResponse(json.dumps(data), content_type="application/json")
+    return HttpResponse(json.dumps({}), content_type="application/json")
+
+
+def get_gfw_status(request, id):
+    """Return GFW reachability status for a device."""
+    if (
+        request.method == "GET"
+        and request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    ):
+        status = GFWStatus.objects.filter(device_id=id).first()
+        if not status:
+            return HttpResponse(json.dumps({}), content_type="application/json")
+        data = {
+            "reachable": status.reachable,
+            "blocking_type": status.blocking_type,
+            "ooni_report_id": status.ooni_report_id,
+            "last_checked": (
+                status.last_checked.isoformat() if status.last_checked else ""
+            ),
+        }
+        return HttpResponse(json.dumps(data), content_type="application/json")
+    return HttpResponse(json.dumps({}), content_type="application/json")
+
+
 # ---------------------------------------------------------------------------
 # GFW Reachability views
 # ---------------------------------------------------------------------------
@@ -1434,6 +1482,115 @@ def gfw_check_view(request, id):
             json.dumps({"task_id": task.id}), content_type="application/json"
         )
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
+
+
+def device_report_view(request, id):
+    """Generate a markdown report for a device (Jok3r-style single report artifact)."""
+    device = Device.objects.get(id=id)
+    vuln_intel = VulnIntelligence.objects.filter(device_id=id).order_by("cve_id")
+    sbom_components = SBOMComponent.objects.filter(device_id=id).order_by(
+        "component_name"
+    )
+    honeypot = HoneypotAnalysis.objects.filter(device_id=id).first()
+    gfw = GFWStatus.objects.filter(device_id=id).first()
+    fingerprints = ProtocolFingerprint.objects.filter(device_id=id).order_by("protocol")
+
+    lines = []
+    lines.append("# Device Security Report")
+    lines.append("")
+    lines.append(
+        "Generated: {}".format(time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()))
+    )
+    lines.append("")
+    lines.append("## Target")
+    lines.append("- IP: {}".format(device.ip or ""))
+    lines.append("- Port: {}".format(device.port or ""))
+    lines.append("- Product: {}".format(device.product or ""))
+    lines.append("- Type: {}".format(device.type or ""))
+    lines.append("- Organization: {}".format(device.org or ""))
+    lines.append("- Location: {}, {}".format(device.lat or "", device.lon or ""))
+    lines.append("")
+
+    lines.append("## Vulnerability Intelligence")
+    if vuln_intel.exists():
+        for v in vuln_intel:
+            lines.append(
+                "- {} | CVSS {} | EPSS {:.4f} | KEV {} | Exploit {}".format(
+                    v.cve_id,
+                    v.cvss_score,
+                    v.epss_score,
+                    "yes" if v.kev_listed else "no",
+                    "yes" if v.exploit_available else "no",
+                )
+            )
+    else:
+        lines.append("- No CVE intelligence records found")
+    lines.append("")
+
+    lines.append("## Honeypot Analysis")
+    if honeypot:
+        lines.append("- Probability: {:.2f}".format(honeypot.probability))
+        lines.append(
+            "- Conpot signature: {}".format("yes" if honeypot.is_conpot else "no")
+        )
+        lines.append(
+            "- Cowrie signature: {}".format("yes" if honeypot.is_cowrie else "no")
+        )
+        lines.append(
+            "- Identical banners in /24: {}".format(honeypot.banner_count_in_subnet)
+        )
+        lines.append(
+            "- Response time ms: {:.2f}".format(honeypot.response_time_ms or 0.0)
+        )
+    else:
+        lines.append("- No honeypot analysis data")
+    lines.append("")
+
+    lines.append("## GFW Reachability")
+    if gfw:
+        lines.append("- Reachable from CN: {}".format("yes" if gfw.reachable else "no"))
+        lines.append("- Blocking type: {}".format(gfw.blocking_type or ""))
+        lines.append("- OONI report id: {}".format(gfw.ooni_report_id or ""))
+    else:
+        lines.append("- No GFW status data")
+    lines.append("")
+
+    lines.append("## Protocol Fingerprints")
+    if fingerprints.exists():
+        for fp in fingerprints:
+            lines.append(
+                "- {} | vendor={} | fw={} | hw={} | serial={}".format(
+                    fp.protocol or "",
+                    fp.vendor_id or "",
+                    fp.firmware_version or "",
+                    fp.hardware_version or "",
+                    fp.serial_number or "",
+                )
+            )
+    else:
+        lines.append("- No protocol fingerprint data")
+    lines.append("")
+
+    lines.append("## SBOM Components")
+    if sbom_components.exists():
+        for comp in sbom_components:
+            lines.append(
+                "- {} {} [{}] {}".format(
+                    comp.component_name or "",
+                    comp.version or "",
+                    comp.component_type or "",
+                    comp.cpe_string or "",
+                ).strip()
+            )
+    else:
+        lines.append("- No SBOM components found")
+
+    content = "\n".join(lines)
+    response = HttpResponse(content, content_type="text/markdown")
+    response["Content-Disposition"] = (
+        'attachment; filename="device_report_{}.md"'.format(id)
+    )
+    return response
 
 
 # ---------------------------------------------------------------------------

@@ -73,11 +73,19 @@ urlpatterns = [
     path("get_vuln_intel/<id>", views.get_vuln_intel, name="get_vuln_intel"),
     # Honeypot Analysis
     path("<id>/honeypot/scan", views.honeypot_scan_view, name="honeypot_scan"),
+    path(
+        "get_honeypot_result/<id>",
+        views.get_honeypot_result,
+        name="get_honeypot_result",
+    ),
     # SBOM
     path("<id>/sbom/scan", views.sbom_scan_view, name="sbom_scan"),
     path("get_sbom_results/<id>", views.get_sbom_results, name="get_sbom_results"),
     # GFW Check
     path("<id>/gfw/check", views.gfw_check_view, name="gfw_check"),
+    path("get_gfw_status/<id>", views.get_gfw_status, name="get_gfw_status"),
+    # Device report export
+    path("report/device/<id>", views.device_report_view, name="device_report"),
     # Screenshot Capture
     path("<id>/screenshot", views.screenshot_view, name="screenshot"),
     # ExploitDB Search

@@ -2089,15 +2089,47 @@ def _sanitize_nmap_flags(raw_flags):
     return " ".join(validated)
 
 
+def _build_manual_nmap_report(raw_output):
+    """Extract a compact report from plain-text nmap output."""
+    report = {
+        "open_port_count": 0,
+        "open_ports": [],
+        "host_status": "",
+    }
+    if not raw_output:
+        return report
+
+    host_up_match = re.search(r"Host is up", raw_output)
+    if host_up_match:
+        report["host_status"] = "up"
+
+    open_port_re = re.compile(r"^(\d+)/(tcp|udp)\s+open\s+([^\s]+)\s*(.*)$")
+    for line in raw_output.splitlines():
+        match = open_port_re.match(line.strip())
+        if not match:
+            continue
+        port, proto, service, extra = match.groups()
+        entry = {
+            "port": int(port),
+            "protocol": proto,
+            "service": service,
+            "details": (extra or "").strip(),
+        }
+        report["open_ports"].append(entry)
+
+    report["open_ports"] = sorted(report["open_ports"], key=lambda x: x["port"])
+    report["open_port_count"] = len(report["open_ports"])
+    return report
+
+
 @shared_task(bind=True)
 def nmap_manual_scan(self, device_id, flags=""):
     """Run an Nmap scan with user-supplied flags against a device.
 
-    Flags are validated via ``_sanitize_nmap_flags`` allow-list.
-    Returns the raw stdout/stderr output and parsed results.
+    Returns raw stdout/stderr output plus a compact structured report.
     """
     progress_recorder = ProgressRecorder(self)
-    progress_recorder.set_progress(0, 4, description="Validating flags…")
+    progress_recorder.set_progress(0, 4, description="Preparing manual Nmap scan…")
 
     device = Device.objects.get(id=device_id)
     ip = device.ip
@@ -2109,10 +2141,9 @@ def nmap_manual_scan(self, device_id, flags=""):
     except ValueError:
         return {"error": "Invalid IP address: {}".format(ip)}
 
-    try:
-        clean_flags = _sanitize_nmap_flags(flags)
-    except ValueError as e:
-        return {"error": "Invalid flags: {}".format(str(e))}
+    clean_flags = (flags or "").strip()
+    if not clean_flags:
+        return {"error": "No flags provided"}
 
     progress_recorder.set_progress(
         1, 4, description="Starting Nmap: nmap {} {}".format(clean_flags, ip)
@@ -2152,6 +2183,7 @@ def nmap_manual_scan(self, device_id, flags=""):
             "output": raw_output,
             "stderr": raw_stderr,
             "return_code": nm.rc,
+            "report": _build_manual_nmap_report(raw_output),
         }
 
         # Try to parse XML output for structured data
