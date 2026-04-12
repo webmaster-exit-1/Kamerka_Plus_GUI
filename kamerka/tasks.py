@@ -3469,29 +3469,43 @@ def cvedb_enrich(device_id):
 # ---------------------------------------------------------------------------
 
 
+def _run_task_inline(task, *args, **kwargs):
+    """Execute an existing Celery task synchronously using its canonical logic."""
+    task_runner = getattr(task, "run", None)
+    if callable(task_runner):
+        return task_runner(*args, **kwargs)
+    return task(*args, **kwargs)
+
+
 @shared_task(bind=True)
 def shodan_intel_scan(self, device_id):
-    """Run the full Shodan intelligence pipeline for a device in one shot.
+    """Run the Shodan intelligence pipeline by delegating to shared task logic.
 
-    Phase 1 (0-50 %)  — nrich/InternetDB
-        Query ``https://internetdb.shodan.io/{IP}`` to retrieve the CVE IDs,
-        open ports, CPEs, and tags Shodan has indexed for this IP.  Results
-        are stored as VulnIntelligence records (source="nrich").
-
-    Phase 2 (50-100 %) — CVEDB enrichment
-        For every CVE record on the device, query
-        ``https://cvedb.shodan.io/cve/{cve_id}`` for authoritative CVSS/EPSS
-        scores, KEV flag, ``propose_action``, ``ransomware_campaign``, and
-        exploit references.  If the device has a CPE string, also query
-        ``/cves?cpe23=<cpe>`` to discover additional CVEs not already stored.
-
-    Both phases use free, no-auth Shodan endpoints so no API key is needed.
-    The task returns a summary dict that the frontend JS uses to build the
-    completion notification.
+    This task intentionally reuses the canonical implementations in
+    ``nrich_lookup`` and ``cvedb_enrich`` so the combined workflow cannot drift
+    from the standalone enrichment paths over time.
     """
     progress_recorder = ProgressRecorder(self)
     device = Device.objects.get(id=device_id)
 
+    progress_recorder.set_progress(0, 100, description="Starting Shodan intelligence")
+    _run_task_inline(nrich_lookup, device_id)
+    progress_recorder.set_progress(50, 100, description="InternetDB lookup complete")
+
+    _run_task_inline(cvedb_enrich, device_id)
+    progress_recorder.set_progress(100, 100, description="CVEDB enrichment complete")
+
+    return {
+        "device_id": device.id,
+        "ip": getattr(device, "ip", None),
+        "status": "completed",
+        "phases": ["nrich_lookup", "cvedb_enrich"],
+    }
+
+    # Legacy inlined implementation retained below but now unreachable.
+    # Keeping this comment allows the remainder of the existing function body
+    # to stay syntactically valid while the task consistently reuses the
+    # canonical enrichment implementations above.
     # ------------------------------------------------------------------ #
     # Phase 1 — nrich / InternetDB                                        #
     # ------------------------------------------------------------------ #
