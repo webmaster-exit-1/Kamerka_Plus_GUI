@@ -616,7 +616,7 @@
                     </button>
                 </div>
                 <textarea id="msf_script_output" style="display:none;width:100%;min-height:260px;background:#0a0a1a;color:#00ff88;border:1px solid #0064d7;border-radius:4px;font-family:'Share Tech Mono',monospace;font-size:0.8em;padding:10px;" readonly></textarea>
-                <p style="color:#555;font-size:0.8em;margin-top:6px;">Usage: <code>msfconsole -r kamerka_{{ device.ip }}.rc</code></p>
+                <p style="color:#555;font-size:0.8em;margin-top:6px;">Usage: <code>msfconsole -r kamerka_{{ device.ip|cut:"." }}.rc</code></p>
             </div>
         </div>
     </div>
