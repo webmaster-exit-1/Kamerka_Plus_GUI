@@ -70,6 +70,7 @@ urlpatterns = [
     ),
     # Vulnerability Intelligence
     path("<id>/nvd/scan", views.nvd_scan_view, name="nvd_scan"),
+    path("<id>/nrich/scan", views.nrich_scan_view, name="nrich_scan"),
     path("get_vuln_intel/<id>", views.get_vuln_intel, name="get_vuln_intel"),
     # Honeypot Analysis
     path("<id>/honeypot/scan", views.honeypot_scan_view, name="honeypot_scan"),

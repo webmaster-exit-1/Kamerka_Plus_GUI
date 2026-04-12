@@ -681,6 +681,9 @@
                     <button type="button" id="nvd_scan_btn" class="btn btn-primary active" style="background:#ff2050;border-color:#ff2050;font-weight:bold;">
                         &#128270; Fetch CVE Intelligence
                     </button>
+                    <button type="button" id="nrich_scan_btn" class="btn btn-primary active" style="background:#00e1ff;border-color:#00e1ff;color:#000;font-weight:bold;margin-left:4px;" title="Query Shodan InternetDB (free, no API key needed)">
+                        &#127760; nrich Scan
+                    </button>
                     <button type="button" id="honeypot_scan_btn" class="btn btn-primary active" style="background:#ffe600;border-color:#ffe600;color:#000;font-weight:bold;margin-left:4px;">
                         &#128373; Honeypot Check
                     </button>
@@ -1102,6 +1105,7 @@ $('#scan').on('click', function(){
                         noty({text: result.Error, layout: 'topRight', type: 'error', timeout: 10000});
                     } else {
                         noty({text: "Nmap scan complete", layout: 'topRight', type: 'success', timeout: 4000});
+                        fetchVulnIntel();
                     }
                 });
                 noty({text: "Nmap scan started", layout: 'topRight', type: 'success', timeout: 3000});
@@ -1532,7 +1536,37 @@ $('#nvd_scan_btn').on('click', function(){
                 noty({text: "CVE intelligence lookup started", layout: 'topRight', type: 'success', timeout: 3000});
             }
         },
-        error: function () { console.log("NVD scan error"); }
+        error: function () { noty({text: "CVE intelligence request failed", layout: 'topRight', type: 'error', timeout: 4000}); }
+    });
+    return false;
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// NRICH / INTERNETDB SCAN BUTTON
+// ═══════════════════════════════════════════════════════════════════
+$('#nrich_scan_btn').on('click', function(){
+    var pgrbar_risk = $('#progress-bar-risk');
+    $.ajax({
+        type: "GET",
+        url: "/{{device.id}}/nrich/scan",
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        success: function (data) {
+            if (data.task_id != null) {
+                pgrbar_risk.css('display', 'inline-block');
+                get_task_info(data.task_id, pgrbar_risk, 0, function(result) {
+                    if (result && result.error) {
+                        noty({text: "nrich: " + result.error, layout: 'topRight', type: 'error', timeout: 5000});
+                    } else {
+                        var count = (result && result.cve_count) ? result.cve_count : 0;
+                        noty({text: "nrich complete — " + count + " CVE(s) found", layout: 'topRight', type: 'success', timeout: 3000});
+                    }
+                    $('#risk_results').css('display', 'none').html('');
+                    fetchVulnIntel();
+                });
+                noty({text: "nrich scan started (Shodan InternetDB)…", layout: 'topRight', type: 'success', timeout: 3000});
+            }
+        },
+        error: function () { noty({text: "nrich scan request failed", layout: 'topRight', type: 'error', timeout: 4000}); }
     });
     return false;
 });
@@ -1623,6 +1657,7 @@ $('#screenshot_btn').on('click', function(){
                         $('#screenshot_container').html('<img src="data:image/png;base64,' + result.screenshot + '" style="max-width:100%;border:1px solid #0064d7;border-radius:4px;" />');
                         noty({text: "Screenshot captured", layout: 'topRight', type: 'success', timeout: 3000});
                     } else if (result && result.error) {
+                        $('#screenshot_container').html('<p style="color:#ff2050;font-family:monospace;margin:8px 0;">&#10060; ' + result.error + '</p>');
                         noty({text: result.error, layout: 'topRight', type: 'error', timeout: 6000});
                     }
                 });
@@ -1722,6 +1757,7 @@ $('#manual_nmap_btn').on('click', function(){
                         }
                         $('#manual_nmap_output').css('display', 'block').text(output || 'No output');
                         noty({text: "Manual Nmap scan complete", layout: 'topRight', type: 'success', timeout: 4000});
+                        fetchVulnIntel();
                     }
                 });
                 noty({text: "Manual Nmap scan started…", layout: 'topRight', type: 'success', timeout: 3000});

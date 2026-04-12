@@ -62,6 +62,7 @@ from kamerka.tasks import (
     exploitdb_search,
     capture_screenshot,
     coordinates_queries,
+    nrich_lookup,
 )
 
 _views_logger = logging.getLogger(__name__)
@@ -1325,6 +1326,19 @@ def nvd_scan_view(request, id):
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
         task = nvd_lookup.delay(device_id=id)
+        return HttpResponse(
+            json.dumps({"task_id": task.id}), content_type="application/json"
+        )
+    return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
+
+
+def nrich_scan_view(request, id):
+    """Trigger Shodan InternetDB (nrich) CVE lookup via Celery."""
+    if (
+        request.method == "GET"
+        and request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    ):
+        task = nrich_lookup.delay(device_id=id)
         return HttpResponse(
             json.dumps({"task_id": task.id}), content_type="application/json"
         )

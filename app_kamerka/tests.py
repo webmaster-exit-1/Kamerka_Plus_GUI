@@ -913,6 +913,117 @@ class HoneypotCheckTest(TestCase):
 
 
 # ---------------------------------------------------------------------------
+# nrich / InternetDB task
+# ---------------------------------------------------------------------------
+class NrichLookupTaskTest(TestCase):
+    """nrich_lookup must handle InternetDB responses and network errors."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search, ip="1.2.3.4")
+
+    def test_stores_cves_from_internetdb(self):
+        from kamerka.tasks import nrich_lookup
+        from app_kamerka.models import VulnIntelligence
+        from unittest.mock import patch, MagicMock
+        fake_resp = MagicMock()
+        fake_resp.status_code = 200
+        fake_resp.json.return_value = {
+            "ip": "1.2.3.4",
+            "ports": [80, 443],
+            "vulns": ["CVE-2021-44228", "CVE-2022-22965"],
+            "cpes": ["cpe:/a:apache:log4j:2.14.1"],
+            "hostnames": [],
+            "tags": [],
+        }
+        with patch("kamerka.tasks.requests.get", return_value=fake_resp), \
+             patch("kamerka.tasks._fetch_epss_scores", return_value={}), \
+             patch("kamerka.tasks._fetch_kev_list", return_value={"CVE-2021-44228"}):
+            result = nrich_lookup(self.device.id)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["cve_count"], 2)
+        records = VulnIntelligence.objects.filter(device=self.device)
+        self.assertEqual(records.count(), 2)
+        cve_ids = set(records.values_list("cve_id", flat=True))
+        self.assertIn("CVE-2021-44228", cve_ids)
+        self.assertIn("CVE-2022-22965", cve_ids)
+        kev_record = records.get(cve_id="CVE-2021-44228")
+        self.assertTrue(kev_record.kev_listed)
+        self.assertEqual(kev_record.source, "nrich")
+
+    def test_returns_not_found_on_404(self):
+        from kamerka.tasks import nrich_lookup
+        from unittest.mock import patch, MagicMock
+        fake_resp = MagicMock()
+        fake_resp.status_code = 404
+        with patch("kamerka.tasks.requests.get", return_value=fake_resp):
+            result = nrich_lookup(self.device.id)
+        self.assertEqual(result["status"], "not_found")
+
+    def test_returns_no_cves_when_empty(self):
+        from kamerka.tasks import nrich_lookup
+        from unittest.mock import patch, MagicMock
+        fake_resp = MagicMock()
+        fake_resp.status_code = 200
+        fake_resp.json.return_value = {"ip": "1.2.3.4", "ports": [22], "vulns": [],
+                                        "cpes": [], "hostnames": [], "tags": []}
+        with patch("kamerka.tasks.requests.get", return_value=fake_resp):
+            result = nrich_lookup(self.device.id)
+        self.assertEqual(result["status"], "no_cves")
+
+    def test_handles_network_error_gracefully(self):
+        from kamerka.tasks import nrich_lookup
+        from unittest.mock import patch
+        with patch("kamerka.tasks.requests.get", side_effect=Exception("timeout")):
+            result = nrich_lookup(self.device.id)
+        self.assertIn("error", result)
+        device = _make_device(self.search, ip="10.0.0.1")
+        device.data = "HTTP/1.1 200 OK\r\nServer: nginx\r\n"
+        device.save()
+        from kamerka.tasks import honeypot_check
+        result = honeypot_check(device.id)
+        self.assertLessEqual(result["probability"], 0.1)
+
+    def test_conpot_signature_detected(self):
+        device = _make_device(self.search, ip="10.0.0.2")
+        device.data = "Siemens, SIMATIC, S7-200 response data"
+        device.save()
+        from kamerka.tasks import honeypot_check
+        result = honeypot_check(device.id)
+        self.assertTrue(result["is_conpot"])
+        self.assertGreater(result["probability"], 0.2)
+
+    def test_cowrie_signature_not_matched(self):
+        device = _make_device(self.search, ip="10.0.0.3")
+        device.data = "SSH-2.0-OpenSSH_6.0p1"
+        device.save()
+        from kamerka.tasks import honeypot_check
+        result = honeypot_check(device.id)
+        self.assertFalse(result["is_cowrie"])
+
+    def test_saves_to_database(self):
+        device = _make_device(self.search, ip="10.0.0.4")
+        from kamerka.tasks import honeypot_check
+        honeypot_check(device.id)
+        from app_kamerka.models import HoneypotAnalysis
+        self.assertTrue(HoneypotAnalysis.objects.filter(device=device).exists())
+
+    def test_shodan_tag_raises_probability(self):
+        """A ShodanScan record tagged 'honeypot' must push probability to >= 0.8."""
+        from app_kamerka.models import ShodanScan
+        device = _make_device(self.search, ip="10.0.0.5")
+        ShodanScan.objects.create(
+            device=device, ports="[]", tags="['honeypot']",
+            products="[]", module="", vulns="[]",
+        )
+        from kamerka.tasks import honeypot_check
+        result = honeypot_check(device.id)
+        self.assertGreaterEqual(result["probability"], 0.8)
+        reasons_combined = " ".join(result["reasons"]).lower()
+        self.assertIn("shodan", reasons_combined)
+
+
+# ---------------------------------------------------------------------------
 # SBOM Lookup
 # ---------------------------------------------------------------------------
 class SBOMLookupTest(TestCase):
@@ -995,6 +1106,30 @@ class NVDScanViewTest(TestCase):
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.content)
         self.assertEqual(data["task_id"], "fake-nvd-task")
+
+
+class NrichScanViewTest(TestCase):
+    """nrich_scan_view must trigger Shodan InternetDB CVE lookup."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    def test_returns_task_id(self):
+        with patch("app_kamerka.views.nrich_lookup") as mock_task:
+            mock_task.delay.return_value = MagicMock(id="fake-nrich-task")
+            response = self.client.get(
+                "/{}/nrich/scan".format(self.device.id),
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["task_id"], "fake-nrich-task")
+
+    def test_non_ajax_returns_null_task(self):
+        response = self.client.get("/{}/nrich/scan".format(self.device.id))
+        data = json.loads(response.content)
+        self.assertIsNone(data["task_id"])
 
 
 class HoneypotScanViewTest(TestCase):

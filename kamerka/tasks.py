@@ -3175,6 +3175,87 @@ def nvd_lookup(device_id):
     return {"status": "ok", "cve_count": len(results), "results": results}
 
 
+# ---------------------------------------------------------------------------
+# nrich / Shodan InternetDB — free CVE lookup without an API key
+# ---------------------------------------------------------------------------
+
+
+@shared_task(bind=False)
+def nrich_lookup(device_id):
+    """Query the Shodan InternetDB API for CVEs affecting the device IP.
+
+    InternetDB (https://internetdb.shodan.io/{IP}) is a free, no-auth endpoint
+    that returns open ports, CPEs, hostnames, tags, and CVE IDs for any IP.
+    Results are stored as VulnIntelligence records (source="nrich") so they
+    appear in the risk tab and populate the exploit dropdown.
+    """
+    device = Device.objects.get(id=device_id)
+    ip = device.ip
+
+    try:
+        url = "https://internetdb.shodan.io/{}".format(ip)
+        resp = requests.get(url, timeout=15)
+        if resp.status_code == 404:
+            return {"status": "not_found", "ip": ip, "cve_count": 0}
+        if resp.status_code != 200:
+            return {"error": "InternetDB returned HTTP {}".format(resp.status_code)}
+        data = resp.json()
+    except Exception as exc:
+        logger.warning("nrich/InternetDB lookup error for %s: %s", ip, exc)
+        return {"error": str(exc)}
+
+    cve_ids = data.get("vulns", [])
+    if not cve_ids:
+        return {"status": "no_cves", "ip": ip, "cve_count": 0,
+                "ports": data.get("ports", []), "cpes": data.get("cpes", [])}
+
+    # Fetch EPSS and KEV enrichment for found CVEs
+    epss_scores = _fetch_epss_scores(cve_ids)
+    kev_set = _fetch_kev_list()
+
+    results = []
+    for cve_id in cve_ids:
+        epss_data = epss_scores.get(cve_id, {})
+        is_kev = cve_id in kev_set
+        exploit_available = is_kev
+
+        VulnIntelligence.objects.update_or_create(
+            device=device,
+            cve_id=cve_id,
+            defaults={
+                "cvss_score": 0.0,
+                "epss_score": epss_data.get("epss", 0.0),
+                "epss_percentile": epss_data.get("percentile", 0.0),
+                "kev_listed": is_kev,
+                "exploit_available": exploit_available,
+                "exploit_refs": "",
+                "description": "",
+                "source": "nrich",
+            },
+        )
+        results.append(
+            {
+                "cve_id": cve_id,
+                "epss": epss_data.get("epss", 0.0),
+                "kev": is_kev,
+            }
+        )
+
+    logger.info(
+        "nrich/InternetDB: found %d CVEs for %s (ports=%s)",
+        len(results),
+        ip,
+        data.get("ports", []),
+    )
+    return {
+        "status": "ok",
+        "cve_count": len(results),
+        "cves": results,
+        "ports": data.get("ports", []),
+        "cpes": data.get("cpes", []),
+    }
+
+
 def _fetch_epss_scores(cve_ids):
     """Fetch EPSS scores from the FIRST.org EPSS API.
 
