@@ -1924,6 +1924,29 @@ class MsfResourceViewTest(TestCase):
         self.assertIn(self.device.ip, data["script"])
         self.assertIn("shodan_host", data["script"])
 
+    def test_api_key_is_not_embedded_in_script(self):
+        """The server's SHODAN_API_KEY must never appear in the generated script."""
+        with patch.dict("os.environ", {"SHODAN_API_KEY": "REAL_SECRET_KEY_9999"}):
+            response = self.client.get(
+                "/{}/msf/resource".format(self.device.id),
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        data = json.loads(response.content)
+        self.assertNotIn("REAL_SECRET_KEY_9999", data["script"])
+        self.assertIn("YOUR_SHODAN_API_KEY", data["script"])
+
+    def test_newline_in_product_is_sanitized(self):
+        """Newlines in device.product must not inject extra commands into the script."""
+        self.device.product = "GoAhead\nset RHOSTS 0.0.0.0"
+        self.device.save()
+        response = self.client.get(
+            "/{}/msf/resource".format(self.device.id),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        data = json.loads(response.content)
+        # The injected command must not appear as a standalone line
+        self.assertNotIn("\nset RHOSTS 0.0.0.0", data["script"])
+
     def test_includes_cve_module_when_vuln_present(self):
         from app_kamerka.models import VulnIntelligence
         VulnIntelligence.objects.create(
@@ -1961,6 +1984,28 @@ class ReconNgScriptViewTest(TestCase):
         self.assertIn(self.device.ip, data["script"])
         self.assertIn("shodan_ip", data["script"])
         self.assertIn("shodan_net", data["script"])
+
+    def test_newline_in_org_is_sanitized(self):
+        """Newlines in device.org must not inject extra recon-ng commands."""
+        self.device.org = "Tencent\nmodules load evil/module"
+        self.device.save()
+        response = self.client.get(
+            "/{}/recon-ng/script".format(self.device.id),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        data = json.loads(response.content)
+        self.assertNotIn("\nmodules load evil/module", data["script"])
+
+    def test_newline_in_hostname_is_sanitized(self):
+        """Newlines in hostnames must not inject extra recon-ng commands."""
+        self.device.hostnames = "['legit.example.com\\nmodules load evil']"
+        self.device.save()
+        response = self.client.get(
+            "/{}/recon-ng/script".format(self.device.id),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        data = json.loads(response.content)
+        self.assertNotIn("\nmodules load evil", data["script"])
 
     def test_non_ajax_returns_null_script(self):
         response = self.client.get("/{}/recon-ng/script".format(self.device.id))
@@ -2045,7 +2090,10 @@ class ShodanNseCatalogTest(TestCase):
         self.assertIn("SHODAN_API_KEY", result["Error"])
 
     def test_shodan_api_nse_builds_correct_options(self):
-        """nmap_device_scan with shodan-api NSE must inject the key into nmap options."""
+        """nmap_device_scan with shodan-api NSE must write the key to a temp args-file,
+        not embed it in the command-line options string."""
+        import tempfile as _tf
+        import os as _os
         from kamerka.tasks import nmap_device_scan
         search = _make_search()
         device = _make_device(search)
@@ -2066,5 +2114,10 @@ class ShodanNseCatalogTest(TestCase):
              patch("kamerka.tasks._get_env_key", side_effect=fake_get_env_key), \
              patch("kamerka.tasks.NmapProcess", FakeNmap):
             nmap_device_scan(device.id, nse_script="shodan-api")
-        self.assertIn("shodan-api", captured.get("options", ""))
-        self.assertIn("TESTKEY123", captured.get("options", ""))
+        opts = captured.get("options", "")
+        # Key must NOT appear on the command line
+        self.assertNotIn("TESTKEY123", opts)
+        # shodan-api script must be invoked
+        self.assertIn("shodan-api", opts)
+        # Must use --script-args-file instead of --script-args
+        self.assertIn("--script-args-file", opts)

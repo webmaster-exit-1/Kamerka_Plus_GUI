@@ -616,7 +616,7 @@
                     </button>
                 </div>
                 <textarea id="msf_script_output" style="display:none;width:100%;min-height:260px;background:#0a0a1a;color:#00ff88;border:1px solid #0064d7;border-radius:4px;font-family:'Share Tech Mono',monospace;font-size:0.8em;padding:10px;" readonly></textarea>
-                <p style="color:#555;font-size:0.8em;margin-top:6px;">Usage: <code>msfconsole -r kamerka_{{ device.ip }}.rc</code></p>
+                <p style="color:#555;font-size:0.8em;margin-top:6px;">Usage: <code>msfconsole -r kamerka_{{ device_ip_safe }}.rc</code></p>
             </div>
         </div>
     </div>
@@ -647,7 +647,7 @@
                     </button>
                 </div>
                 <textarea id="recon_script_output" style="display:none;width:100%;min-height:260px;background:#0a0a1a;color:#00e1ff;border:1px solid #0064d7;border-radius:4px;font-family:'Share Tech Mono',monospace;font-size:0.8em;padding:10px;" readonly></textarea>
-                <p style="color:#555;font-size:0.8em;margin-top:6px;">Usage: <code>recon-ng -r kamerka_{{ device.ip }}.rng</code></p>
+                <p style="color:#555;font-size:0.8em;margin-top:6px;">Usage: <code>recon-ng -r kamerka_{{ device_ip_safe }}.rng</code></p>
             </div>
         </div>
     </div>
@@ -1378,19 +1378,21 @@ function renderVulnIntel(vulnRows) {
     html += '<th style="text-align:left;color:#00e1ff;">Ransomware</th>';
     html += '<th style="text-align:left;color:#00e1ff;">Action</th>';
     html += '</tr></thead><tbody>';
+    var $tbody = $(html + '</tbody></table></div>');
     $.each(vulnRows, function(_, v) {
-        html += '<tr>';
-        html += '<td style="padding:3px 0;font-family:monospace;">' + (v.cve_id || '') + '</td>';
-        html += '<td>' + (v.cvss_score || 0) + '</td>';
-        html += '<td>' + (v.epss_score || 0) + '</td>';
-        html += '<td>' + (v.kev_listed ? '<span style="background:#ff2050;color:#fff;padding:1px 5px;border-radius:3px;font-size:0.8em;font-weight:bold;">KEV</span>' : '—') + '</td>';
-        html += '<td>' + (v.exploit_available ? '<span style="background:#ffe600;color:#000;padding:1px 5px;border-radius:3px;font-size:0.8em;font-weight:bold;">Exploit</span>' : '—') + '</td>';
-        html += '<td>' + (v.ransomware_campaign ? '<span style="background:#b300ff;color:#fff;padding:1px 5px;border-radius:3px;font-size:0.8em;font-weight:bold;">&#128165;</span>' : '—') + '</td>';
-        html += '<td style="font-size:0.85em;color:#00ff88;">' + (v.propose_action ? v.propose_action.substring(0, 80) : '—') + '</td>';
-        html += '</tr>';
+        var $tr = $('<tr>');
+        $tr.append($('<td>').css({'padding': '3px 0', 'font-family': 'monospace'}).text(v.cve_id || ''));
+        $tr.append($('<td>').text(v.cvss_score || 0));
+        $tr.append($('<td>').text(v.epss_score || 0));
+        $tr.append($('<td>').html(v.kev_listed ? '<span style="background:#ff2050;color:#fff;padding:1px 5px;border-radius:3px;font-size:0.8em;font-weight:bold;">KEV</span>' : '—'));
+        $tr.append($('<td>').html(v.exploit_available ? '<span style="background:#ffe600;color:#000;padding:1px 5px;border-radius:3px;font-size:0.8em;font-weight:bold;">Exploit</span>' : '—'));
+        $tr.append($('<td>').html(v.ransomware_campaign ? '<span style="background:#b300ff;color:#fff;padding:1px 5px;border-radius:3px;font-size:0.8em;font-weight:bold;">&#128165;</span>' : '—'));
+        // propose_action comes from an external API — insert via .text() to prevent XSS
+        var actionText = v.propose_action ? String(v.propose_action).substring(0, 80) : '—';
+        $tr.append($('<td>').css({'font-size': '0.85em', 'color': '#00ff88'}).text(actionText));
+        $tbody.find('tbody').append($tr);
     });
-    html += '</tbody></table></div>';
-    $risk.css('display', 'block').html(html);
+    $risk.css('display', 'block').empty().append($tbody);
     updateExploitDropdownFromVuln(vulnRows);
 }
 
@@ -1842,7 +1844,9 @@ $('#screenshot_btn').on('click', function(){
                         $('#screenshot_container').html('<img src="data:image/png;base64,' + result.screenshot + '" style="max-width:100%;border:1px solid #0064d7;border-radius:4px;" />');
                         noty({text: "Screenshot captured", layout: 'topRight', type: 'success', timeout: 3000});
                     } else if (result && result.error) {
-                        $('#screenshot_container').html('<p style="color:#ff2050;font-family:monospace;margin:8px 0;">&#10060; ' + result.error + '</p>');
+                        // Use DOM text insertion to prevent XSS from error message content
+                        var $errP = $('<p>').css({'color':'#ff2050','font-family':'monospace','margin':'8px 0'}).text('\u274C ' + result.error);
+                        $('#screenshot_container').empty().append($errP);
                         noty({text: result.error, layout: 'topRight', type: 'error', timeout: 6000});
                     }
                 });
@@ -2015,24 +2019,66 @@ $('#strend_btn').on('click', function() {
 });
 
 function renderStrendChart(result) {
-    var matches = result.matches || [];
+    // Validate and normalise input — protect against unexpected API shapes
+    function escapeHtml(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    var rawMatches = Array.isArray(result.matches) ? result.matches : [];
+    var matches = rawMatches.map(function(m) {
+        var month = typeof m.month === 'string' ? m.month : '';
+        var count = typeof m.count === 'number' ? m.count : Number(m.count);
+        if (month.length === 0 || !isFinite(count)) { return null; }
+        return { month: month, count: count };
+    }).filter(function(m) { return m !== null; });
+
+    var $chart = $('#strend_chart');
     if (!matches.length) {
-        $('#strend_chart').html('<p style="color:#888;">No historical data returned.</p>').show();
+        $chart.empty().append($('<p>').css('color', '#888').text('No historical data returned.')).show();
         return;
     }
+
     var maxCount = Math.max.apply(null, matches.map(function(m){ return m.count; }));
-    var html = '<div style="margin-bottom:6px;color:#888;font-size:0.85em;">Query: <code style="color:#00e1ff;">' + (result.query||'') + '</code> &nbsp; Total indexed: <b style="color:#00e1ff;">' + (result.total||0).toLocaleString() + '</b></div>';
-    html += '<div style="display:flex;align-items:flex-end;gap:2px;height:80px;overflow-x:auto;padding-bottom:4px;">';
+    var total = typeof result.total === 'number' ? result.total : Number(result.total);
+    if (!isFinite(total)) { total = 0; }
+    var query = typeof result.query === 'string' ? result.query : '';
+
+    // Summary line — query and total are external data, use escapeHtml
+    var $summary = $('<div>').css({'margin-bottom':'6px','color':'#888','font-size':'0.85em'});
+    $summary.append(document.createTextNode('Query: '));
+    $summary.append($('<code>').css('color','#00e1ff').text(query));
+    $summary.append(document.createTextNode('\u00a0\u00a0 Total indexed: '));
+    $summary.append($('<b>').css('color','#00e1ff').text(total.toLocaleString()));
+
+    // Bar chart
+    var $bars = $('<div>').css({
+        display:'flex','align-items':'flex-end',gap:'2px',height:'80px',
+        'overflow-x':'auto','padding-bottom':'4px'
+    });
     matches.forEach(function(m) {
         var pct = maxCount > 0 ? Math.round((m.count / maxCount) * 100) : 0;
         var color = pct > 75 ? '#ff2050' : pct > 40 ? '#ffe600' : '#00e1ff';
-        html += '<div style="display:flex;flex-direction:column;align-items:center;min-width:28px;" title="' + m.month + ': ' + m.count.toLocaleString() + '">';
-        html += '<div style="background:' + color + ';width:20px;height:' + pct + '%;min-height:2px;border-radius:2px 2px 0 0;"></div>';
-        html += '<span style="color:#555;font-size:0.6em;transform:rotate(-45deg);transform-origin:top left;margin-top:4px;white-space:nowrap;">' + m.month.slice(2) + '</span>';
-        html += '</div>';
+        var monthLabel = m.month.length > 2 ? m.month.slice(2) : m.month;
+        var $col = $('<div>').css({
+            display:'flex','flex-direction':'column','align-items':'center','min-width':'28px'
+        }).attr('title', escapeHtml(m.month) + ': ' + m.count.toLocaleString());
+        $col.append($('<div>').css({
+            background: color, width:'20px', height: pct + '%',
+            'min-height':'2px','border-radius':'2px 2px 0 0'
+        }));
+        $col.append($('<span>').css({
+            color:'#555','font-size':'0.6em','transform':'rotate(-45deg)',
+            'transform-origin':'top left','margin-top':'4px','white-space':'nowrap'
+        }).text(monthLabel));
+        $bars.append($col);
     });
-    html += '</div>';
-    $('#strend_chart').html(html).show();
+
+    $chart.empty().append($summary, $bars).show();
 }
 
 $('#msf_generate_btn').on('click', function() {

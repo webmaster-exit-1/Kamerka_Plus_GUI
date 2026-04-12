@@ -730,6 +730,7 @@ def device(request, id, device_id, ip):
 
     context = {
         "device": all_devices,
+        "device_ip_safe": all_devices.ip.replace(".", "_"),
         "safe_lat": safe_lat,
         "safe_lon": safe_lon,
         "scan_json": _scan_to_json(all_devices.scan),
@@ -1785,13 +1786,19 @@ def msf_resource_view(request, id):
 
     device = Device.objects.get(id=id)
     vulns = VulnIntelligence.objects.filter(device=device)
-    api_key = os.environ.get("SHODAN_API_KEY", "")
+    # Never embed the server API key in the generated script — the script is
+    # downloaded by the browser and the key would be exposed to the user's
+    # file system and any system that stores the file.
     ip_safe = device.ip.replace(".", "_")
 
+    # Strip newlines and control chars (including DEL 0x7f) from any field
+    # derived from external data to prevent injection of commands into the script.
+    _sanitize = lambda s: re.sub(r'[\r\n\x00-\x1f\x7f]', ' ', str(s)).strip()
+
     if device.product:
-        shodan_query = 'product:"{}"'.format(re.sub(r'["\\\n\r]', '', device.product))
+        shodan_query = 'product:"{}"'.format(re.sub(r'["\\\r\n\x00-\x1f\x7f]', '', device.product))
     elif device.type:
-        shodan_query = re.sub(r'["\\\n\r]', '', device.type)
+        shodan_query = re.sub(r'["\\\r\n\x00-\x1f\x7f]', '', device.type)
     else:
         shodan_query = device.ip
 
@@ -1799,8 +1806,8 @@ def msf_resource_view(request, id):
     lines = []
     lines.append("# Kamerka+ Metasploit Resource Script")
     lines.append("# Target: {}".format(device.ip))
-    lines.append("# Product: {}".format(device.product or "unknown"))
-    lines.append("# Type: {}".format(device.type or "unknown"))
+    lines.append("# Product: {}".format(_sanitize(device.product or "unknown")))
+    lines.append("# Type: {}".format(_sanitize(device.type or "unknown")))
     lines.append("# Generated: {}".format(_date.today().isoformat()))
     lines.append("# Usage: msfconsole -r kamerka_{}.rc".format(ip_safe))
     lines.append("#")
@@ -1812,13 +1819,13 @@ def msf_resource_view(request, id):
     lines.append("# --- 1. Shodan host lookup (free) ---")
     lines.append("use auxiliary/gather/shodan_host")
     lines.append("set RHOSTS {}".format(device.ip))
-    lines.append("set SHODAN_APIKEY {}".format(api_key))
+    lines.append("set SHODAN_APIKEY YOUR_SHODAN_API_KEY")
     lines.append("run")
     lines.append("")
     lines.append("# --- 2. Shodan search (costs 1 query credit) ---")
     lines.append("use auxiliary/gather/shodan_search")
     lines.append("set QUERY {}".format(shodan_query))
-    lines.append("set SHODAN_APIKEY {}".format(api_key))
+    lines.append("set SHODAN_APIKEY YOUR_SHODAN_API_KEY")
     lines.append("run")
     lines.append("")
 
@@ -1857,6 +1864,10 @@ def recon_ng_script_view(request, id):
     device = Device.objects.get(id=id)
     ip_safe = device.ip.replace(".", "_")
     workspace = "kamerka_{}".format(ip_safe)
+
+    # Strip newlines/control chars (including DEL 0x7f) from any field derived
+    # from external data to prevent injection of additional recon-ng commands.
+    _sanitize = lambda s: re.sub(r'[\r\n\x00-\x1f\x7f]', ' ', str(s)).strip()
 
     try:
         network = ipaddress.ip_network("{}/24".format(device.ip), strict=False)
@@ -1905,7 +1916,7 @@ def recon_ng_script_view(request, id):
         lines.append("# --- Domain recon ---")
         for hostname in hostnames[:3]:
             lines.append("# db insert domains")
-            lines.append("# domain: {}".format(hostname))
+            lines.append("# domain: {}".format(_sanitize(hostname)))
         lines.append("modules load recon/domains-hosts/shodan_hostname")
         lines.append("run")
         lines.append("")
@@ -1913,7 +1924,7 @@ def recon_ng_script_view(request, id):
     if device.org:
         lines.append("# --- Org recon ---")
         lines.append("# db insert companies")
-        lines.append("# company: {}".format(device.org))
+        lines.append("# company: {}".format(_sanitize(device.org)))
         lines.append("modules load recon/companies-multi/shodan_org")
         lines.append("run")
         lines.append("")
