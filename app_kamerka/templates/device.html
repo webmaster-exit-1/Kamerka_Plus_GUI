@@ -684,6 +684,9 @@
                     <button type="button" id="nrich_scan_btn" class="btn btn-primary active" style="background:#00e1ff;border-color:#00e1ff;color:#000;font-weight:bold;margin-left:4px;" title="Query Shodan InternetDB (free, no API key needed)">
                         &#127760; nrich Scan
                     </button>
+                    <button type="button" id="cvedb_enrich_btn" class="btn btn-primary active" style="background:#b300ff;border-color:#b300ff;color:#fff;font-weight:bold;margin-left:4px;" title="Enrich CVEs via Shodan CVEDB (cvedb.shodan.io) — adds CVSS/EPSS/exploits/ransomware/mitigation, discovers new CVEs via CPE">
+                        &#128165; CVEDB Enrich
+                    </button>
                     <button type="button" id="honeypot_scan_btn" class="btn btn-primary active" style="background:#ffe600;border-color:#ffe600;color:#000;font-weight:bold;margin-left:4px;">
                         &#128373; Honeypot Check
                     </button>
@@ -716,7 +719,8 @@
                             <th>EPSS</th>
                             <th>KEV</th>
                             <th>Exploits</th>
-                            <th>Description</th>
+                            <th>Ransomware</th>
+                            <th>Description / Action</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -736,7 +740,11 @@
                                     {% endif %}
                                 {% else %}—{% endif %}
                             </td>
-                            <td style="font-size:0.85em;max-width:300px;overflow:hidden;text-overflow:ellipsis;">{{ vi.description|truncatechars:150 }}</td>
+                            <td>{% if vi.ransomware_campaign %}<span style="background:#b300ff;color:#fff;padding:1px 6px;border-radius:3px;font-size:0.8em;font-weight:bold;" title="{{ vi.ransomware_campaign }}">&#128165; Ransomware</span>{% else %}—{% endif %}</td>
+                            <td style="font-size:0.85em;max-width:300px;">
+                                <span style="overflow:hidden;text-overflow:ellipsis;display:block;">{{ vi.description|truncatechars:120 }}</span>
+                                {% if vi.propose_action %}<span style="color:#00ff88;font-size:0.9em;display:block;margin-top:3px;">&#10003; {{ vi.propose_action|truncatechars:120 }}</span>{% endif %}
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -1270,14 +1278,24 @@ function renderVulnIntel(vulnRows) {
     }
     var html = '<h4 style="color:#ff2050;margin:0 0 8px;">CVE Intelligence (Live)</h4>';
     html += '<div style="border:1px solid #0064d7;border-radius:4px;padding:10px;background:rgba(0,100,215,0.08);">';
-    html += '<table style="width:100%;font-size:0.92em;"><thead><tr><th style="text-align:left;color:#00e1ff;">CVE</th><th style="text-align:left;color:#00e1ff;">CVSS</th><th style="text-align:left;color:#00e1ff;">EPSS</th><th style="text-align:left;color:#00e1ff;">KEV</th><th style="text-align:left;color:#00e1ff;">Exploit</th></tr></thead><tbody>';
+    html += '<table style="width:100%;font-size:0.92em;"><thead><tr>';
+    html += '<th style="text-align:left;color:#00e1ff;">CVE</th>';
+    html += '<th style="text-align:left;color:#00e1ff;">CVSS</th>';
+    html += '<th style="text-align:left;color:#00e1ff;">EPSS</th>';
+    html += '<th style="text-align:left;color:#00e1ff;">KEV</th>';
+    html += '<th style="text-align:left;color:#00e1ff;">Exploit</th>';
+    html += '<th style="text-align:left;color:#00e1ff;">Ransomware</th>';
+    html += '<th style="text-align:left;color:#00e1ff;">Action</th>';
+    html += '</tr></thead><tbody>';
     $.each(vulnRows, function(_, v) {
         html += '<tr>';
-        html += '<td style="padding:3px 0;">' + (v.cve_id || '') + '</td>';
+        html += '<td style="padding:3px 0;font-family:monospace;">' + (v.cve_id || '') + '</td>';
         html += '<td>' + (v.cvss_score || 0) + '</td>';
         html += '<td>' + (v.epss_score || 0) + '</td>';
-        html += '<td>' + (v.kev_listed ? 'Yes' : 'No') + '</td>';
-        html += '<td>' + (v.exploit_available ? 'Yes' : 'No') + '</td>';
+        html += '<td>' + (v.kev_listed ? '<span style="background:#ff2050;color:#fff;padding:1px 5px;border-radius:3px;font-size:0.8em;font-weight:bold;">KEV</span>' : '—') + '</td>';
+        html += '<td>' + (v.exploit_available ? '<span style="background:#ffe600;color:#000;padding:1px 5px;border-radius:3px;font-size:0.8em;font-weight:bold;">Exploit</span>' : '—') + '</td>';
+        html += '<td>' + (v.ransomware_campaign ? '<span style="background:#b300ff;color:#fff;padding:1px 5px;border-radius:3px;font-size:0.8em;font-weight:bold;">&#128165;</span>' : '—') + '</td>';
+        html += '<td style="font-size:0.85em;color:#00ff88;">' + (v.propose_action ? v.propose_action.substring(0, 80) : '—') + '</td>';
         html += '</tr>';
     });
     html += '</tbody></table></div>';
@@ -1567,6 +1585,38 @@ $('#nrich_scan_btn').on('click', function(){
             }
         },
         error: function () { noty({text: "nrich scan request failed", layout: 'topRight', type: 'error', timeout: 4000}); }
+    });
+    return false;
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// CVEDB ENRICH BUTTON
+// ═══════════════════════════════════════════════════════════════════
+$('#cvedb_enrich_btn').on('click', function(){
+    var pgrbar_risk = $('#progress-bar-risk');
+    $.ajax({
+        type: "GET",
+        url: "/{{device.id}}/cvedb/enrich",
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        success: function (data) {
+            if (data.task_id != null) {
+                pgrbar_risk.css('display', 'inline-block');
+                get_task_info(data.task_id, pgrbar_risk, 0, function(result) {
+                    if (result && result.error) {
+                        noty({text: "CVEDB: " + result.error, layout: 'topRight', type: 'error', timeout: 5000});
+                    } else if (result) {
+                        var msg = "CVEDB enriched " + (result.enriched || 0) + " CVE(s)";
+                        if (result.discovered) { msg += ", discovered " + result.discovered + " new"; }
+                        if (result.exploit_refs_found) { msg += ", found " + result.exploit_refs_found + " exploit ref(s)"; }
+                        noty({text: msg, layout: 'topRight', type: 'success', timeout: 4000});
+                    }
+                    $('#risk_results').css('display', 'none').html('');
+                    fetchVulnIntel();
+                });
+                noty({text: "CVEDB enrichment started (cvedb.shodan.io)…", layout: 'topRight', type: 'success', timeout: 3000});
+            }
+        },
+        error: function () { noty({text: "CVEDB enrich request failed", layout: 'topRight', type: 'error', timeout: 4000}); }
     });
     return false;
 });

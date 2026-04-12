@@ -3256,6 +3256,190 @@ def nrich_lookup(device_id):
     }
 
 
+# ---------------------------------------------------------------------------
+# CVEDB Enrichment — Shodan's free CVE database (cvedb.shodan.io)
+# ---------------------------------------------------------------------------
+
+CVEDB_BASE = "https://cvedb.shodan.io"
+
+
+@shared_task(bind=False)
+def cvedb_enrich(device_id):
+    """Enrich CVE intelligence using the Shodan CVEDB API.
+
+    Two enrichment passes are performed:
+    1. For each existing VulnIntelligence record, query
+       ``/cve/{cve_id}`` to update CVSS/EPSS scores, KEV flag,
+       ``propose_action``, ``ransomware_campaign``, and mine
+       ``references`` for exploit URLs.
+    2. If the device has a CPE, query ``/cves?cpe23=<cpe>`` to
+       discover additional CVEs not already stored.
+
+    All results are stored back to VulnIntelligence.  No API key is
+    required — CVEDB is a free, public endpoint.
+    """
+    device = Device.objects.get(id=device_id)
+
+    enriched = 0
+    discovered = 0
+    exploit_refs_found = 0
+
+    # ------------------------------------------------------------------ #
+    # Pass 1 — enrich existing VulnIntelligence records                   #
+    # ------------------------------------------------------------------ #
+    existing = list(VulnIntelligence.objects.filter(device=device))
+    for vi in existing:
+        if not vi.cve_id:
+            continue
+        try:
+            resp = requests.get(
+                "{}/cve/{}".format(CVEDB_BASE, vi.cve_id),
+                timeout=15,
+            )
+            if resp.status_code == 404:
+                continue
+            if resp.status_code != 200:
+                logger.warning(
+                    "CVEDB /cve/%s returned HTTP %d", vi.cve_id, resp.status_code
+                )
+                continue
+            data = resp.json()
+        except Exception as exc:
+            logger.warning("CVEDB enrich error for %s: %s", vi.cve_id, exc)
+            continue
+
+        # Use best available CVSS score
+        cvss = (
+            data.get("cvss_v3")
+            or data.get("cvss_v2")
+            or data.get("cvss")
+            or vi.cvss_score
+        )
+        epss = data.get("epss") if data.get("epss") is not None else vi.epss_score
+        is_kev = data.get("kev", vi.kev_listed)
+        summary = data.get("summary") or vi.description
+        propose_action = data.get("propose_action") or ""
+        ransomware = data.get("ransomware_campaign") or ""
+
+        # Mine references for exploit-db links
+        exploit_refs_list = []
+        if vi.exploit_refs:
+            try:
+                exploit_refs_list = json.loads(vi.exploit_refs)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        for ref_url in data.get("references", []):
+            if not ref_url:
+                continue
+            if "exploit-db.com" in ref_url:
+                if not any(r.get("url") == ref_url for r in exploit_refs_list):
+                    exploit_refs_list.append(
+                        {
+                            "url": ref_url,
+                            "title": "ExploitDB: " + ref_url.split("/")[-1],
+                        }
+                    )
+                    exploit_refs_found += 1
+
+        exploit_available = is_kev or bool(exploit_refs_list) or vi.exploit_available
+        exploit_refs_json = (
+            json.dumps(exploit_refs_list) if exploit_refs_list else vi.exploit_refs
+        )
+
+        vi.cvss_score = cvss or vi.cvss_score
+        vi.epss_score = epss
+        vi.kev_listed = is_kev
+        vi.exploit_available = exploit_available
+        vi.exploit_refs = exploit_refs_json
+        vi.description = (summary or vi.description)[:2000]
+        vi.propose_action = propose_action[:1000]
+        vi.ransomware_campaign = ransomware[:300]
+        vi.save()
+        enriched += 1
+
+        sleep(0.3)  # be polite to the free API
+
+    # ------------------------------------------------------------------ #
+    # Pass 2 — discover new CVEs via device CPE                           #
+    # ------------------------------------------------------------------ #
+    cpe = (device.cpe or "").strip()
+    if cpe and cpe.startswith("cpe:2.3:"):
+        try:
+            resp = requests.get(
+                "{}/cves".format(CVEDB_BASE),
+                params={"cpe23": cpe, "limit": 50, "sort_by_epss": True},
+                timeout=20,
+            )
+            if resp.status_code == 200:
+                cve_list = resp.json().get("cves", [])
+                kev_set = _fetch_kev_list()
+                for cve_data in cve_list:
+                    cve_id = cve_data.get("cve_id", "")
+                    if not cve_id:
+                        continue
+                    # Skip already-stored CVEs
+                    if VulnIntelligence.objects.filter(
+                        device=device, cve_id=cve_id
+                    ).exists():
+                        continue
+                    cvss = (
+                        cve_data.get("cvss_v3")
+                        or cve_data.get("cvss_v2")
+                        or cve_data.get("cvss")
+                        or 0.0
+                    )
+                    epss = cve_data.get("epss") or 0.0
+                    is_kev = cve_data.get("kev", cve_id in kev_set)
+                    ransomware = cve_data.get("ransomware_campaign") or ""
+                    propose_action = cve_data.get("propose_action") or ""
+                    summary = cve_data.get("summary") or ""
+
+                    exploit_refs_list = []
+                    for ref_url in cve_data.get("references", []):
+                        if ref_url and "exploit-db.com" in ref_url:
+                            exploit_refs_list.append(
+                                {
+                                    "url": ref_url,
+                                    "title": "ExploitDB: "
+                                    + ref_url.split("/")[-1],
+                                }
+                            )
+                    exploit_available = is_kev or bool(exploit_refs_list)
+
+                    VulnIntelligence.objects.create(
+                        device=device,
+                        cve_id=cve_id,
+                        cvss_score=cvss or 0.0,
+                        epss_score=epss,
+                        epss_percentile=cve_data.get("ranking_epss") or 0.0,
+                        kev_listed=is_kev,
+                        exploit_available=exploit_available,
+                        exploit_refs=json.dumps(exploit_refs_list) if exploit_refs_list else "",
+                        description=summary[:2000],
+                        propose_action=propose_action[:1000],
+                        ransomware_campaign=ransomware[:300],
+                        source="cvedb",
+                    )
+                    discovered += 1
+        except Exception as exc:
+            logger.warning("CVEDB CPE lookup error for %s: %s", cpe, exc)
+
+    logger.info(
+        "CVEDB enrich complete for %s: enriched=%d, discovered=%d, exploits_found=%d",
+        device.ip,
+        enriched,
+        discovered,
+        exploit_refs_found,
+    )
+    return {
+        "status": "ok",
+        "enriched": enriched,
+        "discovered": discovered,
+        "exploit_refs_found": exploit_refs_found,
+    }
+
+
 def _fetch_epss_scores(cve_ids):
     """Fetch EPSS scores from the FIRST.org EPSS API.
 

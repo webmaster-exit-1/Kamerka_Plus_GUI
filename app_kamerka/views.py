@@ -63,6 +63,7 @@ from kamerka.tasks import (
     capture_screenshot,
     coordinates_queries,
     nrich_lookup,
+    cvedb_enrich,
 )
 
 _views_logger = logging.getLogger(__name__)
@@ -1345,6 +1346,19 @@ def nrich_scan_view(request, id):
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
 
 
+def cvedb_enrich_view(request, id):
+    """Trigger Shodan CVEDB enrichment via Celery."""
+    if (
+        request.method == "GET"
+        and request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    ):
+        task = cvedb_enrich.delay(device_id=id)
+        return HttpResponse(
+            json.dumps({"task_id": task.id}), content_type="application/json"
+        )
+    return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
+
+
 def get_vuln_intel(request, id):
     """Return vulnerability intelligence data for a device."""
     if (
@@ -1365,6 +1379,8 @@ def get_vuln_intel(request, id):
                     "kev_listed": v.kev_listed,
                     "exploit_available": v.exploit_available,
                     "description": v.description[:300],
+                    "ransomware_campaign": v.ransomware_campaign,
+                    "propose_action": v.propose_action[:200] if v.propose_action else "",
                 }
             )
         return HttpResponse(json.dumps(data), content_type="application/json")
