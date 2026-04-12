@@ -2016,23 +2016,53 @@ $('#strend_btn').on('click', function() {
 
 function renderStrendChart(result) {
     var matches = result.matches || [];
+    var $chart = $('#strend_chart');
     if (!matches.length) {
-        $('#strend_chart').html('<p style="color:#888;">No historical data returned.</p>').show();
+        $chart.empty().append(
+            $('<p>', {
+                text: 'No historical data returned.',
+                style: 'color:#888;'
+            })
+        ).show();
         return;
     }
     var maxCount = Math.max.apply(null, matches.map(function(m){ return m.count; }));
-    var html = '<div style="margin-bottom:6px;color:#888;font-size:0.85em;">Query: <code style="color:#00e1ff;">' + (result.query||'') + '</code> &nbsp; Total indexed: <b style="color:#00e1ff;">' + (result.total||0).toLocaleString() + '</b></div>';
-    html += '<div style="display:flex;align-items:flex-end;gap:2px;height:80px;overflow-x:auto;padding-bottom:4px;">';
+    var $summary = $('<div>', {
+        style: 'margin-bottom:6px;color:#888;font-size:0.85em;'
+    });
+    $summary.append(document.createTextNode('Query: '));
+    $summary.append($('<code>', {
+        text: result.query || '',
+        style: 'color:#00e1ff;'
+    }));
+    $summary.append(document.createTextNode(' \u00a0 Total indexed: '));
+    $summary.append($('<b>', {
+        text: (result.total || 0).toLocaleString(),
+        style: 'color:#00e1ff;'
+    }));
+
+    var $bars = $('<div>', {
+        style: 'display:flex;align-items:flex-end;gap:2px;height:80px;overflow-x:auto;padding-bottom:4px;'
+    });
+
     matches.forEach(function(m) {
         var pct = maxCount > 0 ? Math.round((m.count / maxCount) * 100) : 0;
         var color = pct > 75 ? '#ff2050' : pct > 40 ? '#ffe600' : '#00e1ff';
-        html += '<div style="display:flex;flex-direction:column;align-items:center;min-width:28px;" title="' + m.month + ': ' + m.count.toLocaleString() + '">';
-        html += '<div style="background:' + color + ';width:20px;height:' + pct + '%;min-height:2px;border-radius:2px 2px 0 0;"></div>';
-        html += '<span style="color:#555;font-size:0.6em;transform:rotate(-45deg);transform-origin:top left;margin-top:4px;white-space:nowrap;">' + m.month.slice(2) + '</span>';
-        html += '</div>';
+        var $column = $('<div>', {
+            style: 'display:flex;flex-direction:column;align-items:center;min-width:28px;'
+        }).attr('title', m.month + ': ' + m.count.toLocaleString());
+
+        $column.append($('<div>', {
+            style: 'background:' + color + ';width:20px;height:' + pct + '%;min-height:2px;border-radius:2px 2px 0 0;'
+        }));
+        $column.append($('<span>', {
+            text: m.month.slice(2),
+            style: 'color:#555;font-size:0.6em;transform:rotate(-45deg);transform-origin:top left;margin-top:4px;white-space:nowrap;'
+        }));
+        $bars.append($column);
     });
-    html += '</div>';
-    $('#strend_chart').html(html).show();
+
+    $chart.empty().append($summary, $bars).show();
 }
 
 $('#msf_generate_btn').on('click', function() {
