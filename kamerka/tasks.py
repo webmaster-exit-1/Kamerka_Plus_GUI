@@ -1739,6 +1739,8 @@ NSE_SCRIPT_CATALOG = {
     "ATG Info (Tank Gauge)": "nmap_scripts/atg-info.nse",
     "Modicon Info": "nmap_scripts/modicon-info.nse",
     "BACnet Info": "nmap_scripts/bacnet-info.nse",
+    # System script — uses Shodan API key (free host lookup, no credits consumed)
+    "Shodan API Lookup": "shodan-api",
 }
 
 
@@ -1773,7 +1775,17 @@ def nmap_device_scan(self, device_id, nse_script=None):
         port_spec = "21,22,23,80,102,443,502,1911,4911,8080,9600,20000,44818,47808"
 
     # Build Nmap options
-    if nse_script:
+    if nse_script == "shodan-api":
+        # System NSE script — injects SHODAN_API_KEY server-side (never exposed
+        # to the browser).  Host lookups via shodan-api.nse are free and do NOT
+        # consume any of the 100 monthly query credits.
+        shodan_key = _get_env_key("SHODAN_API_KEY")
+        if not shodan_key:
+            return {"Error": "SHODAN_API_KEY is not configured — set it in your environment"}
+        options = "-p {} --script shodan-api --script-args shodan-api.apikey={} -Pn".format(
+            port_spec, shodan_key
+        )
+    elif nse_script:
         # Security: validate path stays within nmap_scripts/
         safe_base = os.path.realpath(os.path.join(settings.BASE_DIR, "nmap_scripts"))
         script_abs = os.path.realpath(os.path.join(settings.BASE_DIR, nse_script))
@@ -3262,6 +3274,18 @@ def nrich_lookup(device_id):
 
 CVEDB_BASE = "https://cvedb.shodan.io"
 
+# Authoritative hostname check — prevents "evil.com/exploit-db.com/…" bypass.
+_EXPLOITDB_HOSTNAMES = {"exploit-db.com", "www.exploit-db.com"}
+
+
+def _is_exploitdb_url(url):
+    """Return True only when *url*'s hostname is exactly exploit-db.com."""
+    try:
+        host = urllib.parse.urlparse(url).hostname or ""
+        return host in _EXPLOITDB_HOSTNAMES
+    except Exception:
+        return False
+
 
 @shared_task(bind=False)
 def cvedb_enrich(device_id):
@@ -3332,7 +3356,7 @@ def cvedb_enrich(device_id):
         for ref_url in data.get("references", []):
             if not ref_url:
                 continue
-            if "exploit-db.com" in ref_url:
+            if _is_exploitdb_url(ref_url):
                 if not any(r.get("url") == ref_url for r in exploit_refs_list):
                     exploit_refs_list.append(
                         {
@@ -3397,7 +3421,7 @@ def cvedb_enrich(device_id):
 
                     exploit_refs_list = []
                     for ref_url in cve_data.get("references", []):
-                        if ref_url and "exploit-db.com" in ref_url:
+                        if ref_url and _is_exploitdb_url(ref_url):
                             exploit_refs_list.append(
                                 {
                                     "url": ref_url,
@@ -3527,7 +3551,7 @@ def shodan_intel_scan(self, device_id):
     for idx, vi in enumerate(existing):
         if not vi.cve_id:
             continue
-        pct = 5 + int((idx / max(total_cves, 1)) * 4)  # 5–9 out of 10
+        pct = 5 + int((idx / max(total_cves, 1)) * 4)  # steps 5–9 of 10 (50–90 %)
         progress_recorder.set_progress(
             pct, 10,
             description="CVEDB: enriching {} ({}/{})…".format(vi.cve_id, idx + 1, total_cves),
@@ -3559,7 +3583,7 @@ def shodan_intel_scan(self, device_id):
                 pass
 
         for ref_url in data.get("references", []):
-            if ref_url and "exploit-db.com" in ref_url:
+            if ref_url and _is_exploitdb_url(ref_url):
                 if not any(r.get("url") == ref_url for r in exploit_refs_list):
                     exploit_refs_list.append({
                         "url": ref_url,
@@ -3598,7 +3622,7 @@ def shodan_intel_scan(self, device_id):
                     cvss = cve_data.get("cvss_v3") or cve_data.get("cvss_v2") or cve_data.get("cvss") or 0.0
                     exploit_refs_list = [
                         {"url": r, "title": "ExploitDB: " + r.split("/")[-1]}
-                        for r in cve_data.get("references", []) if r and "exploit-db.com" in r
+                        for r in cve_data.get("references", []) if r and _is_exploitdb_url(r)
                     ]
                     VulnIntelligence.objects.create(
                         device=device,
@@ -3632,6 +3656,58 @@ def shodan_intel_scan(self, device_id):
         "ports": nrich_ports,
         "cpes": nrich_cpes,
     }
+
+
+@shared_task(bind=True)
+def shodan_trends_task(self, device_id):
+    """Query the Shodan Trends API for historical device-count data.
+
+    ⚠️  Costs 1 Shodan query credit per call.
+    Requires a paid Shodan plan (Freelancer or above).
+    The query is auto-built from the device's product or type.
+    Returns up to 24 months of monthly host counts.
+    """
+    progress_recorder = ProgressRecorder(self)
+    progress_recorder.set_progress(0, 2, description="Querying Shodan Trends…")
+
+    SHODAN_API_KEY = _get_env_key("SHODAN_API_KEY")
+    if not SHODAN_API_KEY:
+        return {"error": "SHODAN_API_KEY is not configured"}
+
+    device = Device.objects.get(id=device_id)
+
+    if device.product:
+        safe_product = re.sub(r'["\\\n\r]', '', device.product)
+        query = 'product:"{}"'.format(safe_product)
+    elif device.type:
+        query = re.sub(r'["\\\n\r]', '', device.type)
+    else:
+        return {"error": "Device has no product or type — cannot build a Trends query"}
+
+    try:
+        resp = requests.get(
+            "https://trends.shodan.io/api/v1/search",
+            params={"query": query, "key": SHODAN_API_KEY},
+            timeout=20,
+        )
+        if resp.status_code == 402:
+            return {"error": "Shodan Trends requires a paid membership (Freelancer or above)"}
+        if resp.status_code == 401:
+            return {"error": "Invalid Shodan API key"}
+        if resp.status_code != 200:
+            return {"error": "Shodan Trends API returned HTTP {}".format(resp.status_code)}
+        data = resp.json()
+        matches = data.get("matches", [])
+        progress_recorder.set_progress(2, 2, description="Trends data received")
+        return {
+            "status": "ok",
+            "query": query,
+            "total": data.get("total", 0),
+            "matches": matches[-24:],  # last 24 months
+        }
+    except Exception as exc:
+        logger.warning("shodan_trends_task error for %s: %s", device.ip, exc)
+        return {"error": str(exc)}
 
 
 def _fetch_epss_scores(cve_ids):

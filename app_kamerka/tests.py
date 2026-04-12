@@ -1903,3 +1903,132 @@ class InfraFormEmptyItemsCheckTest(TestCase):
         else:
             mock_task.delay.assert_called_once()
 
+
+
+# ---------------------------------------------------------------------------
+# MSF resource script view
+# ---------------------------------------------------------------------------
+class MsfResourceViewTest(TestCase):
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    def test_returns_script_for_ajax(self):
+        response = self.client.get(
+            "/{}/msf/resource".format(self.device.id),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertIn("script", data)
+        self.assertIn(self.device.ip, data["script"])
+        self.assertIn("shodan_host", data["script"])
+
+    def test_includes_cve_module_when_vuln_present(self):
+        from app_kamerka.models import VulnIntelligence
+        VulnIntelligence.objects.create(
+            device=self.device, cve_id="CVE-2021-44228", cvss_score=10.0,
+        )
+        response = self.client.get(
+            "/{}/msf/resource".format(self.device.id),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        data = json.loads(response.content)
+        self.assertIn("log4shell", data["script"])
+
+    def test_non_ajax_returns_null_script(self):
+        response = self.client.get("/{}/msf/resource".format(self.device.id))
+        data = json.loads(response.content)
+        self.assertIsNone(data["script"])
+
+
+# ---------------------------------------------------------------------------
+# Recon-ng script view
+# ---------------------------------------------------------------------------
+class ReconNgScriptViewTest(TestCase):
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    def test_returns_script_for_ajax(self):
+        response = self.client.get(
+            "/{}/recon-ng/script".format(self.device.id),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertIn("script", data)
+        self.assertIn(self.device.ip, data["script"])
+        self.assertIn("shodan_ip", data["script"])
+        self.assertIn("shodan_net", data["script"])
+
+    def test_non_ajax_returns_null_script(self):
+        response = self.client.get("/{}/recon-ng/script".format(self.device.id))
+        data = json.loads(response.content)
+        self.assertIsNone(data["script"])
+
+
+# ---------------------------------------------------------------------------
+# Shodan Trends view
+# ---------------------------------------------------------------------------
+class ShodanTrendsViewTest(TestCase):
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    def test_returns_task_id(self):
+        with patch("app_kamerka.views.shodan_trends_task") as mock_task:
+            mock_task.delay.return_value = MagicMock(id="fake-trends-id")
+            response = self.client.get(
+                "/{}/shodan/trends".format(self.device.id),
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["task_id"], "fake-trends-id")
+
+    def test_non_ajax_returns_null(self):
+        response = self.client.get("/{}/shodan/trends".format(self.device.id))
+        data = json.loads(response.content)
+        self.assertIsNone(data["task_id"])
+
+
+# ---------------------------------------------------------------------------
+# Shodan Credits view
+# ---------------------------------------------------------------------------
+class ShodanCreditsViewTest(TestCase):
+    def test_returns_credits_when_key_set(self):
+        with patch.dict("os.environ", {"SHODAN_API_KEY": "testkey"}), \
+             patch("app_kamerka.views._ShodanAPI") as MockShodan:
+            MockShodan.return_value.info.return_value = {
+                "query_credits": 95, "scan_credits": 0, "plan": "oss"
+            }
+            response = self.client.get(
+                "/shodan/credits",
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["query_credits"], 95)
+
+    def test_non_ajax_returns_error(self):
+        response = self.client.get("/shodan/credits")
+        data = json.loads(response.content)
+        self.assertIn("error", data)
+
+
+# ---------------------------------------------------------------------------
+# Shodan NSE catalog entry
+# ---------------------------------------------------------------------------
+class ShodanNseCatalogTest(TestCase):
+    def test_shodan_api_in_nse_catalog(self):
+        from kamerka.tasks import NSE_SCRIPT_CATALOG
+        self.assertIn("Shodan API Lookup", NSE_SCRIPT_CATALOG)
+        self.assertEqual(NSE_SCRIPT_CATALOG["Shodan API Lookup"], "shodan-api")
+
+    def test_shodan_api_rendered_in_dropdown(self):
+        search = _make_search()
+        device = _make_device(search)
+        url = "/results/{}/{}/{}".format(search.id, device.id, device.ip)
+        response = self.client.get(url)
+        self.assertIn(b"Shodan API Lookup", response.content)

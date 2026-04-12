@@ -588,6 +588,71 @@
                         </div>
                                         </div>
 
+<!-- METASPLOIT RESOURCE SCRIPT + RECON-NG -->
+<div class="row" style="margin-top:16px;">
+    <div class="col-md-6">
+        <div class="panel panel-default">
+            <div class="panel-heading ui-draggable-handle">
+                <div class="panel-title-box">
+                    <h3>&#128027; Metasploit</h3>
+                </div>
+            </div>
+            <div class="panel-body padding-2">
+                <br>
+                <p style="color:#888;font-size:0.85em;margin-bottom:10px;">
+                    Generate a ready-to-run Metasploit resource script (<code>.rc</code>) pre-loaded with
+                    <code>shodan_host</code>, <code>shodan_search</code>, and CVE-matched exploit modules for <b style="color:#00e1ff;">{{ device.ip }}</b>.
+                    <br><span style="color:#ffe600;">shodan_search uses 1 query credit.</span>
+                </p>
+                <div style="margin-bottom:10px;">
+                    <button type="button" id="msf_generate_btn" class="btn btn-primary active" style="background:#ff2050;border-color:#ff2050;color:#fff;font-weight:bold;">
+                        &#9889; Generate MSF Script
+                    </button>
+                    <button type="button" id="msf_copy_btn" class="btn btn-default" style="display:none;margin-left:6px;">
+                        &#128203; Copy
+                    </button>
+                    <button type="button" id="msf_download_btn" class="btn btn-default" style="display:none;margin-left:4px;">
+                        &#11015; Download .rc
+                    </button>
+                </div>
+                <textarea id="msf_script_output" style="display:none;width:100%;min-height:260px;background:#0a0a1a;color:#00ff88;border:1px solid #0064d7;border-radius:4px;font-family:'Share Tech Mono',monospace;font-size:0.8em;padding:10px;" readonly></textarea>
+                <p style="color:#555;font-size:0.8em;margin-top:6px;">Usage: <code>msfconsole -r kamerka_{{ device.ip }}.rc</code></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- RECON-NG SCRIPT -->
+    <div class="col-md-6">
+        <div class="panel panel-default">
+            <div class="panel-heading ui-draggable-handle">
+                <div class="panel-title-box">
+                    <h3>&#128269; Recon-ng</h3>
+                </div>
+            </div>
+            <div class="panel-body padding-2">
+                <br>
+                <p style="color:#888;font-size:0.85em;margin-bottom:10px;">
+                    Generate a Recon-ng script pre-configured with Shodan modules for host, netblock, domain, and org reconnaissance against <b style="color:#00e1ff;">{{ device.ip }}</b>.
+                    <br><span style="color:#00ff88;">All host lookups are free (no credits consumed).</span>
+                </p>
+                <div style="margin-bottom:10px;">
+                    <button type="button" id="recon_generate_btn" class="btn btn-primary active" style="background:#00e1ff;border-color:#00e1ff;color:#000;font-weight:bold;">
+                        &#9889; Generate Recon-ng Script
+                    </button>
+                    <button type="button" id="recon_copy_btn" class="btn btn-default" style="display:none;margin-left:6px;">
+                        &#128203; Copy
+                    </button>
+                    <button type="button" id="recon_download_btn" class="btn btn-default" style="display:none;margin-left:4px;">
+                        &#11015; Download .rng
+                    </button>
+                </div>
+                <textarea id="recon_script_output" style="display:none;width:100%;min-height:260px;background:#0a0a1a;color:#00e1ff;border:1px solid #0064d7;border-radius:4px;font-family:'Share Tech Mono',monospace;font-size:0.8em;padding:10px;" readonly></textarea>
+                <p style="color:#555;font-size:0.8em;margin-top:6px;">Usage: <code>recon-ng -r kamerka_{{ device.ip }}.rng</code></p>
+            </div>
+        </div>
+    </div>
+</div>
+
 </div><!-- end tab11 -->
 <!-- ═══════════════════════════════════════════════════════════════════ -->
 <!-- HARDWARE & PROTOCOL TAB                                           -->
@@ -676,6 +741,12 @@
                 <h3 class="panel-title">&#9888; Risk & Vulnerability Intelligence</h3>
             </div>
             <div class="panel-body">
+                <!-- Shodan credit balance (auto-fetched, free API call) -->
+                <div style="float:right;font-size:0.8em;color:#888;margin-bottom:4px;">
+                    Shodan: <span id="shodan_credits_badge" style="display:none;color:#00e1ff;font-weight:bold;"></span>
+                    <span id="shodan_credits_loading" style="color:#555;">loading credits…</span>
+                </div>
+                <div style="clear:both;"></div>
                 <!-- NVD LOOKUP BUTTON -->
                 <div style="margin-bottom:12px;">
                     <button type="button" id="shodan_intel_btn" class="btn btn-primary active" style="background:linear-gradient(90deg,#00e1ff,#b300ff);border:none;color:#fff;font-weight:bold;font-size:1.05em;padding:8px 18px;" title="Run the full Shodan pipeline: InternetDB (nrich) → CVEDB enrichment in one shot. No API key required.">
@@ -763,6 +834,19 @@
                     </button>
                     <progress id="progress-bar-exploitdb" value="0" max="100" style="display:none; margin-left:8px;"></progress>
                     <div id="exploitdb_results" style="display:none;margin-top:10px;"></div>
+                </div>
+                <!-- SHODAN TRENDS -->
+                <div style="border-top:1px solid #0064d7;margin-top:18px;padding-top:14px;">
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                        <h4 style="margin:0;color:#00e1ff;">&#128200; Shodan Trends</h4>
+                        <button type="button" id="strend_btn" class="btn btn-sm btn-default" style="background:#ffe600;border-color:#ffe600;color:#000;font-weight:bold;" title="Query Shodan Trends API — shows how many devices matching this product have been online each month. ⚠️ Costs 1 Shodan query credit.">
+                            &#9888; Fetch Trends (1 credit)
+                        </button>
+                        <progress id="progress-bar-strend" value="0" max="100" style="display:none;width:100px;"></progress>
+                    </div>
+                    <p style="color:#888;font-size:0.85em;margin-bottom:8px;">Shows monthly host counts for <code style="color:#00e1ff;">{{ device.product|default:device.type }}</code> from the Shodan historical database. <b style="color:#ffe600;">Uses 1 query credit</b> of your monthly allowance.</p>
+                    <div id="strend_chart" style="display:none;"></div>
+                    <div id="strend_error" style="display:none;color:#ff2050;font-size:0.9em;"></div>
                 </div>
                 {% else %}
                 <p style="color:#888;">No vulnerability intelligence yet. Click <b>Fetch CVE Intelligence</b> to query NVD/EPSS/KEV.</p>
@@ -1871,6 +1955,183 @@ $('#manual_nmap_btn').on('click', function(){
             noty({text: "Manual Nmap request failed", layout: 'topRight', type: 'error', timeout: 4000});
         }
     });
+    return false;
+});
+
+// Auto-fetch Shodan credit balance on page load
+$.ajax({
+    type: "GET",
+    url: "/shodan/credits",
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    success: function(data) {
+        $('#shodan_credits_loading').hide();
+        if (data.query_credits !== undefined) {
+            $('#shodan_credits_badge')
+                .text(data.plan + ' — ' + data.query_credits + ' query credits remaining')
+                .show();
+        }
+    },
+    error: function() { $('#shodan_credits_loading').hide(); }
+});
+
+$('#strend_btn').on('click', function() {
+    var confirmed = confirm('Fetching Shodan Trends will use 1 query credit from your monthly allowance.\n\nContinue?');
+    if (!confirmed) return false;
+    var pgrbar = $('#progress-bar-strend');
+    var $btn = $(this);
+    $btn.prop('disabled', true);
+    $('#strend_error').hide();
+    $.ajax({
+        type: "GET",
+        url: "/{{device.id}}/shodan/trends",
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        success: function(data) {
+            if (data.task_id) {
+                pgrbar.css('display', 'inline-block');
+                get_task_info(data.task_id, pgrbar, 0, function(result) {
+                    $btn.prop('disabled', false);
+                    pgrbar.hide();
+                    if (result && result.error) {
+                        $('#strend_error').text(result.error).show();
+                    } else if (result && result.matches) {
+                        renderStrendChart(result);
+                        $.ajax({ type:"GET", url:"/shodan/credits", headers:{'X-Requested-With':'XMLHttpRequest'},
+                            success: function(d) {
+                                if (d.query_credits !== undefined)
+                                    $('#shodan_credits_badge').text(d.plan + ' — ' + d.query_credits + ' query credits remaining');
+                            }
+                        });
+                    }
+                });
+                noty({text: 'Fetching Shodan Trends (costs 1 credit)…', layout: 'topRight', type: 'information', timeout: 3000});
+            }
+        },
+        error: function() {
+            $btn.prop('disabled', false);
+            noty({text: 'Shodan Trends request failed', layout: 'topRight', type: 'error', timeout: 4000});
+        }
+    });
+    return false;
+});
+
+function renderStrendChart(result) {
+    var matches = result.matches || [];
+    if (!matches.length) {
+        $('#strend_chart').html('<p style="color:#888;">No historical data returned.</p>').show();
+        return;
+    }
+    var maxCount = Math.max.apply(null, matches.map(function(m){ return m.count; }));
+    var html = '<div style="margin-bottom:6px;color:#888;font-size:0.85em;">Query: <code style="color:#00e1ff;">' + (result.query||'') + '</code> &nbsp; Total indexed: <b style="color:#00e1ff;">' + (result.total||0).toLocaleString() + '</b></div>';
+    html += '<div style="display:flex;align-items:flex-end;gap:2px;height:80px;overflow-x:auto;padding-bottom:4px;">';
+    matches.forEach(function(m) {
+        var pct = maxCount > 0 ? Math.round((m.count / maxCount) * 100) : 0;
+        var color = pct > 75 ? '#ff2050' : pct > 40 ? '#ffe600' : '#00e1ff';
+        html += '<div style="display:flex;flex-direction:column;align-items:center;min-width:28px;" title="' + m.month + ': ' + m.count.toLocaleString() + '">';
+        html += '<div style="background:' + color + ';width:20px;height:' + pct + '%;min-height:2px;border-radius:2px 2px 0 0;"></div>';
+        html += '<span style="color:#555;font-size:0.6em;transform:rotate(-45deg);transform-origin:top left;margin-top:4px;white-space:nowrap;">' + m.month.slice(2) + '</span>';
+        html += '</div>';
+    });
+    html += '</div>';
+    $('#strend_chart').html(html).show();
+}
+
+$('#msf_generate_btn').on('click', function() {
+    var $btn = $(this);
+    $btn.prop('disabled', true).text('Generating…');
+    $.ajax({
+        type: "GET",
+        url: "/{{device.id}}/msf/resource",
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        success: function(data) {
+            $btn.prop('disabled', false).html('&#9889; Generate MSF Script');
+            if (data.script) {
+                $('#msf_script_output').val(data.script).show();
+                $('#msf_copy_btn, #msf_download_btn').show();
+                noty({text: 'MSF resource script ready', layout: 'topRight', type: 'success', timeout: 2000});
+            }
+        },
+        error: function() {
+            $btn.prop('disabled', false).html('&#9889; Generate MSF Script');
+            noty({text: 'MSF script generation failed', layout: 'topRight', type: 'error', timeout: 3000});
+        }
+    });
+    return false;
+});
+
+$('#msf_copy_btn').on('click', function() {
+    var text = $('#msf_script_output').val();
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(function() {
+            noty({text: 'Copied to clipboard', layout: 'topRight', type: 'success', timeout: 1500});
+        });
+    } else {
+        $('#msf_script_output').select();
+        document.execCommand('copy');
+        noty({text: 'Copied', layout: 'topRight', type: 'success', timeout: 1500});
+    }
+    return false;
+});
+
+$('#msf_download_btn').on('click', function() {
+    var text = $('#msf_script_output').val();
+    var ip_safe = '{{device.ip}}'.replace(/\./g, '_');
+    var blob = new Blob([text], {type: 'text/plain'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'kamerka_' + ip_safe + '.rc';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    return false;
+});
+
+$('#recon_generate_btn').on('click', function() {
+    var $btn = $(this);
+    $btn.prop('disabled', true).text('Generating…');
+    $.ajax({
+        type: "GET",
+        url: "/{{device.id}}/recon-ng/script",
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        success: function(data) {
+            $btn.prop('disabled', false).html('&#9889; Generate Recon-ng Script');
+            if (data.script) {
+                $('#recon_script_output').val(data.script).show();
+                $('#recon_copy_btn, #recon_download_btn').show();
+                noty({text: 'Recon-ng script ready', layout: 'topRight', type: 'success', timeout: 2000});
+            }
+        },
+        error: function() {
+            $btn.prop('disabled', false).html('&#9889; Generate Recon-ng Script');
+            noty({text: 'Recon-ng script generation failed', layout: 'topRight', type: 'error', timeout: 3000});
+        }
+    });
+    return false;
+});
+
+$('#recon_copy_btn').on('click', function() {
+    var text = $('#recon_script_output').val();
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(function() {
+            noty({text: 'Copied to clipboard', layout: 'topRight', type: 'success', timeout: 1500});
+        });
+    } else {
+        $('#recon_script_output').select();
+        document.execCommand('copy');
+        noty({text: 'Copied', layout: 'topRight', type: 'success', timeout: 1500});
+    }
+    return false;
+});
+
+$('#recon_download_btn').on('click', function() {
+    var text = $('#recon_script_output').val();
+    var ip_safe = '{{device.ip}}'.replace(/\./g, '_');
+    var blob = new Blob([text], {type: 'text/plain'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'kamerka_' + ip_safe + '.rng';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     return false;
 });
 

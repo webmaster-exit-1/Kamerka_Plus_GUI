@@ -101,4 +101,11 @@ urlpatterns = [
         views.globe_devices_epss_json,
         name="globe_devices_epss_json",
     ),
+    # Metasploit & Recon-ng script generation
+    path("<id>/msf/resource",    views.msf_resource_view,    name="msf_resource"),
+    path("<id>/recon-ng/script", views.recon_ng_script_view, name="recon_ng_script"),
+    # Shodan Trends
+    path("<id>/shodan/trends",   views.shodan_trends_view,   name="shodan_trends"),
+    # Shodan Credits
+    path("shodan/credits",       views.shodan_credits_view,  name="shodan_credits"),
 ]
