@@ -913,6 +913,202 @@ class HoneypotCheckTest(TestCase):
 
 
 # ---------------------------------------------------------------------------
+# nrich / InternetDB task
+# ---------------------------------------------------------------------------
+class NrichLookupTaskTest(TestCase):
+    """nrich_lookup must handle InternetDB responses and network errors."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search, ip="1.2.3.4")
+
+    def test_stores_cves_from_internetdb(self):
+        from kamerka.tasks import nrich_lookup
+        from app_kamerka.models import VulnIntelligence
+        from unittest.mock import patch, MagicMock
+        fake_resp = MagicMock()
+        fake_resp.status_code = 200
+        fake_resp.json.return_value = {
+            "ip": "1.2.3.4",
+            "ports": [80, 443],
+            "vulns": ["CVE-2021-44228", "CVE-2022-22965"],
+            "cpes": ["cpe:/a:apache:log4j:2.14.1"],
+            "hostnames": [],
+            "tags": [],
+        }
+        with patch("kamerka.tasks.requests.get", return_value=fake_resp), \
+             patch("kamerka.tasks._fetch_epss_scores", return_value={}), \
+             patch("kamerka.tasks._fetch_kev_list", return_value={"CVE-2021-44228"}):
+            result = nrich_lookup(self.device.id)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["cve_count"], 2)
+        records = VulnIntelligence.objects.filter(device=self.device)
+        self.assertEqual(records.count(), 2)
+        cve_ids = set(records.values_list("cve_id", flat=True))
+        self.assertIn("CVE-2021-44228", cve_ids)
+        self.assertIn("CVE-2022-22965", cve_ids)
+        kev_record = records.get(cve_id="CVE-2021-44228")
+        self.assertTrue(kev_record.kev_listed)
+        self.assertEqual(kev_record.source, "nrich")
+
+    def test_returns_not_found_on_404(self):
+        from kamerka.tasks import nrich_lookup
+        from unittest.mock import patch, MagicMock
+        fake_resp = MagicMock()
+        fake_resp.status_code = 404
+        with patch("kamerka.tasks.requests.get", return_value=fake_resp):
+            result = nrich_lookup(self.device.id)
+        self.assertEqual(result["status"], "not_found")
+
+    def test_returns_no_cves_when_empty(self):
+        from kamerka.tasks import nrich_lookup
+        from unittest.mock import patch, MagicMock
+        fake_resp = MagicMock()
+        fake_resp.status_code = 200
+        fake_resp.json.return_value = {"ip": "1.2.3.4", "ports": [22], "vulns": [],
+                                        "cpes": [], "hostnames": [], "tags": []}
+        with patch("kamerka.tasks.requests.get", return_value=fake_resp):
+            result = nrich_lookup(self.device.id)
+        self.assertEqual(result["status"], "no_cves")
+
+    def test_handles_network_error_gracefully(self):
+        from kamerka.tasks import nrich_lookup
+        from unittest.mock import patch
+        with patch("kamerka.tasks.requests.get", side_effect=Exception("timeout")):
+            result = nrich_lookup(self.device.id)
+        self.assertIn("error", result)
+
+
+# ---------------------------------------------------------------------------
+# CVEDB enrich task
+# ---------------------------------------------------------------------------
+class CvedbEnrichTaskTest(TestCase):
+    """cvedb_enrich must enrich existing VulnIntelligence records."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search, ip="5.6.7.8")
+
+    def test_enriches_existing_records(self):
+        from app_kamerka.models import VulnIntelligence
+        from kamerka.tasks import cvedb_enrich
+        VulnIntelligence.objects.create(
+            device=self.device, cve_id="CVE-2021-44228",
+            cvss_score=0.0, source="nrich",
+        )
+        fake_resp = MagicMock()
+        fake_resp.status_code = 200
+        fake_resp.json.return_value = {
+            "cve_id": "CVE-2021-44228",
+            "summary": "Log4Shell RCE",
+            "cvss_v3": 10.0,
+            "cvss_v2": None,
+            "cvss": None,
+            "epss": 0.97,
+            "ranking_epss": 0.999,
+            "kev": True,
+            "propose_action": "Update log4j to 2.17.1+",
+            "ransomware_campaign": "Conti",
+            "references": ["https://www.exploit-db.com/exploits/50592"],
+            "cpes": [],
+        }
+        with patch("kamerka.tasks.requests.get", return_value=fake_resp), \
+             patch("kamerka.tasks._fetch_kev_list", return_value={"CVE-2021-44228"}):
+            result = cvedb_enrich(self.device.id)
+        self.assertEqual(result["enriched"], 1)
+        self.assertEqual(result["exploit_refs_found"], 1)
+        vi = VulnIntelligence.objects.get(device=self.device, cve_id="CVE-2021-44228")
+        self.assertAlmostEqual(vi.cvss_score, 10.0)
+        self.assertTrue(vi.kev_listed)
+        self.assertTrue(vi.exploit_available)
+        self.assertEqual(vi.propose_action, "Update log4j to 2.17.1+")
+        self.assertEqual(vi.ransomware_campaign, "Conti")
+
+    def test_returns_ok_with_no_existing_records(self):
+        from kamerka.tasks import cvedb_enrich
+        result = cvedb_enrich(self.device.id)
+        self.assertEqual(result["enriched"], 0)
+        self.assertEqual(result["discovered"], 0)
+
+
+# ---------------------------------------------------------------------------
+# Shodan Intel view
+# ---------------------------------------------------------------------------
+class ShodanIntelViewTest(TestCase):
+    """shodan_intel_view must dispatch the combined task."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    def test_returns_task_id(self):
+        with patch("app_kamerka.views.shodan_intel_scan") as mock_task:
+            mock_task.delay.return_value = MagicMock(id="fake-intel-task")
+            response = self.client.get(
+                "/{}/shodan/intel".format(self.device.id),
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["task_id"], "fake-intel-task")
+
+    def test_non_ajax_returns_null_task(self):
+        response = self.client.get("/{}/shodan/intel".format(self.device.id))
+        data = json.loads(response.content)
+        self.assertIsNone(data["task_id"])
+
+
+# ---------------------------------------------------------------------------
+# CVEDB enrich view
+# ---------------------------------------------------------------------------
+class CvedbEnrichViewTest(TestCase):
+    """cvedb_enrich_view must dispatch the CVEDB enrichment task."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    def test_returns_task_id(self):
+        with patch("app_kamerka.views.cvedb_enrich") as mock_task:
+            mock_task.delay.return_value = MagicMock(id="fake-cvedb-task")
+            response = self.client.get(
+                "/{}/cvedb/enrich".format(self.device.id),
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["task_id"], "fake-cvedb-task")
+
+
+# ---------------------------------------------------------------------------
+# Shodan Intel button rendered in Risk tab
+# ---------------------------------------------------------------------------
+class ShodanIntelButtonRenderTest(TestCase):
+    """device.html must render the Shodan Intel button in the Risk tab."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    def test_shodan_intel_button_present(self):
+        url = "/results/{}/{}/{}".format(
+            self.search.id, self.device.id, self.device.ip
+        )
+        response = self.client.get(url)
+        body = response.content.decode()
+        self.assertIn('id="shodan_intel_btn"', body)
+
+    def test_individual_buttons_present(self):
+        url = "/results/{}/{}/{}".format(
+            self.search.id, self.device.id, self.device.ip
+        )
+        response = self.client.get(url)
+        body = response.content.decode()
+        self.assertIn('id="nrich_scan_btn"', body)
+        self.assertIn('id="cvedb_enrich_btn"', body)
+
+
+# ---------------------------------------------------------------------------
 # SBOM Lookup
 # ---------------------------------------------------------------------------
 class SBOMLookupTest(TestCase):
@@ -995,6 +1191,30 @@ class NVDScanViewTest(TestCase):
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.content)
         self.assertEqual(data["task_id"], "fake-nvd-task")
+
+
+class NrichScanViewTest(TestCase):
+    """nrich_scan_view must trigger Shodan InternetDB CVE lookup."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    def test_returns_task_id(self):
+        with patch("app_kamerka.views.nrich_lookup") as mock_task:
+            mock_task.delay.return_value = MagicMock(id="fake-nrich-task")
+            response = self.client.get(
+                "/{}/nrich/scan".format(self.device.id),
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["task_id"], "fake-nrich-task")
+
+    def test_non_ajax_returns_null_task(self):
+        response = self.client.get("/{}/nrich/scan".format(self.device.id))
+        data = json.loads(response.content)
+        self.assertIsNone(data["task_id"])
 
 
 class HoneypotScanViewTest(TestCase):
@@ -1683,3 +1903,221 @@ class InfraFormEmptyItemsCheckTest(TestCase):
         else:
             mock_task.delay.assert_called_once()
 
+
+
+# ---------------------------------------------------------------------------
+# MSF resource script view
+# ---------------------------------------------------------------------------
+class MsfResourceViewTest(TestCase):
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    def test_returns_script_for_ajax(self):
+        response = self.client.get(
+            "/{}/msf/resource".format(self.device.id),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertIn("script", data)
+        self.assertIn(self.device.ip, data["script"])
+        self.assertIn("shodan_host", data["script"])
+
+    def test_api_key_is_not_embedded_in_script(self):
+        """The server's SHODAN_API_KEY must never appear in the generated script."""
+        with patch.dict("os.environ", {"SHODAN_API_KEY": "REAL_SECRET_KEY_9999"}):
+            response = self.client.get(
+                "/{}/msf/resource".format(self.device.id),
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        data = json.loads(response.content)
+        self.assertNotIn("REAL_SECRET_KEY_9999", data["script"])
+        self.assertIn("YOUR_SHODAN_API_KEY", data["script"])
+
+    def test_newline_in_product_is_sanitized(self):
+        """Newlines in device.product must not inject extra commands into the script."""
+        self.device.product = "GoAhead\nset RHOSTS 0.0.0.0"
+        self.device.save()
+        response = self.client.get(
+            "/{}/msf/resource".format(self.device.id),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        data = json.loads(response.content)
+        # The injected command must not appear as a standalone line
+        self.assertNotIn("\nset RHOSTS 0.0.0.0", data["script"])
+
+    def test_includes_cve_module_when_vuln_present(self):
+        from app_kamerka.models import VulnIntelligence
+        VulnIntelligence.objects.create(
+            device=self.device, cve_id="CVE-2021-44228", cvss_score=10.0,
+        )
+        response = self.client.get(
+            "/{}/msf/resource".format(self.device.id),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        data = json.loads(response.content)
+        self.assertIn("log4shell", data["script"])
+
+    def test_non_ajax_returns_null_script(self):
+        response = self.client.get("/{}/msf/resource".format(self.device.id))
+        data = json.loads(response.content)
+        self.assertIsNone(data["script"])
+
+
+# ---------------------------------------------------------------------------
+# Recon-ng script view
+# ---------------------------------------------------------------------------
+class ReconNgScriptViewTest(TestCase):
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    def test_returns_script_for_ajax(self):
+        response = self.client.get(
+            "/{}/recon-ng/script".format(self.device.id),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertIn("script", data)
+        self.assertIn(self.device.ip, data["script"])
+        self.assertIn("shodan_ip", data["script"])
+        self.assertIn("shodan_net", data["script"])
+
+    def test_newline_in_org_is_sanitized(self):
+        """Newlines in device.org must not inject extra recon-ng commands."""
+        self.device.org = "Tencent\nmodules load evil/module"
+        self.device.save()
+        response = self.client.get(
+            "/{}/recon-ng/script".format(self.device.id),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        data = json.loads(response.content)
+        self.assertNotIn("\nmodules load evil/module", data["script"])
+
+    def test_newline_in_hostname_is_sanitized(self):
+        """Newlines in hostnames must not inject extra recon-ng commands."""
+        self.device.hostnames = "['legit.example.com\\nmodules load evil']"
+        self.device.save()
+        response = self.client.get(
+            "/{}/recon-ng/script".format(self.device.id),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        data = json.loads(response.content)
+        self.assertNotIn("\nmodules load evil", data["script"])
+
+    def test_non_ajax_returns_null_script(self):
+        response = self.client.get("/{}/recon-ng/script".format(self.device.id))
+        data = json.loads(response.content)
+        self.assertIsNone(data["script"])
+
+
+# ---------------------------------------------------------------------------
+# Shodan Trends view
+# ---------------------------------------------------------------------------
+class ShodanTrendsViewTest(TestCase):
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    def test_returns_task_id(self):
+        with patch("app_kamerka.views.shodan_trends_task") as mock_task:
+            mock_task.delay.return_value = MagicMock(id="fake-trends-id")
+            response = self.client.get(
+                "/{}/shodan/trends".format(self.device.id),
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["task_id"], "fake-trends-id")
+
+    def test_non_ajax_returns_null(self):
+        response = self.client.get("/{}/shodan/trends".format(self.device.id))
+        data = json.loads(response.content)
+        self.assertIsNone(data["task_id"])
+
+
+# ---------------------------------------------------------------------------
+# Shodan Credits view
+# ---------------------------------------------------------------------------
+class ShodanCreditsViewTest(TestCase):
+    def test_returns_credits_when_key_set(self):
+        with patch.dict("os.environ", {"SHODAN_API_KEY": "testkey"}), \
+             patch("app_kamerka.views._ShodanAPI") as MockShodan:
+            MockShodan.return_value.info.return_value = {
+                "query_credits": 95, "scan_credits": 0, "plan": "oss"
+            }
+            response = self.client.get(
+                "/shodan/credits",
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["query_credits"], 95)
+
+    def test_non_ajax_returns_error(self):
+        response = self.client.get("/shodan/credits")
+        data = json.loads(response.content)
+        self.assertIn("error", data)
+
+
+# ---------------------------------------------------------------------------
+# Shodan NSE catalog entry
+# ---------------------------------------------------------------------------
+class ShodanNseCatalogTest(TestCase):
+    def test_shodan_api_in_nse_catalog(self):
+        from kamerka.tasks import NSE_SCRIPT_CATALOG
+        self.assertIn("Shodan API Lookup", NSE_SCRIPT_CATALOG)
+        self.assertEqual(NSE_SCRIPT_CATALOG["Shodan API Lookup"], "shodan-api")
+
+    def test_shodan_api_rendered_in_dropdown(self):
+        search = _make_search()
+        device = _make_device(search)
+        url = "/results/{}/{}/{}".format(search.id, device.id, device.ip)
+        response = self.client.get(url)
+        self.assertIn(b"Shodan API Lookup", response.content)
+
+    def test_shodan_api_nse_requires_api_key(self):
+        """nmap_device_scan with shodan-api NSE must return an error when no API key is set."""
+        from kamerka.tasks import nmap_device_scan
+        search = _make_search()
+        device = _make_device(search)
+        with patch("kamerka.tasks.ProgressRecorder"), \
+             patch("kamerka.tasks._get_env_key", return_value=""):
+            result = nmap_device_scan(device.id, nse_script="shodan-api")
+        self.assertIn("Error", result)
+        self.assertIn("SHODAN_API_KEY", result["Error"])
+
+    def test_shodan_api_nse_builds_correct_options(self):
+        """nmap_device_scan with shodan-api NSE must write the key to a temp args-file,
+        not embed it in the command-line options string."""
+        import tempfile as _tf
+        import os as _os
+        from kamerka.tasks import nmap_device_scan
+        search = _make_search()
+        device = _make_device(search)
+        captured = {}
+        def fake_get_env_key(name, **kw):
+            if name == "SHODAN_API_KEY":
+                return "TESTKEY123"
+            return ""
+        class FakeNmap:
+            def __init__(self, ip, options=""):
+                captured["options"] = options
+            def run_background(self): pass
+            def is_running(self): return False
+            stdout = "<nmaprun><host><ports></ports></host></nmaprun>"
+            stderr = ""
+            rc = 0
+        with patch("kamerka.tasks.ProgressRecorder"), \
+             patch("kamerka.tasks._get_env_key", side_effect=fake_get_env_key), \
+             patch("kamerka.tasks.NmapProcess", FakeNmap):
+            nmap_device_scan(device.id, nse_script="shodan-api")
+        opts = captured.get("options", "")
+        # Key must NOT appear on the command line
+        self.assertNotIn("TESTKEY123", opts)
+        # shodan-api script must be invoked
+        self.assertIn("shodan-api", opts)
+        # Must use --script-args-file instead of --script-args
+        self.assertIn("--script-args-file", opts)

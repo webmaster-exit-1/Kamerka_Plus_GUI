@@ -588,6 +588,71 @@
                         </div>
                                         </div>
 
+<!-- METASPLOIT RESOURCE SCRIPT + RECON-NG -->
+<div class="row" style="margin-top:16px;">
+    <div class="col-md-6">
+        <div class="panel panel-default">
+            <div class="panel-heading ui-draggable-handle">
+                <div class="panel-title-box">
+                    <h3>&#128027; Metasploit</h3>
+                </div>
+            </div>
+            <div class="panel-body padding-2">
+                <br>
+                <p style="color:#888;font-size:0.85em;margin-bottom:10px;">
+                    Generate a ready-to-run Metasploit resource script (<code>.rc</code>) pre-loaded with
+                    <code>shodan_host</code>, <code>shodan_search</code>, and CVE-matched exploit modules for <b style="color:#00e1ff;">{{ device.ip }}</b>.
+                    <br><span style="color:#ffe600;">shodan_search uses 1 query credit.</span>
+                </p>
+                <div style="margin-bottom:10px;">
+                    <button type="button" id="msf_generate_btn" class="btn btn-primary active" style="background:#ff2050;border-color:#ff2050;color:#fff;font-weight:bold;">
+                        &#9889; Generate MSF Script
+                    </button>
+                    <button type="button" id="msf_copy_btn" class="btn btn-default" style="display:none;margin-left:6px;">
+                        &#128203; Copy
+                    </button>
+                    <button type="button" id="msf_download_btn" class="btn btn-default" style="display:none;margin-left:4px;">
+                        &#11015; Download .rc
+                    </button>
+                </div>
+                <textarea id="msf_script_output" style="display:none;width:100%;min-height:260px;background:#0a0a1a;color:#00ff88;border:1px solid #0064d7;border-radius:4px;font-family:'Share Tech Mono',monospace;font-size:0.8em;padding:10px;" readonly></textarea>
+                <p style="color:#555;font-size:0.8em;margin-top:6px;">Usage: <code>msfconsole -r kamerka_{{ device_ip_safe }}.rc</code></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- RECON-NG SCRIPT -->
+    <div class="col-md-6">
+        <div class="panel panel-default">
+            <div class="panel-heading ui-draggable-handle">
+                <div class="panel-title-box">
+                    <h3>&#128269; Recon-ng</h3>
+                </div>
+            </div>
+            <div class="panel-body padding-2">
+                <br>
+                <p style="color:#888;font-size:0.85em;margin-bottom:10px;">
+                    Generate a Recon-ng script pre-configured with Shodan modules for host, netblock, domain, and org reconnaissance against <b style="color:#00e1ff;">{{ device.ip }}</b>.
+                    <br><span style="color:#00ff88;">All host lookups are free (no credits consumed).</span>
+                </p>
+                <div style="margin-bottom:10px;">
+                    <button type="button" id="recon_generate_btn" class="btn btn-primary active" style="background:#00e1ff;border-color:#00e1ff;color:#000;font-weight:bold;">
+                        &#9889; Generate Recon-ng Script
+                    </button>
+                    <button type="button" id="recon_copy_btn" class="btn btn-default" style="display:none;margin-left:6px;">
+                        &#128203; Copy
+                    </button>
+                    <button type="button" id="recon_download_btn" class="btn btn-default" style="display:none;margin-left:4px;">
+                        &#11015; Download .rng
+                    </button>
+                </div>
+                <textarea id="recon_script_output" style="display:none;width:100%;min-height:260px;background:#0a0a1a;color:#00e1ff;border:1px solid #0064d7;border-radius:4px;font-family:'Share Tech Mono',monospace;font-size:0.8em;padding:10px;" readonly></textarea>
+                <p style="color:#555;font-size:0.8em;margin-top:6px;">Usage: <code>recon-ng -r kamerka_{{ device_ip_safe }}.rng</code></p>
+            </div>
+        </div>
+    </div>
+</div>
+
 </div><!-- end tab11 -->
 <!-- ═══════════════════════════════════════════════════════════════════ -->
 <!-- HARDWARE & PROTOCOL TAB                                           -->
@@ -676,16 +741,35 @@
                 <h3 class="panel-title">&#9888; Risk & Vulnerability Intelligence</h3>
             </div>
             <div class="panel-body">
+                <!-- Shodan credit balance (auto-fetched, free API call) -->
+                <div style="float:right;font-size:0.8em;color:#888;margin-bottom:4px;">
+                    Shodan: <span id="shodan_credits_badge" style="display:none;color:#00e1ff;font-weight:bold;"></span>
+                    <span id="shodan_credits_loading" style="color:#555;">loading credits…</span>
+                </div>
+                <div style="clear:both;"></div>
                 <!-- NVD LOOKUP BUTTON -->
                 <div style="margin-bottom:12px;">
-                    <button type="button" id="nvd_scan_btn" class="btn btn-primary active" style="background:#ff2050;border-color:#ff2050;font-weight:bold;">
-                        &#128270; Fetch CVE Intelligence
+                    <button type="button" id="shodan_intel_btn" class="btn btn-primary active" style="background:linear-gradient(90deg,#00e1ff,#b300ff);border:none;color:#fff;font-weight:bold;font-size:1.05em;padding:8px 18px;" title="Run the full Shodan pipeline: InternetDB (nrich) → CVEDB enrichment in one shot. No API key required.">
+                        &#9889; Shodan Intel
                     </button>
-                    <button type="button" id="honeypot_scan_btn" class="btn btn-primary active" style="background:#ffe600;border-color:#ffe600;color:#000;font-weight:bold;margin-left:4px;">
-                        &#128373; Honeypot Check
+                    <progress id="progress-bar-shodan-intel" value="0" max="100" style="display:none; margin-left:8px; vertical-align:middle; width:140px;"></progress>
+                </div>
+                <div style="margin-bottom:12px;font-size:0.85em;color:#888;">
+                    Individual steps:
+                    <button type="button" id="nvd_scan_btn" class="btn btn-sm btn-default" style="background:#ff2050;border-color:#ff2050;color:#fff;font-size:0.85em;margin-left:4px;" title="Query NIST NVD + EPSS + CISA KEV">
+                        NVD
                     </button>
-                    <button type="button" id="gfw_check_btn" class="btn btn-primary active" style="background:#00ff88;border-color:#00ff88;color:#000;font-weight:bold;margin-left:4px;">
-                        &#127464;&#127475; GFW Check
+                    <button type="button" id="nrich_scan_btn" class="btn btn-sm btn-default" style="background:#00e1ff;border-color:#00e1ff;color:#000;font-size:0.85em;margin-left:4px;" title="Query Shodan InternetDB (free)">
+                        nrich
+                    </button>
+                    <button type="button" id="cvedb_enrich_btn" class="btn btn-sm btn-default" style="background:#b300ff;border-color:#b300ff;color:#fff;font-size:0.85em;margin-left:4px;" title="Enrich CVEs via Shodan CVEDB">
+                        CVEDB
+                    </button>
+                    <button type="button" id="honeypot_scan_btn" class="btn btn-sm btn-default" style="background:#ffe600;border-color:#ffe600;color:#000;font-size:0.85em;margin-left:4px;">
+                        Honeypot
+                    </button>
+                    <button type="button" id="gfw_check_btn" class="btn btn-sm btn-default" style="background:#00ff88;border-color:#00ff88;color:#000;font-size:0.85em;margin-left:4px;">
+                        GFW
                     </button>
                     <progress id="progress-bar-risk" value="0" max="100" style="display:none; margin-left:8px;"></progress>
                 </div>
@@ -713,7 +797,8 @@
                             <th>EPSS</th>
                             <th>KEV</th>
                             <th>Exploits</th>
-                            <th>Description</th>
+                            <th>Ransomware</th>
+                            <th>Description / Action</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -733,7 +818,11 @@
                                     {% endif %}
                                 {% else %}—{% endif %}
                             </td>
-                            <td style="font-size:0.85em;max-width:300px;overflow:hidden;text-overflow:ellipsis;">{{ vi.description|truncatechars:150 }}</td>
+                            <td>{% if vi.ransomware_campaign %}<span style="background:#b300ff;color:#fff;padding:1px 6px;border-radius:3px;font-size:0.8em;font-weight:bold;" title="{{ vi.ransomware_campaign }}">&#128165; Ransomware</span>{% else %}—{% endif %}</td>
+                            <td style="font-size:0.85em;max-width:300px;">
+                                <span style="overflow:hidden;text-overflow:ellipsis;display:block;">{{ vi.description|truncatechars:120 }}</span>
+                                {% if vi.propose_action %}<span style="color:#00ff88;font-size:0.9em;display:block;margin-top:3px;">&#10003; {{ vi.propose_action|truncatechars:120 }}</span>{% endif %}
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -745,6 +834,19 @@
                     </button>
                     <progress id="progress-bar-exploitdb" value="0" max="100" style="display:none; margin-left:8px;"></progress>
                     <div id="exploitdb_results" style="display:none;margin-top:10px;"></div>
+                </div>
+                <!-- SHODAN TRENDS -->
+                <div style="border-top:1px solid #0064d7;margin-top:18px;padding-top:14px;">
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                        <h4 style="margin:0;color:#00e1ff;">&#128200; Shodan Trends</h4>
+                        <button type="button" id="strend_btn" class="btn btn-sm btn-default" style="background:#ffe600;border-color:#ffe600;color:#000;font-weight:bold;" title="Query Shodan Trends API — shows how many devices matching this product have been online each month. ⚠️ Costs 1 Shodan query credit.">
+                            &#9888; Fetch Trends (1 credit)
+                        </button>
+                        <progress id="progress-bar-strend" value="0" max="100" style="display:none;width:100px;"></progress>
+                    </div>
+                    <p style="color:#888;font-size:0.85em;margin-bottom:8px;">Shows monthly host counts for <code style="color:#00e1ff;">{{ device.product|default:device.type }}</code> from the Shodan historical database. <b style="color:#ffe600;">Uses 1 query credit</b> of your monthly allowance.</p>
+                    <div id="strend_chart" style="display:none;"></div>
+                    <div id="strend_error" style="display:none;color:#ff2050;font-size:0.9em;"></div>
                 </div>
                 {% else %}
                 <p style="color:#888;">No vulnerability intelligence yet. Click <b>Fetch CVE Intelligence</b> to query NVD/EPSS/KEV.</p>
@@ -1102,6 +1204,7 @@ $('#scan').on('click', function(){
                         noty({text: result.Error, layout: 'topRight', type: 'error', timeout: 10000});
                     } else {
                         noty({text: "Nmap scan complete", layout: 'topRight', type: 'success', timeout: 4000});
+                        fetchVulnIntel();
                     }
                 });
                 noty({text: "Nmap scan started", layout: 'topRight', type: 'success', timeout: 3000});
@@ -1266,18 +1369,30 @@ function renderVulnIntel(vulnRows) {
     }
     var html = '<h4 style="color:#ff2050;margin:0 0 8px;">CVE Intelligence (Live)</h4>';
     html += '<div style="border:1px solid #0064d7;border-radius:4px;padding:10px;background:rgba(0,100,215,0.08);">';
-    html += '<table style="width:100%;font-size:0.92em;"><thead><tr><th style="text-align:left;color:#00e1ff;">CVE</th><th style="text-align:left;color:#00e1ff;">CVSS</th><th style="text-align:left;color:#00e1ff;">EPSS</th><th style="text-align:left;color:#00e1ff;">KEV</th><th style="text-align:left;color:#00e1ff;">Exploit</th></tr></thead><tbody>';
+    html += '<table style="width:100%;font-size:0.92em;"><thead><tr>';
+    html += '<th style="text-align:left;color:#00e1ff;">CVE</th>';
+    html += '<th style="text-align:left;color:#00e1ff;">CVSS</th>';
+    html += '<th style="text-align:left;color:#00e1ff;">EPSS</th>';
+    html += '<th style="text-align:left;color:#00e1ff;">KEV</th>';
+    html += '<th style="text-align:left;color:#00e1ff;">Exploit</th>';
+    html += '<th style="text-align:left;color:#00e1ff;">Ransomware</th>';
+    html += '<th style="text-align:left;color:#00e1ff;">Action</th>';
+    html += '</tr></thead><tbody>';
+    var $tbody = $(html + '</tbody></table></div>');
     $.each(vulnRows, function(_, v) {
-        html += '<tr>';
-        html += '<td style="padding:3px 0;">' + (v.cve_id || '') + '</td>';
-        html += '<td>' + (v.cvss_score || 0) + '</td>';
-        html += '<td>' + (v.epss_score || 0) + '</td>';
-        html += '<td>' + (v.kev_listed ? 'Yes' : 'No') + '</td>';
-        html += '<td>' + (v.exploit_available ? 'Yes' : 'No') + '</td>';
-        html += '</tr>';
+        var $tr = $('<tr>');
+        $tr.append($('<td>').css({'padding': '3px 0', 'font-family': 'monospace'}).text(v.cve_id || ''));
+        $tr.append($('<td>').text(v.cvss_score || 0));
+        $tr.append($('<td>').text(v.epss_score || 0));
+        $tr.append($('<td>').html(v.kev_listed ? '<span style="background:#ff2050;color:#fff;padding:1px 5px;border-radius:3px;font-size:0.8em;font-weight:bold;">KEV</span>' : '—'));
+        $tr.append($('<td>').html(v.exploit_available ? '<span style="background:#ffe600;color:#000;padding:1px 5px;border-radius:3px;font-size:0.8em;font-weight:bold;">Exploit</span>' : '—'));
+        $tr.append($('<td>').html(v.ransomware_campaign ? '<span style="background:#b300ff;color:#fff;padding:1px 5px;border-radius:3px;font-size:0.8em;font-weight:bold;">&#128165;</span>' : '—'));
+        // propose_action comes from an external API — insert via .text() to prevent XSS
+        var actionText = v.propose_action ? String(v.propose_action).substring(0, 80) : '—';
+        $tr.append($('<td>').css({'font-size': '0.85em', 'color': '#00ff88'}).text(actionText));
+        $tbody.find('tbody').append($tr);
     });
-    html += '</tbody></table></div>';
-    $risk.css('display', 'block').html(html);
+    $risk.css('display', 'block').empty().append($tbody);
     updateExploitDropdownFromVuln(vulnRows);
 }
 
@@ -1513,6 +1628,50 @@ $('#deep_probe_btn').on('click', function(){
 });
 
 // ═══════════════════════════════════════════════════════════════════
+// SHODAN INTEL (combined nrich + CVEDB) BUTTON
+// ═══════════════════════════════════════════════════════════════════
+$('#shodan_intel_btn').on('click', function(){
+    var $btn = $(this);
+    var pgrbar = $('#progress-bar-shodan-intel');
+    $btn.prop('disabled', true).html('&#9203; Running…');
+    $.ajax({
+        type: "GET",
+        url: "/{{device.id}}/shodan/intel",
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        success: function (data) {
+            if (data.task_id != null) {
+                pgrbar.css('display', 'inline-block');
+                get_task_info(data.task_id, pgrbar, 0, function(result) {
+                    $btn.prop('disabled', false).html('&#9889; Shodan Intel');
+                    if (result && result.status === 'ok') {
+                        var msg = 'Shodan Intel complete';
+                        var parts = [];
+                        if (result.nrich_cves) { parts.push(result.nrich_cves + ' CVE(s) from nrich'); }
+                        if (result.enriched)   { parts.push(result.enriched + ' enriched via CVEDB'); }
+                        if (result.discovered) { parts.push(result.discovered + ' new CVE(s) via CPE'); }
+                        if (result.exploit_refs_found) { parts.push(result.exploit_refs_found + ' exploit ref(s)'); }
+                        if (parts.length) { msg += ' — ' + parts.join(', '); }
+                        noty({text: msg, layout: 'topRight', type: 'success', timeout: 6000});
+                    } else if (result && result.error) {
+                        noty({text: 'Shodan Intel: ' + result.error, layout: 'topRight', type: 'error', timeout: 5000});
+                    }
+                    $('#risk_results').css('display', 'none').html('');
+                    fetchVulnIntel();
+                });
+                noty({text: 'Shodan Intel started (nrich + CVEDB)…', layout: 'topRight', type: 'success', timeout: 3000});
+            } else {
+                $btn.prop('disabled', false).html('&#9889; Shodan Intel');
+            }
+        },
+        error: function () {
+            $btn.prop('disabled', false).html('&#9889; Shodan Intel');
+            noty({text: 'Shodan Intel request failed', layout: 'topRight', type: 'error', timeout: 4000});
+        }
+    });
+    return false;
+});
+
+// ═══════════════════════════════════════════════════════════════════
 // NVD / CVE INTELLIGENCE BUTTON
 // ═══════════════════════════════════════════════════════════════════
 $('#nvd_scan_btn').on('click', function(){
@@ -1532,7 +1691,69 @@ $('#nvd_scan_btn').on('click', function(){
                 noty({text: "CVE intelligence lookup started", layout: 'topRight', type: 'success', timeout: 3000});
             }
         },
-        error: function () { console.log("NVD scan error"); }
+        error: function () { noty({text: "CVE intelligence request failed", layout: 'topRight', type: 'error', timeout: 4000}); }
+    });
+    return false;
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// NRICH / INTERNETDB SCAN BUTTON
+// ═══════════════════════════════════════════════════════════════════
+$('#nrich_scan_btn').on('click', function(){
+    var pgrbar_risk = $('#progress-bar-risk');
+    $.ajax({
+        type: "GET",
+        url: "/{{device.id}}/nrich/scan",
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        success: function (data) {
+            if (data.task_id != null) {
+                pgrbar_risk.css('display', 'inline-block');
+                get_task_info(data.task_id, pgrbar_risk, 0, function(result) {
+                    if (result && result.error) {
+                        noty({text: "nrich: " + result.error, layout: 'topRight', type: 'error', timeout: 5000});
+                    } else {
+                        var count = (result && result.cve_count) ? result.cve_count : 0;
+                        noty({text: "nrich complete — " + count + " CVE(s) found", layout: 'topRight', type: 'success', timeout: 3000});
+                    }
+                    $('#risk_results').css('display', 'none').html('');
+                    fetchVulnIntel();
+                });
+                noty({text: "nrich scan started (Shodan InternetDB)…", layout: 'topRight', type: 'success', timeout: 3000});
+            }
+        },
+        error: function () { noty({text: "nrich scan request failed", layout: 'topRight', type: 'error', timeout: 4000}); }
+    });
+    return false;
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// CVEDB ENRICH BUTTON
+// ═══════════════════════════════════════════════════════════════════
+$('#cvedb_enrich_btn').on('click', function(){
+    var pgrbar_risk = $('#progress-bar-risk');
+    $.ajax({
+        type: "GET",
+        url: "/{{device.id}}/cvedb/enrich",
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        success: function (data) {
+            if (data.task_id != null) {
+                pgrbar_risk.css('display', 'inline-block');
+                get_task_info(data.task_id, pgrbar_risk, 0, function(result) {
+                    if (result && result.error) {
+                        noty({text: "CVEDB: " + result.error, layout: 'topRight', type: 'error', timeout: 5000});
+                    } else if (result) {
+                        var msg = "CVEDB enriched " + (result.enriched || 0) + " CVE(s)";
+                        if (result.discovered) { msg += ", discovered " + result.discovered + " new"; }
+                        if (result.exploit_refs_found) { msg += ", found " + result.exploit_refs_found + " exploit ref(s)"; }
+                        noty({text: msg, layout: 'topRight', type: 'success', timeout: 4000});
+                    }
+                    $('#risk_results').css('display', 'none').html('');
+                    fetchVulnIntel();
+                });
+                noty({text: "CVEDB enrichment started (cvedb.shodan.io)…", layout: 'topRight', type: 'success', timeout: 3000});
+            }
+        },
+        error: function () { noty({text: "CVEDB enrich request failed", layout: 'topRight', type: 'error', timeout: 4000}); }
     });
     return false;
 });
@@ -1623,6 +1844,9 @@ $('#screenshot_btn').on('click', function(){
                         $('#screenshot_container').html('<img src="data:image/png;base64,' + result.screenshot + '" style="max-width:100%;border:1px solid #0064d7;border-radius:4px;" />');
                         noty({text: "Screenshot captured", layout: 'topRight', type: 'success', timeout: 3000});
                     } else if (result && result.error) {
+                        // Use DOM text insertion to prevent XSS from error message content
+                        var $errP = $('<p>').css({'color':'#ff2050','font-family':'monospace','margin':'8px 0'}).text('\u274C ' + result.error);
+                        $('#screenshot_container').empty().append($errP);
                         noty({text: result.error, layout: 'topRight', type: 'error', timeout: 6000});
                     }
                 });
@@ -1722,6 +1946,7 @@ $('#manual_nmap_btn').on('click', function(){
                         }
                         $('#manual_nmap_output').css('display', 'block').text(output || 'No output');
                         noty({text: "Manual Nmap scan complete", layout: 'topRight', type: 'success', timeout: 4000});
+                        fetchVulnIntel();
                     }
                 });
                 noty({text: "Manual Nmap scan started…", layout: 'topRight', type: 'success', timeout: 3000});
@@ -1734,6 +1959,225 @@ $('#manual_nmap_btn').on('click', function(){
             noty({text: "Manual Nmap request failed", layout: 'topRight', type: 'error', timeout: 4000});
         }
     });
+    return false;
+});
+
+// Auto-fetch Shodan credit balance on page load
+$.ajax({
+    type: "GET",
+    url: "/shodan/credits",
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    success: function(data) {
+        $('#shodan_credits_loading').hide();
+        if (data.query_credits !== undefined) {
+            $('#shodan_credits_badge')
+                .text(data.plan + ' — ' + data.query_credits + ' query credits remaining')
+                .show();
+        }
+    },
+    error: function() { $('#shodan_credits_loading').hide(); }
+});
+
+$('#strend_btn').on('click', function() {
+    var confirmed = confirm('Fetching Shodan Trends will use 1 query credit from your monthly allowance.\n\nContinue?');
+    if (!confirmed) return false;
+    var pgrbar = $('#progress-bar-strend');
+    var $btn = $(this);
+    $btn.prop('disabled', true);
+    $('#strend_error').hide();
+    $.ajax({
+        type: "GET",
+        url: "/{{device.id}}/shodan/trends",
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        success: function(data) {
+            if (data.task_id) {
+                pgrbar.css('display', 'inline-block');
+                get_task_info(data.task_id, pgrbar, 0, function(result) {
+                    $btn.prop('disabled', false);
+                    pgrbar.hide();
+                    if (result && result.error) {
+                        $('#strend_error').text(result.error).show();
+                    } else if (result && result.matches) {
+                        renderStrendChart(result);
+                        $.ajax({ type:"GET", url:"/shodan/credits", headers:{'X-Requested-With':'XMLHttpRequest'},
+                            success: function(d) {
+                                if (d.query_credits !== undefined)
+                                    $('#shodan_credits_badge').text(d.plan + ' — ' + d.query_credits + ' query credits remaining');
+                            }
+                        });
+                    }
+                });
+                noty({text: 'Fetching Shodan Trends (costs 1 credit)…', layout: 'topRight', type: 'information', timeout: 3000});
+            }
+        },
+        error: function() {
+            $btn.prop('disabled', false);
+            noty({text: 'Shodan Trends request failed', layout: 'topRight', type: 'error', timeout: 4000});
+        }
+    });
+    return false;
+});
+
+function renderStrendChart(result) {
+    // Validate and normalise input — protect against unexpected API shapes
+    function escapeHtml(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    var rawMatches = Array.isArray(result.matches) ? result.matches : [];
+    var matches = rawMatches.map(function(m) {
+        var month = typeof m.month === 'string' ? m.month : '';
+        var count = typeof m.count === 'number' ? m.count : Number(m.count);
+        if (month.length === 0 || !isFinite(count)) { return null; }
+        return { month: month, count: count };
+    }).filter(function(m) { return m !== null; });
+
+    var $chart = $('#strend_chart');
+    if (!matches.length) {
+        $chart.empty().append($('<p>').css('color', '#888').text('No historical data returned.')).show();
+        return;
+    }
+
+    var maxCount = Math.max.apply(null, matches.map(function(m){ return m.count; }));
+    var total = typeof result.total === 'number' ? result.total : Number(result.total);
+    if (!isFinite(total)) { total = 0; }
+    var query = typeof result.query === 'string' ? result.query : '';
+
+    // Summary line — query and total are external data, use escapeHtml
+    var $summary = $('<div>').css({'margin-bottom':'6px','color':'#888','font-size':'0.85em'});
+    $summary.append(document.createTextNode('Query: '));
+    $summary.append($('<code>').css('color','#00e1ff').text(query));
+    $summary.append(document.createTextNode('\u00a0\u00a0 Total indexed: '));
+    $summary.append($('<b>').css('color','#00e1ff').text(total.toLocaleString()));
+
+    // Bar chart
+    var $bars = $('<div>').css({
+        display:'flex','align-items':'flex-end',gap:'2px',height:'80px',
+        'overflow-x':'auto','padding-bottom':'4px'
+    });
+    matches.forEach(function(m) {
+        var pct = maxCount > 0 ? Math.round((m.count / maxCount) * 100) : 0;
+        var color = pct > 75 ? '#ff2050' : pct > 40 ? '#ffe600' : '#00e1ff';
+        var monthLabel = m.month.length > 2 ? m.month.slice(2) : m.month;
+        var $col = $('<div>').css({
+            display:'flex','flex-direction':'column','align-items':'center','min-width':'28px'
+        }).attr('title', escapeHtml(m.month) + ': ' + m.count.toLocaleString());
+        $col.append($('<div>').css({
+            background: color, width:'20px', height: pct + '%',
+            'min-height':'2px','border-radius':'2px 2px 0 0'
+        }));
+        $col.append($('<span>').css({
+            color:'#555','font-size':'0.6em','transform':'rotate(-45deg)',
+            'transform-origin':'top left','margin-top':'4px','white-space':'nowrap'
+        }).text(monthLabel));
+        $bars.append($col);
+    });
+
+    $chart.empty().append($summary, $bars).show();
+}
+
+$('#msf_generate_btn').on('click', function() {
+    var $btn = $(this);
+    $btn.prop('disabled', true).text('Generating…');
+    $.ajax({
+        type: "GET",
+        url: "/{{device.id}}/msf/resource",
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        success: function(data) {
+            $btn.prop('disabled', false).html('&#9889; Generate MSF Script');
+            if (data.script) {
+                $('#msf_script_output').val(data.script).show();
+                $('#msf_copy_btn, #msf_download_btn').show();
+                noty({text: 'MSF resource script ready', layout: 'topRight', type: 'success', timeout: 2000});
+            }
+        },
+        error: function() {
+            $btn.prop('disabled', false).html('&#9889; Generate MSF Script');
+            noty({text: 'MSF script generation failed', layout: 'topRight', type: 'error', timeout: 3000});
+        }
+    });
+    return false;
+});
+
+$('#msf_copy_btn').on('click', function() {
+    var text = $('#msf_script_output').val();
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(function() {
+            noty({text: 'Copied to clipboard', layout: 'topRight', type: 'success', timeout: 1500});
+        });
+    } else {
+        $('#msf_script_output').select();
+        document.execCommand('copy');
+        noty({text: 'Copied', layout: 'topRight', type: 'success', timeout: 1500});
+    }
+    return false;
+});
+
+$('#msf_download_btn').on('click', function() {
+    var text = $('#msf_script_output').val();
+    var ip_safe = '{{device.ip}}'.replace(/\./g, '_');
+    var blob = new Blob([text], {type: 'text/plain'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'kamerka_' + ip_safe + '.rc';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    return false;
+});
+
+$('#recon_generate_btn').on('click', function() {
+    var $btn = $(this);
+    $btn.prop('disabled', true).text('Generating…');
+    $.ajax({
+        type: "GET",
+        url: "/{{device.id}}/recon-ng/script",
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        success: function(data) {
+            $btn.prop('disabled', false).html('&#9889; Generate Recon-ng Script');
+            if (data.script) {
+                $('#recon_script_output').val(data.script).show();
+                $('#recon_copy_btn, #recon_download_btn').show();
+                noty({text: 'Recon-ng script ready', layout: 'topRight', type: 'success', timeout: 2000});
+            }
+        },
+        error: function() {
+            $btn.prop('disabled', false).html('&#9889; Generate Recon-ng Script');
+            noty({text: 'Recon-ng script generation failed', layout: 'topRight', type: 'error', timeout: 3000});
+        }
+    });
+    return false;
+});
+
+$('#recon_copy_btn').on('click', function() {
+    var text = $('#recon_script_output').val();
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(function() {
+            noty({text: 'Copied to clipboard', layout: 'topRight', type: 'success', timeout: 1500});
+        });
+    } else {
+        $('#recon_script_output').select();
+        document.execCommand('copy');
+        noty({text: 'Copied', layout: 'topRight', type: 'success', timeout: 1500});
+    }
+    return false;
+});
+
+$('#recon_download_btn').on('click', function() {
+    var text = $('#recon_script_output').val();
+    var ip_safe = '{{device.ip}}'.replace(/\./g, '_');
+    var blob = new Blob([text], {type: 'text/plain'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'kamerka_' + ip_safe + '.rng';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     return false;
 });
 

@@ -144,6 +144,8 @@ class VulnIntelligence(models.Model):
     exploit_available = models.BooleanField(default=False)
     exploit_refs = models.TextField(default="", blank=True)
     source = models.CharField(max_length=50, default="nvd")
+    ransomware_campaign = models.CharField(max_length=300, default="", blank=True)
+    propose_action = models.TextField(default="", blank=True)
     last_updated = models.DateTimeField(auto_now=True)
 
 

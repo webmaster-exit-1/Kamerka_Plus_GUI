@@ -6,6 +6,7 @@ import re
 import shutil
 import socket
 import subprocess
+import tempfile
 
 import maxminddb
 from libnmap.parser import NmapParser
@@ -1739,6 +1740,8 @@ NSE_SCRIPT_CATALOG = {
     "ATG Info (Tank Gauge)": "nmap_scripts/atg-info.nse",
     "Modicon Info": "nmap_scripts/modicon-info.nse",
     "BACnet Info": "nmap_scripts/bacnet-info.nse",
+    # System script — uses Shodan API key (free host lookup, no credits consumed)
+    "Shodan API Lookup": "shodan-api",
 }
 
 
@@ -1746,9 +1749,16 @@ NSE_SCRIPT_CATALOG = {
 def nmap_device_scan(self, device_id, nse_script=None):
     """Run an Nmap scan against a device with optional NSE script.
 
-    When *nse_script* is provided it must be a path relative to the project
-    root (e.g. ``nmap_scripts/s7-info.nse``).  The path is validated to
-    prevent directory-traversal attacks.
+    *nse_script* may be one of:
+
+    * A path relative to the project root (e.g. ``nmap_scripts/s7-info.nse``).
+      The path is validated against the ``nmap_scripts/`` directory to prevent
+      directory-traversal attacks.
+    * The special sentinel value ``"shodan-api"`` which runs the system-installed
+      ``shodan-api.nse`` script.  The required ``SHODAN_API_KEY`` is injected via
+      a temporary ``--script-args-file`` (mode 0600, deleted after nmap starts)
+      so the key never appears in process listings or logs.  Host lookups via
+      this script are free and do **not** consume any monthly query credits.
 
     Results are stored on ``device.scan`` and returned as a dict.
     """
@@ -1773,7 +1783,32 @@ def nmap_device_scan(self, device_id, nse_script=None):
         port_spec = "21,22,23,80,102,443,502,1911,4911,8080,9600,20000,44818,47808"
 
     # Build Nmap options
-    if nse_script:
+    if nse_script == "shodan-api":
+        # System NSE script — the API key is written to a temp file with
+        # mode 0600 so it never appears in process listings, Celery task
+        # introspection, or shell logs.  The file is deleted immediately
+        # after nmap starts (nmap reads it during startup).
+        # Host lookups via shodan-api.nse are free and do NOT consume any
+        # of the 100 monthly query credits.
+        shodan_key = _get_env_key("SHODAN_API_KEY")
+        if not shodan_key:
+            return {"Error": "SHODAN_API_KEY is not configured — set it in your environment"}
+        try:
+            fd, args_file = tempfile.mkstemp(suffix=".args", prefix="nm_")
+            # Set restrictive permissions BEFORE writing the key to prevent a
+            # window where another process could read the file.
+            os.chmod(args_file, 0o600)
+            try:
+                os.write(fd, "shodan-api.apikey={}\n".format(shodan_key).encode())
+            finally:
+                os.close(fd)
+            options = "-p {} --script shodan-api --script-args-file {} -Pn".format(
+                port_spec, args_file
+            )
+        except Exception as exc:
+            logger.warning("Could not write nmap script-args-file: %s", exc)
+            return {"Error": "Failed to create temporary args file: {}".format(exc)}
+    elif nse_script:
         # Security: validate path stays within nmap_scripts/
         safe_base = os.path.realpath(os.path.join(settings.BASE_DIR, "nmap_scripts"))
         script_abs = os.path.realpath(os.path.join(settings.BASE_DIR, nse_script))
@@ -1792,9 +1827,19 @@ def nmap_device_scan(self, device_id, nse_script=None):
     )
 
     return_dict = {}
+    # If a temp args-file was created for the shodan-api script, track it here
+    # so try/finally can guarantee cleanup even on unexpected exceptions.
+    _nse_args_file = locals().get("args_file")
     try:
         nm = NmapProcess(ip, options=options)
         nm.run_background()
+        # Remove the temp file now that nmap has read it during startup
+        if _nse_args_file:
+            try:
+                os.unlink(_nse_args_file)
+            except OSError:
+                pass
+            _nse_args_file = None
 
         # Wait for the scan with a timeout
         start_time = time.time()
@@ -1876,6 +1921,12 @@ def nmap_device_scan(self, device_id, nse_script=None):
 
     except Exception as e:
         logger.warning("nmap_device_scan error for %s: %s", ip, e)
+        # Best-effort cleanup of the temp args file on any error path
+        if _nse_args_file:
+            try:
+                os.unlink(_nse_args_file)
+            except OSError:
+                pass
         return {"Error": str(e)}
 
 
@@ -3173,6 +3224,392 @@ def nvd_lookup(device_id):
         )
 
     return {"status": "ok", "cve_count": len(results), "results": results}
+
+
+# ---------------------------------------------------------------------------
+# nrich / Shodan InternetDB — free CVE lookup without an API key
+# ---------------------------------------------------------------------------
+
+
+@shared_task(bind=False)
+def nrich_lookup(device_id):
+    """Query the Shodan InternetDB API for CVEs affecting the device IP.
+
+    InternetDB (https://internetdb.shodan.io/{IP}) is a free, no-auth endpoint
+    that returns open ports, CPEs, hostnames, tags, and CVE IDs for any IP.
+    Results are stored as VulnIntelligence records (source="nrich") so they
+    appear in the risk tab and populate the exploit dropdown.
+    """
+    device = Device.objects.get(id=device_id)
+    ip = device.ip
+
+    try:
+        url = "https://internetdb.shodan.io/{}".format(ip)
+        resp = requests.get(url, timeout=15)
+        if resp.status_code == 404:
+            return {"status": "not_found", "ip": ip, "cve_count": 0}
+        if resp.status_code != 200:
+            return {"error": "InternetDB returned HTTP {}".format(resp.status_code)}
+        data = resp.json()
+    except Exception as exc:
+        logger.warning("nrich/InternetDB lookup error for %s: %s", ip, exc)
+        return {"error": str(exc)}
+
+    cve_ids = data.get("vulns", [])
+    if not cve_ids:
+        return {"status": "no_cves", "ip": ip, "cve_count": 0,
+                "ports": data.get("ports", []), "cpes": data.get("cpes", [])}
+
+    # Fetch EPSS and KEV enrichment for found CVEs
+    epss_scores = _fetch_epss_scores(cve_ids)
+    kev_set = _fetch_kev_list()
+
+    results = []
+    for cve_id in cve_ids:
+        epss_data = epss_scores.get(cve_id, {})
+        is_kev = cve_id in kev_set
+        exploit_available = is_kev
+
+        VulnIntelligence.objects.update_or_create(
+            device=device,
+            cve_id=cve_id,
+            defaults={
+                "cvss_score": 0.0,
+                "epss_score": epss_data.get("epss", 0.0),
+                "epss_percentile": epss_data.get("percentile", 0.0),
+                "kev_listed": is_kev,
+                "exploit_available": exploit_available,
+                "exploit_refs": "",
+                "description": "",
+                "source": "nrich",
+            },
+        )
+        results.append(
+            {
+                "cve_id": cve_id,
+                "epss": epss_data.get("epss", 0.0),
+                "kev": is_kev,
+            }
+        )
+
+    logger.info(
+        "nrich/InternetDB: found %d CVEs for %s (ports=%s)",
+        len(results),
+        ip,
+        data.get("ports", []),
+    )
+    return {
+        "status": "ok",
+        "cve_count": len(results),
+        "cves": results,
+        "ports": data.get("ports", []),
+        "cpes": data.get("cpes", []),
+    }
+
+
+# ---------------------------------------------------------------------------
+# CVEDB Enrichment — Shodan's free CVE database (cvedb.shodan.io)
+# ---------------------------------------------------------------------------
+
+CVEDB_BASE = "https://cvedb.shodan.io"
+
+# Authoritative hostname check — prevents "evil.com/exploit-db.com/…" bypass.
+_EXPLOITDB_HOSTNAMES = {"exploit-db.com", "www.exploit-db.com"}
+
+
+def _is_exploitdb_url(url):
+    """Return True only when *url*'s hostname is exactly exploit-db.com."""
+    try:
+        host = urllib.parse.urlparse(url).hostname or ""
+        return host in _EXPLOITDB_HOSTNAMES
+    except Exception:
+        return False
+
+
+@shared_task(bind=False)
+def cvedb_enrich(device_id):
+    """Enrich CVE intelligence using the Shodan CVEDB API.
+
+    Two enrichment passes are performed:
+    1. For each existing VulnIntelligence record, query
+       ``/cve/{cve_id}`` to update CVSS/EPSS scores, KEV flag,
+       ``propose_action``, ``ransomware_campaign``, and mine
+       ``references`` for exploit URLs.
+    2. If the device has a CPE, query ``/cves?cpe23=<cpe>`` to
+       discover additional CVEs not already stored.
+
+    All results are stored back to VulnIntelligence.  No API key is
+    required — CVEDB is a free, public endpoint.
+    """
+    device = Device.objects.get(id=device_id)
+
+    enriched = 0
+    discovered = 0
+    exploit_refs_found = 0
+
+    # ------------------------------------------------------------------ #
+    # Pass 1 — enrich existing VulnIntelligence records                   #
+    # ------------------------------------------------------------------ #
+    existing = list(VulnIntelligence.objects.filter(device=device))
+    for vi in existing:
+        if not vi.cve_id:
+            continue
+        try:
+            resp = requests.get(
+                "{}/cve/{}".format(CVEDB_BASE, vi.cve_id),
+                timeout=15,
+            )
+            if resp.status_code == 404:
+                continue
+            if resp.status_code != 200:
+                logger.warning(
+                    "CVEDB /cve/%s returned HTTP %d", vi.cve_id, resp.status_code
+                )
+                continue
+            data = resp.json()
+        except Exception as exc:
+            logger.warning("CVEDB enrich error for %s: %s", vi.cve_id, exc)
+            continue
+
+        # Use best available CVSS score
+        cvss = (
+            data.get("cvss_v3")
+            or data.get("cvss_v2")
+            or data.get("cvss")
+            or vi.cvss_score
+        )
+        epss = data.get("epss") if data.get("epss") is not None else vi.epss_score
+        is_kev = data.get("kev", vi.kev_listed)
+        summary = data.get("summary") or vi.description
+        propose_action = data.get("propose_action") or ""
+        ransomware = data.get("ransomware_campaign") or ""
+
+        # Mine references for exploit-db links
+        exploit_refs_list = []
+        if vi.exploit_refs:
+            try:
+                exploit_refs_list = json.loads(vi.exploit_refs)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        for ref_url in data.get("references", []):
+            if not ref_url:
+                continue
+            if _is_exploitdb_url(ref_url):
+                if not any(r.get("url") == ref_url for r in exploit_refs_list):
+                    exploit_refs_list.append(
+                        {
+                            "url": ref_url,
+                            "title": "ExploitDB: " + ref_url.split("/")[-1],
+                        }
+                    )
+                    exploit_refs_found += 1
+
+        exploit_available = is_kev or bool(exploit_refs_list) or vi.exploit_available
+        exploit_refs_json = (
+            json.dumps(exploit_refs_list) if exploit_refs_list else vi.exploit_refs
+        )
+
+        vi.cvss_score = cvss or vi.cvss_score
+        vi.epss_score = epss
+        vi.kev_listed = is_kev
+        vi.exploit_available = exploit_available
+        vi.exploit_refs = exploit_refs_json
+        vi.description = (summary or vi.description)[:2000]
+        vi.propose_action = propose_action[:1000]
+        vi.ransomware_campaign = ransomware[:300]
+        vi.save()
+        enriched += 1
+
+        sleep(0.3)  # be polite to the free API
+
+    # ------------------------------------------------------------------ #
+    # Pass 2 — discover new CVEs via device CPE                           #
+    # ------------------------------------------------------------------ #
+    cpe = (device.cpe or "").strip()
+    if cpe and cpe.startswith("cpe:2.3:"):
+        try:
+            resp = requests.get(
+                "{}/cves".format(CVEDB_BASE),
+                params={"cpe23": cpe, "limit": 50, "sort_by_epss": True},
+                timeout=20,
+            )
+            if resp.status_code == 200:
+                cve_list = resp.json().get("cves", [])
+                kev_set = _fetch_kev_list()
+                for cve_data in cve_list:
+                    cve_id = cve_data.get("cve_id", "")
+                    if not cve_id:
+                        continue
+                    # Skip already-stored CVEs
+                    if VulnIntelligence.objects.filter(
+                        device=device, cve_id=cve_id
+                    ).exists():
+                        continue
+                    cvss = (
+                        cve_data.get("cvss_v3")
+                        or cve_data.get("cvss_v2")
+                        or cve_data.get("cvss")
+                        or 0.0
+                    )
+                    epss = cve_data.get("epss") or 0.0
+                    is_kev = cve_data.get("kev", cve_id in kev_set)
+                    ransomware = cve_data.get("ransomware_campaign") or ""
+                    propose_action = cve_data.get("propose_action") or ""
+                    summary = cve_data.get("summary") or ""
+
+                    exploit_refs_list = []
+                    for ref_url in cve_data.get("references", []):
+                        if ref_url and _is_exploitdb_url(ref_url):
+                            exploit_refs_list.append(
+                                {
+                                    "url": ref_url,
+                                    "title": "ExploitDB: "
+                                    + ref_url.split("/")[-1],
+                                }
+                            )
+                    exploit_available = is_kev or bool(exploit_refs_list)
+
+                    VulnIntelligence.objects.create(
+                        device=device,
+                        cve_id=cve_id,
+                        cvss_score=cvss or 0.0,
+                        epss_score=epss,
+                        epss_percentile=cve_data.get("ranking_epss") or 0.0,
+                        kev_listed=is_kev,
+                        exploit_available=exploit_available,
+                        exploit_refs=json.dumps(exploit_refs_list) if exploit_refs_list else "",
+                        description=summary[:2000],
+                        propose_action=propose_action[:1000],
+                        ransomware_campaign=ransomware[:300],
+                        source="cvedb",
+                    )
+                    discovered += 1
+        except Exception as exc:
+            logger.warning("CVEDB CPE lookup error for %s: %s", cpe, exc)
+
+    logger.info(
+        "CVEDB enrich complete for %s: enriched=%d, discovered=%d, exploits_found=%d",
+        device.ip,
+        enriched,
+        discovered,
+        exploit_refs_found,
+    )
+    return {
+        "status": "ok",
+        "enriched": enriched,
+        "discovered": discovered,
+        "exploit_refs_found": exploit_refs_found,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Shodan Intel — combined nrich + CVEDB workflow in one task
+# ---------------------------------------------------------------------------
+
+
+def _run_task_inline(task, *args, **kwargs):
+    """Execute an existing Celery task synchronously using its canonical logic."""
+    task_runner = getattr(task, "run", None)
+    if callable(task_runner):
+        return task_runner(*args, **kwargs)
+    return task(*args, **kwargs)
+
+
+@shared_task(bind=True)
+def shodan_intel_scan(self, device_id):
+    """Run the Shodan intelligence pipeline by delegating to shared task logic.
+
+    Delegates to the canonical ``nrich_lookup`` and ``cvedb_enrich`` task
+    implementations so the combined workflow can never drift from the
+    standalone enrichment paths over time.
+
+    Phase 1 (0–50 %)  — nrich/InternetDB (free, no API key required)
+    Phase 2 (50–100 %) — CVEDB enrichment (free, no API key required)
+    """
+    progress_recorder = ProgressRecorder(self)
+    device = Device.objects.get(id=device_id)
+
+    # Phase 1 — delegate to the nrich_lookup implementation
+    progress_recorder.set_progress(0, 10, description="Querying Shodan InternetDB…")
+    nrich_result = nrich_lookup(device_id)
+    nrich_cve_count = nrich_result.get("cve_count", 0) if isinstance(nrich_result, dict) else 0
+    nrich_ports = nrich_result.get("ports", []) if isinstance(nrich_result, dict) else []
+    nrich_cpes = nrich_result.get("cpes", []) if isinstance(nrich_result, dict) else []
+
+    # Phase 2 — delegate to the cvedb_enrich implementation
+    progress_recorder.set_progress(5, 10, description="InternetDB complete — starting CVEDB enrichment…")
+    cvedb_result = cvedb_enrich(device_id)
+    enriched = cvedb_result.get("enriched", 0) if isinstance(cvedb_result, dict) else 0
+    discovered = cvedb_result.get("discovered", 0) if isinstance(cvedb_result, dict) else 0
+    exploit_refs_found = cvedb_result.get("exploit_refs_found", 0) if isinstance(cvedb_result, dict) else 0
+
+    progress_recorder.set_progress(10, 10, description="Shodan Intel complete")
+    logger.info(
+        "shodan_intel_scan complete for %s: nrich_cves=%d, enriched=%d, discovered=%d, exploit_refs=%d",
+        device.ip, nrich_cve_count, enriched, discovered, exploit_refs_found,
+    )
+    return {
+        "status": "ok",
+        "nrich_cves": nrich_cve_count,
+        "enriched": enriched,
+        "discovered": discovered,
+        "exploit_refs_found": exploit_refs_found,
+        "ports": nrich_ports,
+        "cpes": nrich_cpes,
+    }
+
+
+@shared_task(bind=True)
+def shodan_trends_task(self, device_id):
+    """Query the Shodan Trends API for historical device-count data.
+
+    ⚠️  Costs 1 Shodan query credit per call.
+    Requires a paid Shodan plan (Freelancer or above).
+    The query is auto-built from the device's product or type.
+    Returns up to 24 months of monthly host counts.
+    """
+    progress_recorder = ProgressRecorder(self)
+    progress_recorder.set_progress(0, 2, description="Querying Shodan Trends…")
+
+    SHODAN_API_KEY = _get_env_key("SHODAN_API_KEY")
+    if not SHODAN_API_KEY:
+        return {"error": "SHODAN_API_KEY is not configured"}
+
+    device = Device.objects.get(id=device_id)
+
+    if device.product:
+        safe_product = re.sub(r'["\\\n\r]', '', device.product)
+        query = 'product:"{}"'.format(safe_product)
+    elif device.type:
+        query = re.sub(r'["\\\n\r]', '', device.type)
+    else:
+        return {"error": "Device has no product or type — cannot build a Trends query"}
+
+    try:
+        resp = requests.get(
+            "https://trends.shodan.io/api/v1/search",
+            params={"query": query, "key": SHODAN_API_KEY},
+            timeout=20,
+        )
+        if resp.status_code == 402:
+            return {"error": "Shodan Trends requires a paid membership (Freelancer or above)"}
+        if resp.status_code == 401:
+            return {"error": "Invalid Shodan API key"}
+        if resp.status_code != 200:
+            return {"error": "Shodan Trends API returned HTTP {}".format(resp.status_code)}
+        data = resp.json()
+        matches = data.get("matches", [])
+        progress_recorder.set_progress(2, 2, description="Trends data received")
+        return {
+            "status": "ok",
+            "query": query,
+            "total": data.get("total", 0),
+            "matches": matches[-24:],  # last 24 months
+        }
+    except Exception as exc:
+        logger.warning("shodan_trends_task error for %s: %s", device.ip, exc)
+        return {"error": str(exc)}
 
 
 def _fetch_epss_scores(cve_ids):
