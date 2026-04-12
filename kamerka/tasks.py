@@ -3508,9 +3508,17 @@ def cvedb_enrich(device_id):
 # ---------------------------------------------------------------------------
 
 
+def _run_task_inline(task, *args, **kwargs):
+    """Execute an existing Celery task synchronously using its canonical logic."""
+    task_runner = getattr(task, "run", None)
+    if callable(task_runner):
+        return task_runner(*args, **kwargs)
+    return task(*args, **kwargs)
+
+
 @shared_task(bind=True)
 def shodan_intel_scan(self, device_id):
-    """Run the full Shodan intelligence pipeline for a device in one shot.
+    """Run the Shodan intelligence pipeline by delegating to shared task logic.
 
     Delegates to the canonical ``nrich_lookup`` and ``cvedb_enrich`` task
     implementations so the combined workflow can never drift from the
