@@ -3551,7 +3551,7 @@ def shodan_intel_scan(self, device_id):
     for idx, vi in enumerate(existing):
         if not vi.cve_id:
             continue
-        pct = 5 + int((idx / max(total_cves, 1)) * 4)  # steps 5–9 of 10 (50–90 %)
+        pct = min(9, 5 + int((idx / max(total_cves, 1)) * 5))  # steps 5–9 of 10 (50–90 %)
         progress_recorder.set_progress(
             pct, 10,
             description="CVEDB: enriching {} ({}/{})…".format(vi.cve_id, idx + 1, total_cves),

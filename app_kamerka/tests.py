@@ -2032,3 +2032,39 @@ class ShodanNseCatalogTest(TestCase):
         url = "/results/{}/{}/{}".format(search.id, device.id, device.ip)
         response = self.client.get(url)
         self.assertIn(b"Shodan API Lookup", response.content)
+
+    def test_shodan_api_nse_requires_api_key(self):
+        """nmap_device_scan with shodan-api NSE must return an error when no API key is set."""
+        from kamerka.tasks import nmap_device_scan
+        search = _make_search()
+        device = _make_device(search)
+        with patch("kamerka.tasks.ProgressRecorder"), \
+             patch("kamerka.tasks._get_env_key", return_value=""):
+            result = nmap_device_scan(device.id, nse_script="shodan-api")
+        self.assertIn("Error", result)
+        self.assertIn("SHODAN_API_KEY", result["Error"])
+
+    def test_shodan_api_nse_builds_correct_options(self):
+        """nmap_device_scan with shodan-api NSE must inject the key into nmap options."""
+        from kamerka.tasks import nmap_device_scan
+        search = _make_search()
+        device = _make_device(search)
+        captured = {}
+        def fake_get_env_key(name, **kw):
+            if name == "SHODAN_API_KEY":
+                return "TESTKEY123"
+            return ""
+        class FakeNmap:
+            def __init__(self, ip, options=""):
+                captured["options"] = options
+            def run_background(self): pass
+            def is_running(self): return False
+            stdout = "<nmaprun><host><ports></ports></host></nmaprun>"
+            stderr = ""
+            rc = 0
+        with patch("kamerka.tasks.ProgressRecorder"), \
+             patch("kamerka.tasks._get_env_key", side_effect=fake_get_env_key), \
+             patch("kamerka.tasks.NmapProcess", FakeNmap):
+            nmap_device_scan(device.id, nse_script="shodan-api")
+        self.assertIn("shodan-api", captured.get("options", ""))
+        self.assertIn("TESTKEY123", captured.get("options", ""))
