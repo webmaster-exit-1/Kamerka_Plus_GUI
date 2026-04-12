@@ -3440,6 +3440,200 @@ def cvedb_enrich(device_id):
     }
 
 
+# ---------------------------------------------------------------------------
+# Shodan Intel — combined nrich + CVEDB workflow in one task
+# ---------------------------------------------------------------------------
+
+
+@shared_task(bind=True)
+def shodan_intel_scan(self, device_id):
+    """Run the full Shodan intelligence pipeline for a device in one shot.
+
+    Phase 1 (0-50 %)  — nrich/InternetDB
+        Query ``https://internetdb.shodan.io/{IP}`` to retrieve the CVE IDs,
+        open ports, CPEs, and tags Shodan has indexed for this IP.  Results
+        are stored as VulnIntelligence records (source="nrich").
+
+    Phase 2 (50-100 %) — CVEDB enrichment
+        For every CVE record on the device, query
+        ``https://cvedb.shodan.io/cve/{cve_id}`` for authoritative CVSS/EPSS
+        scores, KEV flag, ``propose_action``, ``ransomware_campaign``, and
+        exploit references.  If the device has a CPE string, also query
+        ``/cves?cpe23=<cpe>`` to discover additional CVEs not already stored.
+
+    Both phases use free, no-auth Shodan endpoints so no API key is needed.
+    The task returns a summary dict that the frontend JS uses to build the
+    completion notification.
+    """
+    progress_recorder = ProgressRecorder(self)
+    device = Device.objects.get(id=device_id)
+
+    # ------------------------------------------------------------------ #
+    # Phase 1 — nrich / InternetDB                                        #
+    # ------------------------------------------------------------------ #
+    progress_recorder.set_progress(0, 10, description="Querying Shodan InternetDB…")
+    nrich_cve_count = 0
+    nrich_ports = []
+    nrich_cpes = []
+
+    try:
+        url = "https://internetdb.shodan.io/{}".format(device.ip)
+        resp = requests.get(url, timeout=15)
+        if resp.status_code == 200:
+            idb = resp.json()
+            cve_ids = idb.get("vulns", [])
+            nrich_ports = idb.get("ports", [])
+            nrich_cpes = idb.get("cpes", [])
+
+            if cve_ids:
+                progress_recorder.set_progress(
+                    1, 10, description="InternetDB: fetching EPSS for {} CVE(s)…".format(len(cve_ids))
+                )
+                epss_scores = _fetch_epss_scores(cve_ids)
+                kev_set = _fetch_kev_list()
+                for cve_id in cve_ids:
+                    epss_data = epss_scores.get(cve_id, {})
+                    is_kev = cve_id in kev_set
+                    VulnIntelligence.objects.update_or_create(
+                        device=device,
+                        cve_id=cve_id,
+                        defaults={
+                            "cvss_score": 0.0,
+                            "epss_score": epss_data.get("epss", 0.0),
+                            "epss_percentile": epss_data.get("percentile", 0.0),
+                            "kev_listed": is_kev,
+                            "exploit_available": is_kev,
+                            "exploit_refs": "",
+                            "description": "",
+                            "source": "nrich",
+                        },
+                    )
+                    nrich_cve_count += 1
+    except Exception as exc:
+        logger.warning("shodan_intel_scan nrich phase error for %s: %s", device.ip, exc)
+
+    progress_recorder.set_progress(5, 10, description="InternetDB complete — starting CVEDB enrichment…")
+
+    # ------------------------------------------------------------------ #
+    # Phase 2 — CVEDB enrichment                                          #
+    # ------------------------------------------------------------------ #
+    enriched = 0
+    discovered = 0
+    exploit_refs_found = 0
+
+    existing = list(VulnIntelligence.objects.filter(device=device))
+    total_cves = len(existing)
+
+    for idx, vi in enumerate(existing):
+        if not vi.cve_id:
+            continue
+        pct = 5 + int((idx / max(total_cves, 1)) * 4)  # 5–9 out of 10
+        progress_recorder.set_progress(
+            pct, 10,
+            description="CVEDB: enriching {} ({}/{})…".format(vi.cve_id, idx + 1, total_cves),
+        )
+        try:
+            resp = requests.get(
+                "{}/cve/{}".format(CVEDB_BASE, vi.cve_id),
+                timeout=15,
+            )
+            if resp.status_code not in (200,):
+                continue
+            data = resp.json()
+        except Exception as exc:
+            logger.warning("shodan_intel_scan CVEDB phase error for %s: %s", vi.cve_id, exc)
+            continue
+
+        cvss = data.get("cvss_v3") or data.get("cvss_v2") or data.get("cvss") or vi.cvss_score
+        epss = data.get("epss") if data.get("epss") is not None else vi.epss_score
+        is_kev = data.get("kev", vi.kev_listed)
+        summary = data.get("summary") or vi.description
+        propose_action = data.get("propose_action") or ""
+        ransomware = data.get("ransomware_campaign") or ""
+
+        exploit_refs_list = []
+        if vi.exploit_refs:
+            try:
+                exploit_refs_list = json.loads(vi.exploit_refs)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        for ref_url in data.get("references", []):
+            if ref_url and "exploit-db.com" in ref_url:
+                if not any(r.get("url") == ref_url for r in exploit_refs_list):
+                    exploit_refs_list.append({
+                        "url": ref_url,
+                        "title": "ExploitDB: " + ref_url.split("/")[-1],
+                    })
+                    exploit_refs_found += 1
+
+        vi.cvss_score = cvss or vi.cvss_score
+        vi.epss_score = epss
+        vi.kev_listed = is_kev
+        vi.exploit_available = is_kev or bool(exploit_refs_list) or vi.exploit_available
+        vi.exploit_refs = json.dumps(exploit_refs_list) if exploit_refs_list else vi.exploit_refs
+        vi.description = (summary or vi.description)[:2000]
+        vi.propose_action = propose_action[:1000]
+        vi.ransomware_campaign = ransomware[:300]
+        vi.save()
+        enriched += 1
+        sleep(0.2)
+
+    # CPE-based CVE discovery
+    cpe = (device.cpe or "").strip()
+    if cpe and cpe.startswith("cpe:2.3:"):
+        progress_recorder.set_progress(9, 10, description="CVEDB: discovering CVEs via CPE…")
+        try:
+            resp = requests.get(
+                "{}/cves".format(CVEDB_BASE),
+                params={"cpe23": cpe, "limit": 50, "sort_by_epss": True},
+                timeout=20,
+            )
+            if resp.status_code == 200:
+                kev_set = _fetch_kev_list()
+                for cve_data in resp.json().get("cves", []):
+                    cve_id = cve_data.get("cve_id", "")
+                    if not cve_id or VulnIntelligence.objects.filter(device=device, cve_id=cve_id).exists():
+                        continue
+                    cvss = cve_data.get("cvss_v3") or cve_data.get("cvss_v2") or cve_data.get("cvss") or 0.0
+                    exploit_refs_list = [
+                        {"url": r, "title": "ExploitDB: " + r.split("/")[-1]}
+                        for r in cve_data.get("references", []) if r and "exploit-db.com" in r
+                    ]
+                    VulnIntelligence.objects.create(
+                        device=device,
+                        cve_id=cve_id,
+                        cvss_score=cvss or 0.0,
+                        epss_score=cve_data.get("epss") or 0.0,
+                        epss_percentile=cve_data.get("ranking_epss") or 0.0,
+                        kev_listed=cve_data.get("kev", cve_id in kev_set),
+                        exploit_available=cve_data.get("kev", False) or bool(exploit_refs_list),
+                        exploit_refs=json.dumps(exploit_refs_list) if exploit_refs_list else "",
+                        description=(cve_data.get("summary") or "")[:2000],
+                        propose_action=(cve_data.get("propose_action") or "")[:1000],
+                        ransomware_campaign=(cve_data.get("ransomware_campaign") or "")[:300],
+                        source="cvedb",
+                    )
+                    discovered += 1
+        except Exception as exc:
+            logger.warning("shodan_intel_scan CPE discovery error for %s: %s", cpe, exc)
+
+    progress_recorder.set_progress(10, 10, description="Shodan Intel complete")
+    logger.info(
+        "shodan_intel_scan complete for %s: nrich_cves=%d, enriched=%d, discovered=%d, exploit_refs=%d",
+        device.ip, nrich_cve_count, enriched, discovered, exploit_refs_found,
+    )
+    return {
+        "status": "ok",
+        "nrich_cves": nrich_cve_count,
+        "enriched": enriched,
+        "discovered": discovered,
+        "exploit_refs_found": exploit_refs_found,
+        "ports": nrich_ports,
+        "cpes": nrich_cpes,
+    }
+
+
 def _fetch_epss_scores(cve_ids):
     """Fetch EPSS scores from the FIRST.org EPSS API.
 

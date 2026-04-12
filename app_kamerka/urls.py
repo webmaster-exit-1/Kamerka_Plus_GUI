@@ -72,6 +72,7 @@ urlpatterns = [
     path("<id>/nvd/scan", views.nvd_scan_view, name="nvd_scan"),
     path("<id>/nrich/scan", views.nrich_scan_view, name="nrich_scan"),
     path("<id>/cvedb/enrich", views.cvedb_enrich_view, name="cvedb_enrich"),
+    path("<id>/shodan/intel", views.shodan_intel_view, name="shodan_intel"),
     path("get_vuln_intel/<id>", views.get_vuln_intel, name="get_vuln_intel"),
     # Honeypot Analysis
     path("<id>/honeypot/scan", views.honeypot_scan_view, name="honeypot_scan"),

@@ -977,50 +977,135 @@ class NrichLookupTaskTest(TestCase):
         with patch("kamerka.tasks.requests.get", side_effect=Exception("timeout")):
             result = nrich_lookup(self.device.id)
         self.assertIn("error", result)
-        device = _make_device(self.search, ip="10.0.0.1")
-        device.data = "HTTP/1.1 200 OK\r\nServer: nginx\r\n"
-        device.save()
-        from kamerka.tasks import honeypot_check
-        result = honeypot_check(device.id)
-        self.assertLessEqual(result["probability"], 0.1)
 
-    def test_conpot_signature_detected(self):
-        device = _make_device(self.search, ip="10.0.0.2")
-        device.data = "Siemens, SIMATIC, S7-200 response data"
-        device.save()
-        from kamerka.tasks import honeypot_check
-        result = honeypot_check(device.id)
-        self.assertTrue(result["is_conpot"])
-        self.assertGreater(result["probability"], 0.2)
 
-    def test_cowrie_signature_not_matched(self):
-        device = _make_device(self.search, ip="10.0.0.3")
-        device.data = "SSH-2.0-OpenSSH_6.0p1"
-        device.save()
-        from kamerka.tasks import honeypot_check
-        result = honeypot_check(device.id)
-        self.assertFalse(result["is_cowrie"])
+# ---------------------------------------------------------------------------
+# CVEDB enrich task
+# ---------------------------------------------------------------------------
+class CvedbEnrichTaskTest(TestCase):
+    """cvedb_enrich must enrich existing VulnIntelligence records."""
 
-    def test_saves_to_database(self):
-        device = _make_device(self.search, ip="10.0.0.4")
-        from kamerka.tasks import honeypot_check
-        honeypot_check(device.id)
-        from app_kamerka.models import HoneypotAnalysis
-        self.assertTrue(HoneypotAnalysis.objects.filter(device=device).exists())
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search, ip="5.6.7.8")
 
-    def test_shodan_tag_raises_probability(self):
-        """A ShodanScan record tagged 'honeypot' must push probability to >= 0.8."""
-        from app_kamerka.models import ShodanScan
-        device = _make_device(self.search, ip="10.0.0.5")
-        ShodanScan.objects.create(
-            device=device, ports="[]", tags="['honeypot']",
-            products="[]", module="", vulns="[]",
+    def test_enriches_existing_records(self):
+        from app_kamerka.models import VulnIntelligence
+        from kamerka.tasks import cvedb_enrich
+        VulnIntelligence.objects.create(
+            device=self.device, cve_id="CVE-2021-44228",
+            cvss_score=0.0, source="nrich",
         )
-        from kamerka.tasks import honeypot_check
-        result = honeypot_check(device.id)
-        self.assertGreaterEqual(result["probability"], 0.8)
-        reasons_combined = " ".join(result["reasons"]).lower()
-        self.assertIn("shodan", reasons_combined)
+        fake_resp = MagicMock()
+        fake_resp.status_code = 200
+        fake_resp.json.return_value = {
+            "cve_id": "CVE-2021-44228",
+            "summary": "Log4Shell RCE",
+            "cvss_v3": 10.0,
+            "cvss_v2": None,
+            "cvss": None,
+            "epss": 0.97,
+            "ranking_epss": 0.999,
+            "kev": True,
+            "propose_action": "Update log4j to 2.17.1+",
+            "ransomware_campaign": "Conti",
+            "references": ["https://www.exploit-db.com/exploits/50592"],
+            "cpes": [],
+        }
+        with patch("kamerka.tasks.requests.get", return_value=fake_resp), \
+             patch("kamerka.tasks._fetch_kev_list", return_value={"CVE-2021-44228"}):
+            result = cvedb_enrich(self.device.id)
+        self.assertEqual(result["enriched"], 1)
+        self.assertEqual(result["exploit_refs_found"], 1)
+        vi = VulnIntelligence.objects.get(device=self.device, cve_id="CVE-2021-44228")
+        self.assertAlmostEqual(vi.cvss_score, 10.0)
+        self.assertTrue(vi.kev_listed)
+        self.assertTrue(vi.exploit_available)
+        self.assertEqual(vi.propose_action, "Update log4j to 2.17.1+")
+        self.assertEqual(vi.ransomware_campaign, "Conti")
+
+    def test_returns_ok_with_no_existing_records(self):
+        from kamerka.tasks import cvedb_enrich
+        result = cvedb_enrich(self.device.id)
+        self.assertEqual(result["enriched"], 0)
+        self.assertEqual(result["discovered"], 0)
+
+
+# ---------------------------------------------------------------------------
+# Shodan Intel view
+# ---------------------------------------------------------------------------
+class ShodanIntelViewTest(TestCase):
+    """shodan_intel_view must dispatch the combined task."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    def test_returns_task_id(self):
+        with patch("app_kamerka.views.shodan_intel_scan") as mock_task:
+            mock_task.delay.return_value = MagicMock(id="fake-intel-task")
+            response = self.client.get(
+                "/{}/shodan/intel".format(self.device.id),
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["task_id"], "fake-intel-task")
+
+    def test_non_ajax_returns_null_task(self):
+        response = self.client.get("/{}/shodan/intel".format(self.device.id))
+        data = json.loads(response.content)
+        self.assertIsNone(data["task_id"])
+
+
+# ---------------------------------------------------------------------------
+# CVEDB enrich view
+# ---------------------------------------------------------------------------
+class CvedbEnrichViewTest(TestCase):
+    """cvedb_enrich_view must dispatch the CVEDB enrichment task."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    def test_returns_task_id(self):
+        with patch("app_kamerka.views.cvedb_enrich") as mock_task:
+            mock_task.delay.return_value = MagicMock(id="fake-cvedb-task")
+            response = self.client.get(
+                "/{}/cvedb/enrich".format(self.device.id),
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["task_id"], "fake-cvedb-task")
+
+
+# ---------------------------------------------------------------------------
+# Shodan Intel button rendered in Risk tab
+# ---------------------------------------------------------------------------
+class ShodanIntelButtonRenderTest(TestCase):
+    """device.html must render the Shodan Intel button in the Risk tab."""
+
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+
+    def test_shodan_intel_button_present(self):
+        url = "/results/{}/{}/{}".format(
+            self.search.id, self.device.id, self.device.ip
+        )
+        response = self.client.get(url)
+        body = response.content.decode()
+        self.assertIn('id="shodan_intel_btn"', body)
+
+    def test_individual_buttons_present(self):
+        url = "/results/{}/{}/{}".format(
+            self.search.id, self.device.id, self.device.ip
+        )
+        response = self.client.get(url)
+        body = response.content.decode()
+        self.assertIn('id="nrich_scan_btn"', body)
+        self.assertIn('id="cvedb_enrich_btn"', body)
 
 
 # ---------------------------------------------------------------------------

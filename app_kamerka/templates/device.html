@@ -678,20 +678,27 @@
             <div class="panel-body">
                 <!-- NVD LOOKUP BUTTON -->
                 <div style="margin-bottom:12px;">
-                    <button type="button" id="nvd_scan_btn" class="btn btn-primary active" style="background:#ff2050;border-color:#ff2050;font-weight:bold;">
-                        &#128270; Fetch CVE Intelligence
+                    <button type="button" id="shodan_intel_btn" class="btn btn-primary active" style="background:linear-gradient(90deg,#00e1ff,#b300ff);border:none;color:#fff;font-weight:bold;font-size:1.05em;padding:8px 18px;" title="Run the full Shodan pipeline: InternetDB (nrich) → CVEDB enrichment in one shot. No API key required.">
+                        &#9889; Shodan Intel
                     </button>
-                    <button type="button" id="nrich_scan_btn" class="btn btn-primary active" style="background:#00e1ff;border-color:#00e1ff;color:#000;font-weight:bold;margin-left:4px;" title="Query Shodan InternetDB (free, no API key needed)">
-                        &#127760; nrich Scan
+                    <progress id="progress-bar-shodan-intel" value="0" max="100" style="display:none; margin-left:8px; vertical-align:middle; width:140px;"></progress>
+                </div>
+                <div style="margin-bottom:12px;font-size:0.85em;color:#888;">
+                    Individual steps:
+                    <button type="button" id="nvd_scan_btn" class="btn btn-sm btn-default" style="background:#ff2050;border-color:#ff2050;color:#fff;font-size:0.85em;margin-left:4px;" title="Query NIST NVD + EPSS + CISA KEV">
+                        NVD
                     </button>
-                    <button type="button" id="cvedb_enrich_btn" class="btn btn-primary active" style="background:#b300ff;border-color:#b300ff;color:#fff;font-weight:bold;margin-left:4px;" title="Enrich CVEs via Shodan CVEDB (cvedb.shodan.io) — adds CVSS/EPSS/exploits/ransomware/mitigation, discovers new CVEs via CPE">
-                        &#128165; CVEDB Enrich
+                    <button type="button" id="nrich_scan_btn" class="btn btn-sm btn-default" style="background:#00e1ff;border-color:#00e1ff;color:#000;font-size:0.85em;margin-left:4px;" title="Query Shodan InternetDB (free)">
+                        nrich
                     </button>
-                    <button type="button" id="honeypot_scan_btn" class="btn btn-primary active" style="background:#ffe600;border-color:#ffe600;color:#000;font-weight:bold;margin-left:4px;">
-                        &#128373; Honeypot Check
+                    <button type="button" id="cvedb_enrich_btn" class="btn btn-sm btn-default" style="background:#b300ff;border-color:#b300ff;color:#fff;font-size:0.85em;margin-left:4px;" title="Enrich CVEs via Shodan CVEDB">
+                        CVEDB
                     </button>
-                    <button type="button" id="gfw_check_btn" class="btn btn-primary active" style="background:#00ff88;border-color:#00ff88;color:#000;font-weight:bold;margin-left:4px;">
-                        &#127464;&#127475; GFW Check
+                    <button type="button" id="honeypot_scan_btn" class="btn btn-sm btn-default" style="background:#ffe600;border-color:#ffe600;color:#000;font-size:0.85em;margin-left:4px;">
+                        Honeypot
+                    </button>
+                    <button type="button" id="gfw_check_btn" class="btn btn-sm btn-default" style="background:#00ff88;border-color:#00ff88;color:#000;font-size:0.85em;margin-left:4px;">
+                        GFW
                     </button>
                     <progress id="progress-bar-risk" value="0" max="100" style="display:none; margin-left:8px;"></progress>
                 </div>
@@ -1530,6 +1537,50 @@ $('#deep_probe_btn').on('click', function(){
             }
         },
         error: function () { console.log("Deep probe error"); }
+    });
+    return false;
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// SHODAN INTEL (combined nrich + CVEDB) BUTTON
+// ═══════════════════════════════════════════════════════════════════
+$('#shodan_intel_btn').on('click', function(){
+    var $btn = $(this);
+    var pgrbar = $('#progress-bar-shodan-intel');
+    $btn.prop('disabled', true).html('&#9203; Running…');
+    $.ajax({
+        type: "GET",
+        url: "/{{device.id}}/shodan/intel",
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        success: function (data) {
+            if (data.task_id != null) {
+                pgrbar.css('display', 'inline-block');
+                get_task_info(data.task_id, pgrbar, 0, function(result) {
+                    $btn.prop('disabled', false).html('&#9889; Shodan Intel');
+                    if (result && result.status === 'ok') {
+                        var msg = 'Shodan Intel complete';
+                        var parts = [];
+                        if (result.nrich_cves) { parts.push(result.nrich_cves + ' CVE(s) from nrich'); }
+                        if (result.enriched)   { parts.push(result.enriched + ' enriched via CVEDB'); }
+                        if (result.discovered) { parts.push(result.discovered + ' new CVE(s) via CPE'); }
+                        if (result.exploit_refs_found) { parts.push(result.exploit_refs_found + ' exploit ref(s)'); }
+                        if (parts.length) { msg += ' — ' + parts.join(', '); }
+                        noty({text: msg, layout: 'topRight', type: 'success', timeout: 6000});
+                    } else if (result && result.error) {
+                        noty({text: 'Shodan Intel: ' + result.error, layout: 'topRight', type: 'error', timeout: 5000});
+                    }
+                    $('#risk_results').css('display', 'none').html('');
+                    fetchVulnIntel();
+                });
+                noty({text: 'Shodan Intel started (nrich + CVEDB)…', layout: 'topRight', type: 'success', timeout: 3000});
+            } else {
+                $btn.prop('disabled', false).html('&#9889; Shodan Intel');
+            }
+        },
+        error: function () {
+            $btn.prop('disabled', false).html('&#9889; Shodan Intel');
+            noty({text: 'Shodan Intel request failed', layout: 'topRight', type: 'error', timeout: 4000});
+        }
     });
     return false;
 });

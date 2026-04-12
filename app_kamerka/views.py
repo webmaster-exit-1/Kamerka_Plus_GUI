@@ -64,6 +64,7 @@ from kamerka.tasks import (
     coordinates_queries,
     nrich_lookup,
     cvedb_enrich,
+    shodan_intel_scan,
 )
 
 _views_logger = logging.getLogger(__name__)
@@ -1353,6 +1354,19 @@ def cvedb_enrich_view(request, id):
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
         task = cvedb_enrich.delay(device_id=id)
+        return HttpResponse(
+            json.dumps({"task_id": task.id}), content_type="application/json"
+        )
+    return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
+
+
+def shodan_intel_view(request, id):
+    """Trigger the combined nrich + CVEDB Shodan intelligence scan via Celery."""
+    if (
+        request.method == "GET"
+        and request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    ):
+        task = shodan_intel_scan.delay(device_id=id)
         return HttpResponse(
             json.dumps({"task_id": task.id}), content_type="application/json"
         )
