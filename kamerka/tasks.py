@@ -4587,13 +4587,22 @@ def run_cve_exploit(self, device_id: int, cve_id: str):
                 text=True,
                 start_new_session=True,
             )
+            # Cache the process group ID immediately after Popen to avoid a
+            # PID-reuse race between getpgid() and killpg() at timeout time.
+            try:
+                pgid = os.getpgid(proc.pid)
+            except OSError:
+                pgid = None
             try:
                 stdout, stderr = proc.communicate(timeout=60)
             except subprocess.TimeoutExpired:
                 # Kill the entire process group, not just the direct child
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except OSError:
+                if pgid is not None:
+                    try:
+                        os.killpg(pgid, signal.SIGKILL)
+                    except OSError:
+                        proc.kill()
+                else:
                     proc.kill()
                 proc.wait()
                 raise

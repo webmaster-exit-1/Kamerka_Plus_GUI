@@ -1373,7 +1373,9 @@ $('#exploit_select').on('change', function() {
                 html += '</pre>';
             }
 
-            // ExploitDB links — only render safe http/https URLs
+            // ExploitDB links — only render safe http/https URLs.
+            // Server-side _is_safe_ref_url() is the primary control;
+            // this client-side check is defence-in-depth only.
             if (info.exploit_refs && info.exploit_refs.length) {
                 html += '<div style="font-size:0.82em;margin-top:4px;">';
                 $.each(info.exploit_refs, function(_, ref) {

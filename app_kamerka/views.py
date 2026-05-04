@@ -997,8 +997,8 @@ def exploit_cve_view(request, device_id, cve_id):
         request.method == "GET"
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
-        # Auth guard — only authenticated staff/superusers may dispatch exploits
-        if not (request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser)):
+        # Auth guard — only authenticated staff users may dispatch exploits
+        if not (request.user.is_authenticated and request.user.is_staff):
             return HttpResponse(
                 json.dumps({"error": "Permission denied. Staff access required."}),
                 content_type="application/json",
