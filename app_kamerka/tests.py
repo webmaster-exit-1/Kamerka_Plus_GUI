@@ -2121,3 +2121,330 @@ class ShodanNseCatalogTest(TestCase):
         self.assertIn("shodan-api", opts)
         # Must use --script-args-file instead of --script-args
         self.assertIn("--script-args-file", opts)
+
+
+# ---------------------------------------------------------------------------
+# CVE Exploit helpers — _interpreter_for, _resolve_interpreter, _classify_exploit
+# ---------------------------------------------------------------------------
+
+class InterpreterForTest(TestCase):
+    """_interpreter_for must return the correct interpreter string from a shebang."""
+
+    def _interp(self, source):
+        from kamerka.tasks import _interpreter_for
+        return _interpreter_for(source)
+
+    def test_python3_shebang(self):
+        self.assertEqual(self._interp("#!/usr/bin/env python3\nprint('hi')"), "python3")
+
+    def test_python2_shebang(self):
+        self.assertEqual(self._interp("#!/usr/bin/python2\nprint 'hi'"), "python2")
+
+    def test_generic_python_shebang(self):
+        # Generic "python" (not python3/python2) -> "python" sentinel for fallback
+        self.assertEqual(self._interp("#!/usr/bin/env python\nprint('hi')"), "python")
+
+    def test_python3_takes_priority_over_python(self):
+        # Shebang contains "python3" substring - python3 must win
+        self.assertEqual(self._interp("#!/usr/bin/python3.11\nfoo"), "python3")
+
+    def test_ruby_shebang(self):
+        self.assertEqual(self._interp("#!/usr/bin/env ruby\nputs 'hi'"), "ruby")
+
+    def test_perl_shebang(self):
+        self.assertEqual(self._interp("#!/usr/bin/perl\nprint 'hi';"), "perl")
+
+    def test_bash_shebang(self):
+        self.assertEqual(self._interp("#!/bin/bash\necho hi"), "bash")
+
+    def test_sh_shebang(self):
+        self.assertEqual(self._interp("#!/bin/sh\necho hi"), "sh")
+
+    def test_metasploit_module_detected_as_ruby(self):
+        self.assertEqual(self._interp("require 'msf/core'\nclass Module; end"), "ruby")
+
+    def test_no_shebang_defaults_to_python3(self):
+        self.assertEqual(self._interp("print('hello')"), "python3")
+
+    def test_empty_source_defaults_to_python3(self):
+        self.assertEqual(self._interp(""), "python3")
+
+
+class ClassifyExploitTest(TestCase):
+    """_classify_exploit must return the correct type, requirements, and preparation steps."""
+
+    def _classify(self, title="", description="", msf_module=""):
+        from kamerka.tasks import _classify_exploit
+        return _classify_exploit(title=title, description=description, msf_module=msf_module)
+
+    def test_reverse_shell_detection(self):
+        result = self._classify(title="Apache RCE reverse_tcp shell")
+        self.assertEqual(result["exploit_type"], "Remote Code Execution — Reverse Shell")
+        labels = [r["label"] for r in result["requirements"]]
+        self.assertTrue(any("listener" in l.lower() for l in labels))
+        self.assertTrue(len(result["preparation"]) > 0)
+
+    def test_bind_shell_detection(self):
+        result = self._classify(title="Bind shell exploit")
+        self.assertEqual(result["exploit_type"], "Remote Code Execution — Bind Shell")
+
+    def test_lfi_detection(self):
+        result = self._classify(title="Local File Inclusion path traversal")
+        self.assertEqual(result["exploit_type"], "File Read / Information Disclosure")
+
+    def test_sqli_detection(self):
+        result = self._classify(title="SQL Injection blind sqli")
+        self.assertEqual(result["exploit_type"], "SQL Injection")
+
+    def test_dos_detection_full_phrase(self):
+        result = self._classify(title="Denial of Service crash")
+        self.assertEqual(result["exploit_type"], "Denial of Service")
+
+    def test_dos_detection_word_boundary(self):
+        result = self._classify(description="Causes a remote dos condition")
+        self.assertEqual(result["exploit_type"], "Denial of Service")
+
+    def test_dos_word_boundary_no_false_positive(self):
+        # "Windows" contains "dos" but should NOT match DoS
+        result = self._classify(title="Windows privilege escalation")
+        self.assertNotEqual(result["exploit_type"], "Denial of Service")
+
+    def test_privesc_detection(self):
+        result = self._classify(title="Linux local privilege escalation")
+        self.assertEqual(result["exploit_type"], "Privilege Escalation")
+
+    def test_memory_corruption_detection(self):
+        result = self._classify(title="Buffer overflow in OpenSSL")
+        self.assertEqual(result["exploit_type"], "Memory Corruption")
+
+    def test_msf_module_appended_to_requirements(self):
+        result = self._classify(title="EternalBlue", msf_module="exploit/windows/smb/ms17_010_eternalblue")
+        labels = [r["label"] for r in result["requirements"]]
+        self.assertTrue(any("Metasploit" in l for l in labels))
+
+    def test_credential_flag(self):
+        result = self._classify(description="Exploits default credentials on admin panel")
+        labels = [r["label"] for r in result["requirements"]]
+        self.assertTrue(any("credential" in l.lower() or "auth" in l.lower() for l in labels))
+
+    def test_file_upload_flag(self):
+        result = self._classify(title="Arbitrary file upload RCE")
+        labels = [r["label"] for r in result["requirements"]]
+        self.assertTrue(any("upload" in l.lower() for l in labels))
+
+    def test_unknown_returns_review_warning(self):
+        result = self._classify(title="Some obscure unexplained exploit thing")
+        self.assertIn("review", " ".join(r["label"] for r in result["requirements"]).lower())
+
+
+class SafeRefUrlTest(TestCase):
+    """_is_safe_ref_url must accept trusted http/https URLs and reject everything else."""
+
+    def _safe(self, url):
+        from kamerka.tasks import _is_safe_ref_url
+        return _is_safe_ref_url(url)
+
+    def test_exploitdb_https_accepted(self):
+        self.assertTrue(self._safe("https://www.exploit-db.com/exploits/12345"))
+
+    def test_exploitdb_http_accepted(self):
+        self.assertTrue(self._safe("http://exploit-db.com/exploits/12345"))
+
+    def test_github_accepted(self):
+        self.assertTrue(self._safe("https://github.com/user/repo"))
+
+    def test_nvd_accepted(self):
+        self.assertTrue(self._safe("https://nvd.nist.gov/vuln/detail/CVE-2021-36260"))
+
+    def test_javascript_rejected(self):
+        self.assertFalse(self._safe("javascript:alert(1)"))
+
+    def test_data_uri_rejected(self):
+        self.assertFalse(self._safe("data:text/html,<script>alert(1)</script>"))
+
+    def test_unknown_host_rejected(self):
+        self.assertFalse(self._safe("https://evil.com/exploit"))
+
+    def test_spoof_in_path_rejected(self):
+        self.assertFalse(self._safe("https://evil.com/exploit-db.com/exploits/1"))
+
+    def test_empty_url_rejected(self):
+        self.assertFalse(self._safe(""))
+
+
+class DownloadExploitDBTest(TestCase):
+    """_download_exploitdb must only fetch numeric IDs and return None on error."""
+
+    def test_non_numeric_id_rejected(self):
+        from kamerka.tasks import _download_exploitdb
+        result = _download_exploitdb("../etc/passwd")
+        self.assertIsNone(result)
+
+    def test_empty_id_rejected(self):
+        from kamerka.tasks import _download_exploitdb
+        result = _download_exploitdb("")
+        self.assertIsNone(result)
+
+    @patch("kamerka.tasks.requests.get")
+    def test_successful_download(self, mock_get):
+        from kamerka.tasks import _download_exploitdb
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.text = "#!/usr/bin/env python3\nprint('exploit')"
+        mock_get.return_value = mock_resp
+        result = _download_exploitdb("12345")
+        self.assertEqual(result, "#!/usr/bin/env python3\nprint('exploit')")
+        mock_get.assert_called_once()
+        call_url = mock_get.call_args[0][0]
+        self.assertIn("12345", call_url)
+
+    @patch("kamerka.tasks.requests.get", side_effect=Exception("network error"))
+    def test_network_error_returns_none(self, _mock):
+        from kamerka.tasks import _download_exploitdb
+        result = _download_exploitdb("99999")
+        self.assertIsNone(result)
+
+    @patch("kamerka.tasks.requests.get")
+    def test_404_returns_none(self, mock_get):
+        from kamerka.tasks import _download_exploitdb
+        mock_resp = MagicMock()
+        mock_resp.status_code = 404
+        mock_resp.text = ""
+        mock_get.return_value = mock_resp
+        result = _download_exploitdb("00001")
+        self.assertIsNone(result)
+
+
+# ---------------------------------------------------------------------------
+# exploit_cve_view -- auth guard and feature-flag gate
+# ---------------------------------------------------------------------------
+
+class ExploitCveViewAuthTest(TestCase):
+    """exploit_cve_view must require staff authentication and the feature flag."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        self.search = _make_search()
+        self.device = _make_device(self.search, port="80")
+        self.staff_user = User.objects.create_user(
+            username="staff", password="pass", is_staff=True
+        )
+        self.regular_user = User.objects.create_user(
+            username="regular", password="pass", is_staff=False
+        )
+
+    def _url(self, cve="CVE-2021-44228"):
+        return "/exploit/{}/cve/{}".format(self.device.id, cve)
+
+    def test_unauthenticated_rejected(self):
+        response = self.client.get(
+            self._url(), HTTP_X_REQUESTED_WITH="XMLHttpRequest"
+        )
+        data = json.loads(response.content)
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("error", data)
+
+    def test_non_staff_rejected(self):
+        self.client.login(username="regular", password="pass")
+        response = self.client.get(
+            self._url(), HTTP_X_REQUESTED_WITH="XMLHttpRequest"
+        )
+        self.assertEqual(response.status_code, 403)
+
+    @override_settings(KAMERKA_EXPLOIT_EXECUTION_ENABLED=False)
+    def test_staff_blocked_when_flag_disabled(self):
+        self.client.login(username="staff", password="pass")
+        response = self.client.get(
+            self._url(), HTTP_X_REQUESTED_WITH="XMLHttpRequest"
+        )
+        data = json.loads(response.content)
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("KAMERKA_EXPLOIT_EXECUTION_ENABLED", data["error"])
+
+    @override_settings(KAMERKA_EXPLOIT_EXECUTION_ENABLED=True)
+    @patch("app_kamerka.views.run_cve_exploit")
+    def test_staff_with_flag_enabled_dispatches_task(self, mock_task):
+        mock_task.delay.return_value = MagicMock(id="task-exploit-1")
+        self.client.login(username="staff", password="pass")
+        response = self.client.get(
+            self._url(), HTTP_X_REQUESTED_WITH="XMLHttpRequest"
+        )
+        data = json.loads(response.content)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["task_id"], "task-exploit-1")
+
+    @override_settings(KAMERKA_EXPLOIT_EXECUTION_ENABLED=True)
+    def test_invalid_cve_format_rejected(self):
+        self.client.login(username="staff", password="pass")
+        response = self.client.get(
+            "/exploit/{}/cve/NOT-A-CVE".format(self.device.id),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_non_ajax_returns_null_task(self):
+        response = self.client.get(self._url())
+        data = json.loads(response.content)
+        self.assertIsNone(data["task_id"])
+
+
+# ---------------------------------------------------------------------------
+# exploit_info_view -- URL filtering
+# ---------------------------------------------------------------------------
+
+class ExploitInfoViewUrlFilterTest(TestCase):
+    """exploit_info_view must filter exploit_refs to safe http/https trusted URLs."""
+
+    def setUp(self):
+        from app_kamerka.models import VulnIntelligence
+        self.search = _make_search()
+        self.device = _make_device(self.search)
+        self.vi = VulnIntelligence.objects.create(
+            device=self.device,
+            cve_id="CVE-2021-36260",
+            cvss_score=9.8,
+            exploit_available=True,
+            exploit_refs=json.dumps([
+                {"url": "https://www.exploit-db.com/exploits/50451", "title": "Hikvision RCE", "edb_id": "50451"},
+                {"url": "javascript:alert(1)", "title": "XSS attempt"},
+                {"url": "https://evil.com/exploit", "title": "Evil"},
+                {"url": "data:text/html,<script>x</script>", "title": "Data URI"},
+                {"url": "https://github.com/user/poc", "title": "GitHub PoC"},
+            ]),
+        )
+
+    def _get(self):
+        return self.client.get(
+            "/exploit/{}/cve/CVE-2021-36260/info".format(self.device.id),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+    def test_safe_urls_included(self):
+        response = self._get()
+        data = json.loads(response.content)
+        urls = [r["url"] for r in data["exploit_refs"]]
+        self.assertIn("https://www.exploit-db.com/exploits/50451", urls)
+        self.assertIn("https://github.com/user/poc", urls)
+
+    def test_unsafe_urls_excluded(self):
+        response = self._get()
+        data = json.loads(response.content)
+        urls = [r["url"] for r in data["exploit_refs"]]
+        self.assertNotIn("javascript:alert(1)", urls)
+        self.assertNotIn("https://evil.com/exploit", urls)
+        self.assertNotIn("data:text/html,<script>x</script>", urls)
+
+    def test_invalid_cve_format_rejected(self):
+        response = self.client.get(
+            "/exploit/{}/cve/NOTACVE/info".format(self.device.id),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_non_ajax_returns_empty(self):
+        response = self.client.get(
+            "/exploit/{}/cve/CVE-2021-36260/info".format(self.device.id)
+        )
+        data = json.loads(response.content)
+        self.assertEqual(data, {})

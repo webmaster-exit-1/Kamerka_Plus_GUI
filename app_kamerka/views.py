@@ -68,6 +68,9 @@ from kamerka.tasks import (
     cvedb_enrich,
     shodan_intel_scan,
     shodan_trends_task,
+    run_cve_exploit,
+    _classify_exploit,
+    _is_safe_ref_url,
 )
 from shodan import Shodan as _ShodanAPI
 
@@ -974,6 +977,129 @@ def exploit_dev(request, id):
                 content_type="application/json",
             )
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
+
+
+def exploit_cve_view(request, device_id, cve_id):
+    """Download and execute an ExploitDB exploit for *cve_id* against *device_id*.
+
+    Dispatches the ``run_cve_exploit`` Celery task and returns the task ID so
+    the frontend can poll ``/get-task-info/`` for progress and results.
+
+    Access is restricted to authenticated staff users.  The feature flag
+    ``KAMERKA_EXPLOIT_EXECUTION_ENABLED`` must also be set to ``True`` in
+    settings (via the environment variable) or the task will abort safely.
+
+    GET /exploit/<device_id>/cve/<cve_id>  →  {"task_id": "..."}
+    """
+    from django.conf import settings as _settings
+
+    if (
+        request.method == "GET"
+        and request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    ):
+        # Auth guard — only authenticated staff users may dispatch exploits
+        if not (request.user.is_authenticated and request.user.is_staff):
+            return HttpResponse(
+                json.dumps({"error": "Permission denied. Staff access required."}),
+                content_type="application/json",
+                status=403,
+            )
+
+        # Feature-flag check — inform the client immediately if execution is disabled
+        if not getattr(_settings, "KAMERKA_EXPLOIT_EXECUTION_ENABLED", False):
+            return HttpResponse(
+                json.dumps({
+                    "error": (
+                        "Exploit execution is disabled. Set "
+                        "KAMERKA_EXPLOIT_EXECUTION_ENABLED=true on a dedicated, "
+                        "isolated host to enable it."
+                    )
+                }),
+                content_type="application/json",
+                status=403,
+            )
+
+        # Basic CVE ID format validation before dispatching
+        if not re.match(r'^CVE-\d{4}-\d+$', cve_id.strip(), re.IGNORECASE):
+            return HttpResponse(
+                json.dumps({"error": "Invalid CVE ID format"}),
+                content_type="application/json",
+                status=400,
+            )
+        task = run_cve_exploit.delay(int(device_id), cve_id.strip())
+        return HttpResponse(
+            json.dumps({"task_id": task.id}), content_type="application/json"
+        )
+    return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
+
+
+def exploit_info_view(request, device_id, cve_id):
+    """Return exploit metadata and preparation requirements for a given device + CVE.
+
+    Called when the user selects a CVE from the exploit dropdown so they can
+    review what the exploit does and what they need to prepare *before* clicking
+    the Exploit button.
+
+    GET /exploit/<device_id>/cve/<cve_id>/info  →  JSON payload
+    """
+    if (
+        request.method != "GET"
+        or request.headers.get("X-Requested-With") != "XMLHttpRequest"
+    ):
+        return HttpResponse(json.dumps({}), content_type="application/json")
+
+    if not re.match(r'^CVE-\d{4}-\d+$', cve_id.strip(), re.IGNORECASE):
+        return HttpResponse(
+            json.dumps({"error": "Invalid CVE ID format"}),
+            content_type="application/json",
+            status=400,
+        )
+
+    cve_id_upper = cve_id.strip().upper()
+
+    vi = VulnIntelligence.objects.filter(
+        device_id=int(device_id), cve_id__iexact=cve_id_upper
+    ).first()
+
+    # Gather exploit refs — filter to http/https from trusted hosts only to
+    # prevent javascript: or other dangerous schemes from reaching the browser.
+    exploit_refs = []
+    if vi and vi.exploit_refs:
+        try:
+            raw_refs = json.loads(vi.exploit_refs)
+        except (json.JSONDecodeError, TypeError):
+            raw_refs = []
+        exploit_refs = [
+            ref for ref in raw_refs
+            if isinstance(ref, dict) and _is_safe_ref_url(ref.get("url", ""))
+        ]
+
+    # Use first available exploit title for classification
+    first_title = exploit_refs[0].get("title", "") if exploit_refs else ""
+
+    # Check for a known Metasploit module for this CVE
+    msf_module = _CVE_TO_MSF.get(cve_id_upper, "")
+
+    classification = _classify_exploit(
+        title=first_title,
+        description=vi.description if vi else "",
+        msf_module=msf_module,
+    )
+
+    payload = {
+        "cve_id":        cve_id_upper,
+        "cvss_score":    vi.cvss_score if vi else 0.0,
+        "epss_score":    vi.epss_score if vi else 0.0,
+        "kev_listed":    vi.kev_listed if vi else False,
+        "description":   vi.description if vi else "",
+        "exploit_refs":  exploit_refs,
+        "msf_module":    msf_module,
+        "exploit_type":  classification["exploit_type"],
+        "requirements":  classification["requirements"],
+        "preparation":   classification["preparation"],
+    }
+
+    return HttpResponse(json.dumps(payload), content_type="application/json")
 
 
 def port_scan_view(request, id):
