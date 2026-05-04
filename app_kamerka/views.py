@@ -69,6 +69,7 @@ from kamerka.tasks import (
     shodan_intel_scan,
     shodan_trends_task,
     run_cve_exploit,
+    _classify_exploit,
 )
 from shodan import Shodan as _ShodanAPI
 
@@ -1002,6 +1003,71 @@ def exploit_cve_view(request, device_id, cve_id):
             json.dumps({"task_id": task.id}), content_type="application/json"
         )
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
+
+
+def exploit_info_view(request, device_id, cve_id):
+    """Return exploit metadata and preparation requirements for a given device + CVE.
+
+    Called when the user selects a CVE from the exploit dropdown so they can
+    review what the exploit does and what they need to prepare *before* clicking
+    the Exploit button.
+
+    GET /exploit/<device_id>/cve/<cve_id>/info  →  JSON payload
+    """
+    if (
+        request.method != "GET"
+        or request.headers.get("X-Requested-With") != "XMLHttpRequest"
+    ):
+        return HttpResponse(json.dumps({}), content_type="application/json")
+
+    import re as _re
+    if not _re.match(r'^CVE-\d{4}-\d{4,}$', cve_id.strip(), _re.IGNORECASE):
+        return HttpResponse(
+            json.dumps({"error": "Invalid CVE ID format"}),
+            content_type="application/json",
+            status=400,
+        )
+
+    cve_id_upper = cve_id.strip().upper()
+
+    vi = VulnIntelligence.objects.filter(
+        device_id=int(device_id), cve_id__iexact=cve_id_upper
+    ).first()
+
+    # Gather exploit refs
+    exploit_refs = []
+    if vi and vi.exploit_refs:
+        try:
+            exploit_refs = json.loads(vi.exploit_refs)
+        except (json.JSONDecodeError, TypeError):
+            exploit_refs = []
+
+    # Use first available exploit title for classification
+    first_title = exploit_refs[0].get("title", "") if exploit_refs else ""
+
+    # Check for a known Metasploit module for this CVE
+    msf_module = _CVE_TO_MSF.get(cve_id_upper, "")
+
+    classification = _classify_exploit(
+        title=first_title,
+        description=vi.description if vi else "",
+        msf_module=msf_module,
+    )
+
+    payload = {
+        "cve_id":        cve_id_upper,
+        "cvss_score":    vi.cvss_score if vi else 0.0,
+        "epss_score":    vi.epss_score if vi else 0.0,
+        "kev_listed":    vi.kev_listed if vi else False,
+        "description":   vi.description if vi else "",
+        "exploit_refs":  exploit_refs,
+        "msf_module":    msf_module,
+        "exploit_type":  classification["exploit_type"],
+        "requirements":  classification["requirements"],
+        "preparation":   classification["preparation"],
+    }
+
+    return HttpResponse(json.dumps(payload), content_type="application/json")
 
 
 def port_scan_view(request, id):

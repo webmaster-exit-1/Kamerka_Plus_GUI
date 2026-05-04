@@ -513,6 +513,8 @@
                                         </select>
                                         <button type="button" id="exploit" class="btn btn-primary active" style="background:#ffe600;border-color:#ffe600;color:#000;font-weight:bold;"> Exploit </button>
                                     </div>
+                                    <!-- Exploit info panel — populated on dropdown change -->
+                                    <div id="exploit_info_panel" style="display:none;margin-bottom:12px;border:1px solid rgba(0,225,255,0.25);border-radius:6px;padding:12px;background:rgba(0,100,215,0.07);"></div>
                                     <!-- ExploitDB exploit links (dynamically populated) -->
                                     {% for vi in vuln_intel %}
                                     {% if vi.parsed_exploit_refs %}
@@ -1291,6 +1293,96 @@ $('#exploit').on('click', function(){
         });
     }
     return false;
+});
+
+// Exploit dropdown change → fetch and render the info panel
+$('#exploit_select').on('change', function() {
+    var EXPLOIT_AUTO = 'auto';
+    var cve = $(this).val();
+    var $panel = $('#exploit_info_panel');
+
+    if (!cve || cve === EXPLOIT_AUTO) {
+        $panel.hide().empty();
+        return;
+    }
+
+    $panel.show().html('<span style="color:#888;">&#8987; Loading exploit info…</span>');
+
+    $.ajax({
+        type: "GET",
+        url: "/exploit/{{device.id}}/cve/" + encodeURIComponent(cve) + "/info",
+        headers: {"X-Requested-With": "XMLHttpRequest"},
+        success: function(info) {
+            if (info.error) {
+                $panel.html('<span style="color:#ff2050;">Error: ' + $('<span>').text(info.error).html() + '</span>');
+                return;
+            }
+
+            var html = '';
+
+            // CVE header line
+            html += '<div style="margin-bottom:8px;">';
+            html += '<span style="color:#00e1ff;font-family:monospace;font-weight:bold;font-size:1em;">' + $('<span>').text(info.cve_id).html() + '</span>';
+            html += '&nbsp;<span style="color:#aaa;font-size:0.85em;">CVSS&nbsp;' + (info.cvss_score || 0).toFixed(1) + '</span>';
+            if (info.kev_listed) {
+                html += '&nbsp;<span style="background:#ff2050;color:#fff;padding:1px 6px;border-radius:3px;font-size:0.78em;font-weight:bold;">KEV</span>';
+            }
+            html += '</div>';
+
+            // Exploit type badge
+            html += '<div style="margin-bottom:8px;">';
+            html += '<span style="background:#ffe600;color:#000;padding:2px 8px;border-radius:3px;font-size:0.82em;font-weight:bold;">&#9889;&nbsp;' + $('<span>').text(info.exploit_type).html() + '</span>';
+            html += '</div>';
+
+            // Description
+            if (info.description) {
+                html += '<div style="color:#ccc;font-size:0.85em;margin-bottom:10px;line-height:1.5;">' + $('<span>').text(info.description).html() + '</div>';
+            }
+
+            // Requirements
+            if (info.requirements && info.requirements.length) {
+                html += '<div style="font-size:0.85em;font-weight:bold;color:#00e1ff;margin-bottom:4px;">What you need</div>';
+                html += '<ul style="margin:0 0 10px;padding-left:18px;">';
+                $.each(info.requirements, function(_, req) {
+                    html += '<li style="margin-bottom:4px;color:#eee;">';
+                    html += '<span style="margin-right:4px;">' + (req.icon || '') + '</span>';
+                    html += '<strong>' + $('<span>').text(req.label).html() + '</strong>';
+                    if (req.detail) {
+                        html += ' &mdash; <span style="color:#aaa;">' + $('<span>').text(req.detail).html() + '</span>';
+                    }
+                    html += '</li>';
+                });
+                html += '</ul>';
+            }
+
+            // Preparation commands
+            if (info.preparation && info.preparation.length) {
+                html += '<div style="font-size:0.85em;font-weight:bold;color:#00e1ff;margin-bottom:4px;">Preparation commands</div>';
+                html += '<pre style="background:#0a0a0a;border:1px solid rgba(0,225,255,0.15);border-radius:4px;padding:8px;font-size:0.8em;color:#00ff88;overflow-x:auto;white-space:pre-wrap;word-break:break-all;">';
+                html += $('<span>').text(info.preparation.join('\n')).html();
+                html += '</pre>';
+            }
+
+            // ExploitDB links
+            if (info.exploit_refs && info.exploit_refs.length) {
+                html += '<div style="font-size:0.82em;margin-top:4px;">';
+                $.each(info.exploit_refs, function(_, ref) {
+                    html += '<a href="' + $('<span>').text(ref.url).html() + '" target="_blank" rel="noopener noreferrer" style="color:#ffe600;display:block;margin-bottom:2px;">&#128279;&nbsp;' + $('<span>').text(ref.title || ref.url).html() + '</a>';
+                });
+                html += '</div>';
+            }
+
+            // MSF module hint
+            if (info.msf_module) {
+                html += '<div style="margin-top:6px;font-size:0.82em;color:#aaa;">MSF: <code style="color:#ffe600;">' + $('<span>').text(info.msf_module).html() + '</code></div>';
+            }
+
+            $panel.html(html);
+        },
+        error: function() {
+            $panel.html('<span style="color:#ff2050;">Could not load exploit info.</span>');
+        }
+    });
 });
 
 $('#btn_send_all').on('click', function(){

