@@ -1223,13 +1223,14 @@ $('#scan').on('click', function(){
 });
 
 $('#exploit').on('click', function(){
+    var EXPLOIT_AUTO = 'auto';  // sentinel value for default device-type exploit
     var $btn = $(this);
     var selectedCve = $('#exploit_select').val();
     $btn.prop('disabled', true).text('⏳ Running…');
     var $results = $('#exploit_results');
     var $pbar = $('#progress-bar8');
 
-    if (!selectedCve || selectedCve === 'auto') {
+    if (!selectedCve || selectedCve === EXPLOIT_AUTO) {
         // Default device-type exploit
         $.ajax({
             type: "GET",

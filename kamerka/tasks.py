@@ -4175,6 +4175,9 @@ def capture_screenshot(self, device_id):
 # Regex for a valid CVE ID
 _CVE_RE = re.compile(r'^CVE-\d{4}-\d{4,}$', re.IGNORECASE)
 
+# Maximum bytes of exploit output stored in the database
+_MAX_EXPLOIT_OUTPUT_SIZE = 8192
+
 # Mapping of shebang tokens → interpreter binary
 _SHEBANG_MAP = {
     "python3": "python3",
@@ -4252,7 +4255,9 @@ def run_cve_exploit(self, device_id: int, cve_id: str):
         return {"status": "error", "output": "Device {} not found.".format(device_id)}
 
     ip = device.ip
-    port = str(device.port or "80").strip().split(",")[0].strip()
+    port = str(device.port).strip().split(",")[0].strip() if device.port else ""
+    if not port:
+        return {"status": "error", "output": "Device {} has no port configured.".format(device_id)}
 
     progress_recorder.set_progress(1, 4, description="Looking up exploit refs…")
 
@@ -4328,7 +4333,9 @@ def run_cve_exploit(self, device_id: int, cve_id: str):
 
         tmp_path = None
         try:
-            # Write source to a secure temporary file
+            # Write source to a secure temporary file.
+            # NamedTemporaryFile creates the file with mode 0600 on Linux,
+            # so no additional chmod is needed (and avoids a TOCTOU race).
             suffix = ".rb" if interpreter == "ruby" else ".py" if "python" in interpreter else ".sh"
             with tempfile.NamedTemporaryFile(
                 mode="w",
@@ -4339,8 +4346,6 @@ def run_cve_exploit(self, device_id: int, cve_id: str):
             ) as tmp:
                 tmp.write(source)
                 tmp_path = tmp.name
-
-            os.chmod(tmp_path, 0o700)
 
             proc = subprocess.run(
                 [interp_bin, tmp_path, ip, port],
@@ -4359,7 +4364,7 @@ def run_cve_exploit(self, device_id: int, cve_id: str):
                 "edb_id":      edb_id,
                 "interpreter": interpreter,
                 "returncode":  proc.returncode,
-                "output":      combined[:8192],  # cap stored output
+                "output":      combined[:_MAX_EXPLOIT_OUTPUT_SIZE],
             }
 
             device.exploit = json.dumps(result_dict)
