@@ -1223,19 +1223,26 @@ $('#scan').on('click', function(){
 });
 
 $('#exploit').on('click', function(){
-       var $btn = $(this);
-       $btn.prop('disabled', true).text('⏳ Running…');
-       $.ajax({
-        type: "GET",
-        url: "/exploit/{{device.id}}",
-        success: function (data) {
-           $btn.prop('disabled', false).text('Exploit');
-           $('#exploit_results').html(library.json.prettyPrint(data));
-        if (data.Success){
-                noty({text: data.Success , layout: 'topRight', type: 'success', timeout: 10000});
-        }
-                if (data.Error){
-                noty({text: data.Error , layout: 'topRight', type: 'error', timeout: 10000});
+    var $btn = $(this);
+    var selectedCve = $('#exploit_select').val();
+    $btn.prop('disabled', true).text('⏳ Running…');
+    var $results = $('#exploit_results');
+    var $pbar = $('#progress-bar8');
+
+    if (!selectedCve || selectedCve === 'auto') {
+        // Default device-type exploit
+        $.ajax({
+            type: "GET",
+            url: "/exploit/{{device.id}}",
+            headers: {"X-Requested-With": "XMLHttpRequest"},
+            success: function (data) {
+                $btn.prop('disabled', false).text('Exploit');
+                $results.html(library.json.prettyPrint(data));
+                if (data.Success) {
+                    noty({text: data.Success, layout: 'topRight', type: 'success', timeout: 10000});
+                }
+                if (data.Error) {
+                    noty({text: data.Error, layout: 'topRight', type: 'error', timeout: 10000});
                 }
             },
             error: function (data) {
@@ -1244,8 +1251,46 @@ $('#exploit').on('click', function(){
                 noty({text: "Exploit request failed — check console for details", layout: 'topRight', type: 'error', timeout: 4000});
             }
         });
-        return false;
-    });
+    } else {
+        // CVE-specific exploit: download from ExploitDB and execute
+        $pbar.val(0).show();
+        $.ajax({
+            type: "GET",
+            url: "/exploit/{{device.id}}/cve/" + encodeURIComponent(selectedCve),
+            headers: {"X-Requested-With": "XMLHttpRequest"},
+            success: function (resp) {
+                if (!resp.task_id) {
+                    $btn.prop('disabled', false).text('Exploit');
+                    $pbar.hide();
+                    noty({text: "Failed to start exploit task", layout: 'topRight', type: 'error', timeout: 4000});
+                    return;
+                }
+                noty({text: "Exploit task started for " + selectedCve, layout: 'topRight', type: 'information', timeout: 3000});
+                get_task_info(resp.task_id, $pbar, 0, function(result) {
+                    $btn.prop('disabled', false).text('Exploit');
+                    $pbar.hide();
+                    if (result) {
+                        $results.html(library.json.prettyPrint(result));
+                        if (result.status === 'executed') {
+                            noty({text: "Exploit executed: " + selectedCve + " (exit code " + result.returncode + ")", layout: 'topRight', type: 'success', timeout: 8000});
+                        } else if (result.status === 'not_found') {
+                            noty({text: "No ExploitDB entry found for " + selectedCve, layout: 'topRight', type: 'warning', timeout: 5000});
+                        } else {
+                            noty({text: "Exploit failed: " + (result.output || result.status), layout: 'topRight', type: 'error', timeout: 6000});
+                        }
+                    }
+                });
+            },
+            error: function (data) {
+                $btn.prop('disabled', false).text('Exploit');
+                $pbar.hide();
+                console.error("Exploit CVE request failed", data);
+                noty({text: "Exploit request failed — check console for details", layout: 'topRight', type: 'error', timeout: 4000});
+            }
+        });
+    }
+    return false;
+});
 
 $('#btn_send_all').on('click', function(){
     var bla = $('#notes').val();

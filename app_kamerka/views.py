@@ -68,6 +68,7 @@ from kamerka.tasks import (
     cvedb_enrich,
     shodan_intel_scan,
     shodan_trends_task,
+    run_cve_exploit,
 )
 from shodan import Shodan as _ShodanAPI
 
@@ -973,6 +974,33 @@ def exploit_dev(request, id):
                 json.dumps({"Error": "Connection Error"}),
                 content_type="application/json",
             )
+    return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
+
+
+def exploit_cve_view(request, device_id, cve_id):
+    """Download and execute an ExploitDB exploit for *cve_id* against *device_id*.
+
+    Dispatches the ``run_cve_exploit`` Celery task and returns the task ID so
+    the frontend can poll ``/get-task-info/`` for progress and results.
+
+    GET /exploit/<device_id>/cve/<cve_id>  →  {"task_id": "..."}
+    """
+    if (
+        request.method == "GET"
+        and request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    ):
+        # Basic CVE ID format validation before dispatching
+        import re as _re
+        if not _re.match(r'^CVE-\d{4}-\d{4,}$', cve_id.strip(), _re.IGNORECASE):
+            return HttpResponse(
+                json.dumps({"error": "Invalid CVE ID format"}),
+                content_type="application/json",
+                status=400,
+            )
+        task = run_cve_exploit.delay(int(device_id), cve_id.strip())
+        return HttpResponse(
+            json.dumps({"task_id": task.id}), content_type="application/json"
+        )
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
 
 
