@@ -991,8 +991,7 @@ def exploit_cve_view(request, device_id, cve_id):
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
         # Basic CVE ID format validation before dispatching
-        import re as _re
-        if not _re.match(r'^CVE-\d{4}-\d{4,}$', cve_id.strip(), _re.IGNORECASE):
+        if not re.match(r'^CVE-\d{4}-\d+$', cve_id.strip(), re.IGNORECASE):
             return HttpResponse(
                 json.dumps({"error": "Invalid CVE ID format"}),
                 content_type="application/json",
@@ -1020,8 +1019,7 @@ def exploit_info_view(request, device_id, cve_id):
     ):
         return HttpResponse(json.dumps({}), content_type="application/json")
 
-    import re as _re
-    if not _re.match(r'^CVE-\d{4}-\d{4,}$', cve_id.strip(), _re.IGNORECASE):
+    if not re.match(r'^CVE-\d{4}-\d+$', cve_id.strip(), re.IGNORECASE):
         return HttpResponse(
             json.dumps({"error": "Invalid CVE ID format"}),
             content_type="application/json",

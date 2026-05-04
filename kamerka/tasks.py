@@ -4172,8 +4172,8 @@ def capture_screenshot(self, device_id):
 # CVE Exploit — search, download and execute an ExploitDB exploit for a CVE
 # ---------------------------------------------------------------------------
 
-# Regex for a valid CVE ID
-_CVE_RE = re.compile(r'^CVE-\d{4}-\d{4,}$', re.IGNORECASE)
+# Regex for a valid CVE ID — allows any number of digits after the year
+_CVE_RE = re.compile(r'^CVE-\d{4}-\d+$', re.IGNORECASE)
 
 # Maximum bytes of exploit output stored in the database
 _MAX_EXPLOIT_OUTPUT_SIZE = 8192
@@ -4287,8 +4287,8 @@ def _classify_exploit(title: str, description: str = "", msf_module: str = "") -
         })
 
     elif any(x in combined for x in [
-        "denial of service", " dos ", "crash", "reboot", "memory corruption",
-    ]):
+        "denial of service", "crash", "reboot", "memory corruption",
+    ]) or re.search(r'\bdos\b', combined):
         exploit_type = "Denial of Service"
         requirements.append({
             "icon": "💥",
@@ -4417,8 +4417,9 @@ def run_cve_exploit(self, device_id: int, cve_id: str):
         return {"status": "error", "output": "Device {} not found.".format(device_id)}
 
     ip = device.ip
-    port = str(device.port).strip().split(",")[0].strip() if device.port else ""
-    if not port:
+    # device.port may store a comma-separated list (e.g. "80,443,8080") — use the first
+    primary_port = str(device.port).strip().split(",")[0].strip() if device.port else ""
+    if not primary_port:
         return {"status": "error", "output": "Device {} has no port configured.".format(device_id)}
 
     progress_recorder.set_progress(1, 4, description="Looking up exploit refs…")
@@ -4498,7 +4499,12 @@ def run_cve_exploit(self, device_id: int, cve_id: str):
             # Write source to a secure temporary file.
             # NamedTemporaryFile creates the file with mode 0600 on Linux,
             # so no additional chmod is needed (and avoids a TOCTOU race).
-            suffix = ".rb" if interpreter == "ruby" else ".py" if "python" in interpreter else ".sh"
+            _INTERP_EXT = {
+                "python3": ".py", "python": ".py",
+                "ruby": ".rb", "perl": ".pl",
+                "bash": ".sh", "sh": ".sh",
+            }
+            suffix = _INTERP_EXT.get(interpreter, ".py")
             with tempfile.NamedTemporaryFile(
                 mode="w",
                 suffix=suffix,
@@ -4510,7 +4516,7 @@ def run_cve_exploit(self, device_id: int, cve_id: str):
                 tmp_path = tmp.name
 
             proc = subprocess.run(
-                [interp_bin, tmp_path, ip, port],
+                [interp_bin, tmp_path, ip, primary_port],
                 capture_output=True,
                 text=True,
                 timeout=60,
