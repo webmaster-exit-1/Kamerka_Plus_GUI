@@ -70,6 +70,7 @@ from kamerka.tasks import (
     shodan_trends_task,
     run_cve_exploit,
     _classify_exploit,
+    _is_safe_ref_url,
 )
 from shodan import Shodan as _ShodanAPI
 
@@ -984,12 +985,40 @@ def exploit_cve_view(request, device_id, cve_id):
     Dispatches the ``run_cve_exploit`` Celery task and returns the task ID so
     the frontend can poll ``/get-task-info/`` for progress and results.
 
+    Access is restricted to authenticated staff users.  The feature flag
+    ``KAMERKA_EXPLOIT_EXECUTION_ENABLED`` must also be set to ``True`` in
+    settings (via the environment variable) or the task will abort safely.
+
     GET /exploit/<device_id>/cve/<cve_id>  →  {"task_id": "..."}
     """
+    from django.conf import settings as _settings
+
     if (
         request.method == "GET"
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
+        # Auth guard — only authenticated staff/superusers may dispatch exploits
+        if not (request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser)):
+            return HttpResponse(
+                json.dumps({"error": "Permission denied. Staff access required."}),
+                content_type="application/json",
+                status=403,
+            )
+
+        # Feature-flag check — inform the client immediately if execution is disabled
+        if not getattr(_settings, "KAMERKA_EXPLOIT_EXECUTION_ENABLED", False):
+            return HttpResponse(
+                json.dumps({
+                    "error": (
+                        "Exploit execution is disabled. Set "
+                        "KAMERKA_EXPLOIT_EXECUTION_ENABLED=true on a dedicated, "
+                        "isolated host to enable it."
+                    )
+                }),
+                content_type="application/json",
+                status=403,
+            )
+
         # Basic CVE ID format validation before dispatching
         if not re.match(r'^CVE-\d{4}-\d+$', cve_id.strip(), re.IGNORECASE):
             return HttpResponse(
@@ -1032,13 +1061,18 @@ def exploit_info_view(request, device_id, cve_id):
         device_id=int(device_id), cve_id__iexact=cve_id_upper
     ).first()
 
-    # Gather exploit refs
+    # Gather exploit refs — filter to http/https from trusted hosts only to
+    # prevent javascript: or other dangerous schemes from reaching the browser.
     exploit_refs = []
     if vi and vi.exploit_refs:
         try:
-            exploit_refs = json.loads(vi.exploit_refs)
+            raw_refs = json.loads(vi.exploit_refs)
         except (json.JSONDecodeError, TypeError):
-            exploit_refs = []
+            raw_refs = []
+        exploit_refs = [
+            ref for ref in raw_refs
+            if isinstance(ref, dict) and _is_safe_ref_url(ref.get("url", ""))
+        ]
 
     # Use first available exploit title for classification
     first_title = exploit_refs[0].get("title", "") if exploit_refs else ""

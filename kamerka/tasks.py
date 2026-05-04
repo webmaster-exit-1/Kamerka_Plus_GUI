@@ -2,15 +2,16 @@ import itertools
 import json
 import logging
 import math
+import os
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import tempfile
 
 import maxminddb
 from libnmap.parser import NmapParser
-import os
 from time import sleep
 import requests
 from celery import shared_task, current_task
@@ -3316,12 +3317,36 @@ CVEDB_BASE = "https://cvedb.shodan.io"
 # Authoritative hostname check — prevents "evil.com/exploit-db.com/…" bypass.
 _EXPLOITDB_HOSTNAMES = {"exploit-db.com", "www.exploit-db.com"}
 
+# Trusted hostnames for exploit reference links shown in the UI.
+# Only http/https URLs with these hostnames are forwarded to the browser.
+_SAFE_REF_HOSTNAMES = {
+    "exploit-db.com",
+    "www.exploit-db.com",
+    "github.com",
+    "www.github.com",
+    "nvd.nist.gov",
+    "cve.mitre.org",
+    "packetstormsecurity.com",
+    "www.packetstormsecurity.com",
+}
+
 
 def _is_exploitdb_url(url):
     """Return True only when *url*'s hostname is exactly exploit-db.com."""
     try:
         host = urllib.parse.urlparse(url).hostname or ""
         return host in _EXPLOITDB_HOSTNAMES
+    except Exception:
+        return False
+
+
+def _is_safe_ref_url(url: str) -> bool:
+    """Return True only for http/https URLs whose hostname is in
+    ``_SAFE_REF_HOSTNAMES``.  Prevents javascript: and other dangerous
+    schemes from reaching the browser."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        return parsed.scheme in ("http", "https") and (parsed.hostname or "") in _SAFE_REF_HOSTNAMES
     except Exception:
         return False
 
@@ -4178,10 +4203,13 @@ _CVE_RE = re.compile(r'^CVE-\d{4}-\d+$', re.IGNORECASE)
 # Maximum bytes of exploit output stored in the database
 _MAX_EXPLOIT_OUTPUT_SIZE = 8192
 
-# Mapping of shebang tokens → interpreter binary
+# Mapping of shebang tokens → interpreter binary.
+# "python" is intentionally kept as "python" so we can try python3 → python →
+# python2 at runtime rather than silently forcing python3.
 _SHEBANG_MAP = {
     "python3": "python3",
-    "python":  "python3",
+    "python2": "python2",
+    "python":  "python",   # resolved with fallback in _resolve_interpreter
     "ruby":    "ruby",
     "perl":    "perl",
     "bash":    "bash",
@@ -4190,16 +4218,33 @@ _SHEBANG_MAP = {
 
 
 def _interpreter_for(source: str) -> str:
-    """Detect interpreter from the shebang of *source*.  Returns 'python3' as fallback."""
+    """Detect interpreter from the shebang of *source*.  Returns 'python3' as fallback.
+
+    For a generic ``python`` shebang the caller should use
+    ``_resolve_interpreter`` which tries python3 first, then python/python2.
+    """
     first = source.lstrip().split("\n", 1)[0] if source else ""
     if first.startswith("#!"):
-        for token, interp in _SHEBANG_MAP.items():
+        # Check more-specific tokens before generic ones (python3 before python)
+        for token in ("python3", "python2", "python", "ruby", "perl", "bash", "sh"):
             if token in first:
-                return interp
+                return _SHEBANG_MAP[token]
     # Heuristic: Ruby Metasploit modules use require 'msf/core'
     if "require 'msf/core'" in source or 'require "msf/core"' in source:
         return "ruby"
     return "python3"
+
+
+def _resolve_interpreter(interpreter: str) -> str | None:
+    """Return the full path to *interpreter*, trying python3 → python → python2
+    for the generic ``python`` case.  Returns ``None`` if nothing is found."""
+    if interpreter == "python":
+        return (
+            shutil.which("python3")
+            or shutil.which("python")
+            or shutil.which("python2")
+        )
+    return shutil.which(interpreter)
 
 
 def _classify_exploit(title: str, description: str = "", msf_module: str = "") -> dict:
@@ -4385,20 +4430,38 @@ def run_cve_exploit(self, device_id: int, cve_id: str):
 
     Workflow
     --------
-    1. Validate the CVE ID format.
-    2. Look up the VulnIntelligence record for this device + CVE to obtain
+    1. Check that exploit execution is enabled via ``KAMERKA_EXPLOIT_EXECUTION_ENABLED``.
+    2. Validate the CVE ID format.
+    3. Look up the VulnIntelligence record for this device + CVE to obtain
        stored ``exploit_refs`` (ExploitDB URLs / IDs).
-    3. For each ref, download the raw exploit source from exploit-db.com.
-    4. Detect the interpreter via shebang.
-    5. Write the source to a secure temp file and execute it with the target
-       IP and port as the first two positional arguments.
-    6. Save the combined stdout/stderr output to ``Device.exploit`` and set
+    4. For each ref, download the raw exploit source from exploit-db.com.
+    5. Detect the interpreter via shebang.
+    6. Write the source to a secure temp file and execute it with the target
+       IP and port as the first two positional arguments.  The process is
+       started in its own session (new process group) so that the entire
+       process tree can be cleanly killed on timeout.
+    7. Save the combined stdout/stderr output to ``Device.exploit`` and set
        ``Device.exploited_scanned = True``.
 
     Returns a dict with keys ``status``, ``output``, ``cve_id``, and ``exploit_url``.
     """
+    from django.conf import settings as _settings
+
     progress_recorder = ProgressRecorder(self)
     progress_recorder.set_progress(0, 4, description="Validating…")
+
+    # ------------------------------------------------------------------
+    # 0. Feature-flag gate — must be explicitly enabled
+    # ------------------------------------------------------------------
+    if not getattr(_settings, "KAMERKA_EXPLOIT_EXECUTION_ENABLED", False):
+        return {
+            "status": "disabled",
+            "output": (
+                "Exploit execution is disabled. Set the environment variable "
+                "KAMERKA_EXPLOIT_EXECUTION_ENABLED=true on a dedicated, "
+                "isolated host to enable it."
+            ),
+        }
 
     # ------------------------------------------------------------------
     # 1. Validate CVE ID
@@ -4487,7 +4550,7 @@ def run_cve_exploit(self, device_id: int, cve_id: str):
             continue
 
         interpreter = _interpreter_for(source)
-        interp_bin = shutil.which(interpreter)
+        interp_bin = _resolve_interpreter(interpreter)
         if not interp_bin:
             last_error = "Interpreter '{}' not found on this system.".format(interpreter)
             continue
@@ -4500,7 +4563,7 @@ def run_cve_exploit(self, device_id: int, cve_id: str):
             # NamedTemporaryFile creates the file with mode 0600 on Linux,
             # so no additional chmod is needed (and avoids a TOCTOU race).
             _INTERP_EXT = {
-                "python3": ".py", "python": ".py",
+                "python3": ".py", "python": ".py", "python2": ".py",
                 "ruby": ".rb", "perl": ".pl",
                 "bash": ".sh", "sh": ".sh",
             }
@@ -4515,14 +4578,27 @@ def run_cve_exploit(self, device_id: int, cve_id: str):
                 tmp.write(source)
                 tmp_path = tmp.name
 
-            proc = subprocess.run(
+            # start_new_session=True places the child in a new process group
+            # so that all its descendants can be cleanly killed on timeout.
+            proc = subprocess.Popen(
                 [interp_bin, tmp_path, ip, primary_port],
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=60,
+                start_new_session=True,
             )
+            try:
+                stdout, stderr = proc.communicate(timeout=60)
+            except subprocess.TimeoutExpired:
+                # Kill the entire process group, not just the direct child
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except OSError:
+                    proc.kill()
+                proc.wait()
+                raise
 
-            combined = (proc.stdout or "") + (proc.stderr or "")
+            combined = (stdout or "") + (stderr or "")
             combined = combined.strip() or "(no output)"
 
             result_dict = {

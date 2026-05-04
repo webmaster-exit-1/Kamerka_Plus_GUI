@@ -219,3 +219,22 @@ from kamerka.tool_settings import (  # noqa: E402
 # unit file.  For Docker, use --env-file or -e SHODAN_API_KEY=...
 # ---------------------------------------------------------------------------
 SHODAN_API_KEY: str = os.environ.get("SHODAN_API_KEY", "")
+
+# ---------------------------------------------------------------------------
+# CVE Exploit Execution — disabled by default for safety.
+#
+# Enabling this setting allows Kamerka to download exploit source code from
+# ExploitDB and execute it directly on this host against a target device.
+# This is intentionally disabled by default because running untrusted remote
+# code is a serious security risk.
+#
+# Only enable this on a dedicated, isolated, non-production machine and ONLY
+# after reviewing what an exploit does.  Consider using a dedicated VM or
+# container with restricted network access for running exploits.
+#
+# To enable, set the environment variable:
+#   export KAMERKA_EXPLOIT_EXECUTION_ENABLED=true
+# ---------------------------------------------------------------------------
+KAMERKA_EXPLOIT_EXECUTION_ENABLED: bool = os.environ.get(
+    "KAMERKA_EXPLOIT_EXECUTION_ENABLED", "false"
+).lower() in ("true", "1", "yes")

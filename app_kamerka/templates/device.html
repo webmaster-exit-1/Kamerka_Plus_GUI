@@ -1262,6 +1262,12 @@ $('#exploit').on('click', function(){
             url: "/exploit/{{device.id}}/cve/" + encodeURIComponent(selectedCve),
             headers: {"X-Requested-With": "XMLHttpRequest"},
             success: function (resp) {
+                if (resp.error) {
+                    $btn.prop('disabled', false).text('Exploit');
+                    $pbar.hide();
+                    noty({text: resp.error, layout: 'topRight', type: 'error', timeout: 6000});
+                    return;
+                }
                 if (!resp.task_id) {
                     $btn.prop('disabled', false).text('Exploit');
                     $pbar.hide();
@@ -1276,6 +1282,8 @@ $('#exploit').on('click', function(){
                         $results.html(library.json.prettyPrint(result));
                         if (result.status === 'executed') {
                             noty({text: "Exploit executed: " + selectedCve + " (exit code " + result.returncode + ")", layout: 'topRight', type: 'success', timeout: 8000});
+                        } else if (result.status === 'disabled') {
+                            noty({text: result.output, layout: 'topRight', type: 'warning', timeout: 8000});
                         } else if (result.status === 'not_found') {
                             noty({text: "No ExploitDB entry found for " + selectedCve, layout: 'topRight', type: 'warning', timeout: 5000});
                         } else {
@@ -1284,11 +1292,13 @@ $('#exploit').on('click', function(){
                     }
                 });
             },
-            error: function (data) {
+            error: function (xhr) {
                 $btn.prop('disabled', false).text('Exploit');
                 $pbar.hide();
-                console.error("Exploit CVE request failed", data);
-                noty({text: "Exploit request failed — check console for details", layout: 'topRight', type: 'error', timeout: 4000});
+                var msg = "Exploit request failed";
+                if (xhr.status === 403) { msg = "Permission denied — staff access and KAMERKA_EXPLOIT_EXECUTION_ENABLED=true required."; }
+                console.error("Exploit CVE request failed", xhr);
+                noty({text: msg, layout: 'topRight', type: 'error', timeout: 6000});
             }
         });
     }
@@ -1363,11 +1373,14 @@ $('#exploit_select').on('change', function() {
                 html += '</pre>';
             }
 
-            // ExploitDB links
+            // ExploitDB links — only render safe http/https URLs
             if (info.exploit_refs && info.exploit_refs.length) {
                 html += '<div style="font-size:0.82em;margin-top:4px;">';
                 $.each(info.exploit_refs, function(_, ref) {
-                    html += '<a href="' + $('<span>').text(ref.url).html() + '" target="_blank" rel="noopener noreferrer" style="color:#ffe600;display:block;margin-bottom:2px;">&#128279;&nbsp;' + $('<span>').text(ref.title || ref.url).html() + '</a>';
+                    var safeUrl = ref.url || '';
+                    // Reject any URL that is not http:// or https://
+                    if (!/^https?:\/\//i.test(safeUrl)) { return; }
+                    html += '<a href="' + $('<span>').text(safeUrl).html() + '" target="_blank" rel="noopener noreferrer" style="color:#ffe600;display:block;margin-bottom:2px;">&#128279;&nbsp;' + $('<span>').text(ref.title || safeUrl).html() + '</a>';
                 });
                 html += '</div>';
             }
