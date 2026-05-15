@@ -90,14 +90,14 @@ def layer_import(request):
             "features": { ...GeoJSON FeatureCollection... }
         }
     """
+    permission_error = _require_staff(request)
+    if permission_error:
+        return permission_error
+
     try:
         payload = json.loads(request.body)
     except (json.JSONDecodeError, UnicodeDecodeError):
         return JsonResponse({"error": "invalid JSON"}, status=400)
-
-    permission_error = _require_staff(request)
-    if permission_error:
-        return permission_error
 
     slug = payload.get("slug", "")
     name = payload.get("name", slug)
@@ -108,7 +108,15 @@ def layer_import(request):
 
     fc = payload.get("features") or {}
     if not isinstance(fc, dict):
-        return JsonResponse({"error": "features must be a GeoJSON FeatureCollection"}, status=400)
+        return JsonResponse(
+            {"error": "features must contain a GeoJSON FeatureCollection object"},
+            status=400,
+        )
+    if fc.get("type") != "FeatureCollection":
+        return JsonResponse(
+            {"error": "features.type must be 'FeatureCollection'"},
+            status=400,
+        )
 
     feature_rows = []
     imported = 0

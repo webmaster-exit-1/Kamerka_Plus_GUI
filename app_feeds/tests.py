@@ -12,11 +12,11 @@ class FeedViewsTests(TestCase):
 
 
 class FeedTaskTests(TestCase):
-    @override_settings(REDIS_URL="redis://cache.example:6379/5")
+    @override_settings(REDIS_URL="redis://test-fake-redis:6379/0")
     @patch("redis.from_url")
     def test_publish_redis_uses_settings_redis_url(self, from_url):
         from app_feeds.tasks import _publish_redis
 
         _publish_redis("feed_updated", {"id": 1})
 
-        from_url.assert_called_once_with("redis://cache.example:6379/5")
+        from_url.assert_called_once_with("redis://test-fake-redis:6379/0")

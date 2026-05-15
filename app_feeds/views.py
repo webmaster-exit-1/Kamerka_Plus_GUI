@@ -103,8 +103,6 @@ def feed_sse(request):
                     yield ": heartbeat\n\n"
                     last_heartbeat = now_ts
 
-        except GeneratorExit:
-            raise
         except Exception as exc:
             logger.debug("SSE Redis error: %s", exc)
             # Send a single comment so the client knows the stream is alive,
