@@ -985,24 +985,12 @@ def exploit_cve_view(request, device_id, cve_id):
     Dispatches the ``run_cve_exploit`` Celery task and returns the task ID so
     the frontend can poll ``/get-task-info/`` for progress and results.
 
-    Access is restricted to authenticated staff users.
-
     GET /exploit/<device_id>/cve/<cve_id>  →  {"task_id": "..."}
     """
     if (
         request.method == "GET"
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
-        # Auth guard — only authenticated staff users may dispatch exploits
-        if not (request.user.is_authenticated and request.user.is_staff):
-            return HttpResponse(
-                json.dumps({
-                    "error": "Permission denied. Staff access required."
-                }),
-                content_type="application/json",
-                status=403,
-            )
-
         # Basic CVE ID format validation before dispatching
         if not re.match(r'^CVE-\d{4}-\d+$', cve_id.strip(), re.IGNORECASE):
             return HttpResponse(

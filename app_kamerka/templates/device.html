@@ -1294,7 +1294,7 @@ $('#exploit').on('click', function(){
                 $btn.prop('disabled', false).text('Exploit');
                 $pbar.hide();
                 var msg = "Exploit request failed";
-                if (xhr.status === 403) { msg = "Permission denied — staff access required."; }
+                if (xhr.status === 403) { msg = "Permission denied."; }
                 console.error("Exploit CVE request failed", xhr);
                 noty({text: msg, layout: 'topRight', type: 'error', timeout: 6000});
             }
