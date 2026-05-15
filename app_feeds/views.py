@@ -88,7 +88,7 @@ def feed_sse(request):
 
             last_heartbeat = time.time()
             while True:
-                message = pubsub.get_message(timeout=1.0)
+                message = pubsub.get_message(timeout=0.1)
                 if message and message["type"] == "message":
                     channel = message["channel"]
                     if isinstance(channel, bytes):

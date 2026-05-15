@@ -66,7 +66,7 @@ class LayerViewsTests(TestCase):
 
 class LayerTasksTests(TestCase):
     @patch("app_layers.tasks.refresh_layer.delay")
-    def test_refresh_all_layers_queues_subtasks(self, refresh_delay):
+    def test_refresh_all_layers_queues_subtasks(self, mock_refresh_delay):
         DataLayer.objects.create(slug="alpha", name="Alpha", enabled=True)
         DataLayer.objects.create(slug="beta", name="Beta", enabled=True)
 
@@ -74,5 +74,5 @@ class LayerTasksTests(TestCase):
 
         result = refresh_all_layers()
 
-        self.assertEqual(refresh_delay.call_count, 2)
+        self.assertEqual(mock_refresh_delay.call_count, 2)
         self.assertEqual(result, "queued 2 layer refresh tasks")

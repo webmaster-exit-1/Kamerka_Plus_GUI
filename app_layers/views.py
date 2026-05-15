@@ -49,7 +49,7 @@ def layer_features(request, slug: str):
     try:
         layer = DataLayer.objects.get(slug=slug, enabled=True)
     except DataLayer.DoesNotExist:
-        return JsonResponse({"error": "not found or disabled"}, status=404)
+        return JsonResponse({"error": "not found"}, status=404)
 
     features = []
     for feat in layer.features.all():
@@ -186,7 +186,7 @@ def layer_refresh(request, slug: str):
     try:
         DataLayer.objects.get(slug=slug, enabled=True)
     except DataLayer.DoesNotExist:
-        return JsonResponse({"error": "not found or disabled"}, status=404)
+        return JsonResponse({"error": "not found"}, status=404)
 
     task = refresh_layer.delay(slug)
     return JsonResponse({"task_id": task.id, "slug": slug})
