@@ -283,6 +283,7 @@ SHODAN_API_KEY: str = os.environ.get("SHODAN_API_KEY", "")
 # Example: export OLLAMA_HOST=http://localhost:11434
 OLLAMA_HOST: str = os.environ.get("OLLAMA_HOST", "")
 OLLAMA_MODEL: str = os.environ.get("OLLAMA_MODEL", "llama3")
+OLLAMA_TIMEOUT: int = int(os.environ.get("OLLAMA_TIMEOUT", "60"))
 
 # Interval (minutes) between automatic layer refresh runs via Celery Beat.
 # Defaults to 60 minutes.

@@ -11,6 +11,7 @@ GET  /api/layers/<slug>/refresh/           — manually trigger a layer refresh
 from __future__ import annotations
 
 import json
+import math
 
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_http_methods
@@ -23,6 +24,78 @@ def _require_staff(request):
     if request.user.is_authenticated and request.user.is_staff:
         return None
     return JsonResponse({"error": "Permission denied. Staff access required."}, status=403)
+
+
+def _iter_lon_lat_pairs(node):
+    """Yield ``(lon, lat)`` float pairs from GeoJSON-style coordinates data.
+
+    ``node`` should be a GeoJSON ``coordinates`` value, i.e. a nested list/tuple
+    structure that eventually contains numeric ``[lon, lat]`` pairs.
+    """
+    if not isinstance(node, (list, tuple)):
+        return
+    if len(node) >= 2 and all(isinstance(v, (int, float)) for v in node[:2]):
+        yield float(node[0]), float(node[1])
+        return
+    for item in node:
+        yield from _iter_lon_lat_pairs(item)
+
+
+def _bbox_overlaps(a, b):
+    """Return True when two ``(min_lon, min_lat, max_lon, max_lat)`` boxes overlap."""
+    a_min_lon, a_min_lat, a_max_lon, a_max_lat = a
+    b_min_lon, b_min_lat, b_max_lon, b_max_lat = b
+    return not (
+        a_max_lon < b_min_lon
+        or a_min_lon > b_max_lon
+        or a_max_lat < b_min_lat
+        or a_min_lat > b_max_lat
+    )
+
+
+def _geometry_bounds(geometry):
+    """Return the bounds of a GeoJSON geometry as ``(min_lon, min_lat, max_lon, max_lat)``."""
+    if not isinstance(geometry, dict):
+        return None
+
+    coords = list(_iter_lon_lat_pairs(geometry.get("coordinates")))
+    if not coords:
+        return None
+
+    lons = [lon for lon, _lat in coords]
+    lats = [lat for _lon, lat in coords]
+    return min(lons), min(lats), max(lons), max(lats)
+
+
+def _geometry_intersects_bbox(geometry, bbox):
+    """Return True if the geometry bounds overlap ``bbox``.
+
+    ``geometry`` is expected to be a GeoJSON geometry dict with a
+    ``coordinates`` key. ``bbox`` must be ``(min_lon, min_lat, max_lon, max_lat)``.
+    """
+    geometry_bbox = _geometry_bounds(geometry)
+    if geometry_bbox is None:
+        return False
+    return _bbox_overlaps(geometry_bbox, bbox)
+
+
+def _parse_bbox(raw_bbox: str):
+    """Parse ``min_lon,min_lat,max_lon,max_lat`` into a 4-float tuple.
+
+    Returns ``(min_lon, min_lat, max_lon, max_lat)`` on success, else ``None``.
+    """
+    try:
+        parts = [float(p.strip()) for p in (raw_bbox or "").split(",")]
+    except ValueError:
+        return None
+    if len(parts) != 4:
+        return None
+    if not all(math.isfinite(value) for value in parts):
+        return None
+    min_lon, min_lat, max_lon, max_lat = parts
+    if min_lon >= max_lon or min_lat >= max_lat:
+        return None
+    return min_lon, min_lat, max_lon, max_lat
 
 
 @require_GET
@@ -51,8 +124,20 @@ def layer_features(request, slug: str):
     except DataLayer.DoesNotExist:
         return JsonResponse({"error": "not found"}, status=404)
 
+    bbox = None
+    raw_bbox = request.GET.get("bbox", "")
+    if raw_bbox:
+        bbox = _parse_bbox(raw_bbox)
+        if bbox is None:
+            return JsonResponse(
+                {"error": "invalid bbox; expected min_lon,min_lat,max_lon,max_lat"},
+                status=400,
+            )
+
     features = []
     for feat in layer.features.all():
+        if bbox and not _geometry_intersects_bbox(feat.geometry, bbox):
+            continue
         features.append({
             "type": "Feature",
             "geometry": feat.geometry,

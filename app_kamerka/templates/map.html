@@ -195,6 +195,8 @@ function initialize() {
     // ── WorldMonitor-style data layer control panel ──────────────────────
     // Fetch available layers from the API and add toggle buttons.
     var _layerGeoJsonLayers = {};
+    var _layerConfigs = {};
+    var _layerButtons = {};
 
     function _layerStyle(color) {
         return {
@@ -234,17 +236,27 @@ function initialize() {
         layer.bindPopup(html);
     }
 
-    function _toggleLayer(slug, color, btn) {
-        if (_layerGeoJsonLayers[slug]) {
-            map.removeLayer(_layerGeoJsonLayers[slug]);
-            delete _layerGeoJsonLayers[slug];
-            btn.style.color = '#00e1ff';
-            btn.style.borderColor = '#0064d7';
-            return;
-        }
-        fetch('/api/layers/' + slug + '/features.json')
+    function _layerBboxQuery() {
+        var bounds = map.getBounds();
+        if (!bounds) return '';
+        var sw = bounds.getSouthWest();
+        var ne = bounds.getNorthEast();
+        return '?bbox=' + [
+            sw.lng.toFixed(6),
+            sw.lat.toFixed(6),
+            ne.lng.toFixed(6),
+            ne.lat.toFixed(6)
+        ].join(',');
+    }
+
+    function _loadLayer(slug, color, btn) {
+        fetch('/api/layers/' + slug + '/features.json' + _layerBboxQuery())
             .then(function(r) { return r.json(); })
             .then(function(fc) {
+                if (_layerGeoJsonLayers[slug]) {
+                    map.removeLayer(_layerGeoJsonLayers[slug]);
+                    delete _layerGeoJsonLayers[slug];
+                }
                 // Tag each feature with its layer color for styling
                 (fc.features || []).forEach(function(f) {
                     f.properties = f.properties || {};
@@ -258,10 +270,50 @@ function initialize() {
                     }
                 }).addTo(map);
                 _layerGeoJsonLayers[slug] = glayer;
-                btn.style.color = color;
-                btn.style.borderColor = color;
+                if (btn) {
+                    btn.style.color = color;
+                    btn.style.borderColor = color;
+                }
             })
             .catch(function(e) { console.warn('layer fetch error', slug, e); });
+    }
+
+    function _toggleLayer(slug, color, btn) {
+        if (_layerGeoJsonLayers[slug]) {
+            map.removeLayer(_layerGeoJsonLayers[slug]);
+            delete _layerGeoJsonLayers[slug];
+            btn.style.color = '#00e1ff';
+            btn.style.borderColor = '#0064d7';
+            return;
+        }
+        _loadLayer(slug, color, btn);
+    }
+
+    function _refreshVisibleLayers() {
+        Object.keys(_layerGeoJsonLayers).forEach(function(slug) {
+            var cfg = _layerConfigs[slug];
+            if (!cfg) return;
+            _loadLayer(slug, cfg.color, _layerButtons[slug]);
+        });
+    }
+
+    function _initLiveLayerUpdates() {
+        if (!window.EventSource) return;
+        var events = new EventSource('/api/feeds/entries/sse/');
+        events.addEventListener('layer_updated', function(ev) {
+            try {
+                var payload = JSON.parse(ev.data || '{}');
+                if (!payload.slug || !_layerGeoJsonLayers[payload.slug]) return;
+                var cfg = _layerConfigs[payload.slug];
+                if (!cfg) return;
+                _loadLayer(payload.slug, cfg.color, _layerButtons[payload.slug]);
+            } catch (e) {
+                console.warn('layer_updated parse error', e);
+            }
+        });
+        events.addEventListener('error', function() {
+            console.warn('layer live updates unavailable; retrying');
+        });
     }
 
     // Build the layer control panel
@@ -278,6 +330,7 @@ function initialize() {
         .then(function(r) { return r.json(); })
         .then(function(layers) {
             layers.forEach(function(layer) {
+                _layerConfigs[layer.slug] = layer;
                 var btn = document.createElement('button');
                 btn.textContent = (layer.icon || '●') + ' ' + layer.name;
                 btn.title = 'Toggle ' + layer.name + ' layer';
@@ -287,8 +340,11 @@ function initialize() {
                 btn.addEventListener('click', function() {
                     _toggleLayer(layer.slug, layer.color, btn);
                 });
+                _layerButtons[layer.slug] = btn;
                 layerPanel.appendChild(btn);
             });
+            map.on('moveend', _refreshVisibleLayers);
+            _initLiveLayerUpdates();
         })
         .catch(function() {
             layerPanel.innerHTML += '<span style="color:#666">unavailable</span>';
@@ -325,7 +381,5 @@ document.addEventListener('DOMContentLoaded', function() {
 </html>
 
 {% endblock %}
-
-
 
 
