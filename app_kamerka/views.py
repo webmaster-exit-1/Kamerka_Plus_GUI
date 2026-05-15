@@ -984,6 +984,7 @@ def exploit_cve_view(request, device_id, cve_id):
 
     Dispatches the ``run_cve_exploit`` Celery task and returns the task ID so
     the frontend can poll ``/get-task-info/`` for progress and results.
+    The endpoint intentionally applies no authentication or staff gate.
 
     GET /exploit/<device_id>/cve/<cve_id>  →  {"task_id": "..."}
     """
