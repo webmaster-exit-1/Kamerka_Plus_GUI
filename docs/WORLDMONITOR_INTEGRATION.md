@@ -68,7 +68,7 @@ Celery Beat → app_feeds.tasks.refresh_feeds()
                     → pycountry extracts mentioned countries
                     → redis.publish("feed_updated", entry_pk)
 
-Browser     → GET /api/sse/feed-updates/
+Browser     → GET /api/feeds/entries/sse/
                     → long-lived HTTP response (text/event-stream)
                     → Django view subscribes to Redis channels
                     → streams events to browser JS
@@ -81,7 +81,7 @@ Browser     → POST /api/layers/import/
                     → accepts GeoJSON FeatureCollection
                     → creates DataLayer + LayerFeature records
 
-Browser     → GET /api/export/geojson/<search_id>/
+Browser     → GET /api/export/geojson/<search_id>
                     → Kamerka Device records as GeoJSON FeatureCollection
                     → compatible with Kepler.gl, QGIS, WorldMonitor seeds
 ```
@@ -106,13 +106,16 @@ Each layer entry:
 {
   "slug": "earthquakes",
   "name": "Earthquakes (USGS)",
-  "type": "point",
+  "layer_type": "point",
   "source_url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.geojson",
   "refresh_minutes": 60,
   "color": "#ff6600",
   "icon": "⚡",
   "enabled": true,
-  "filter": {"min_magnitude": 4.0}
+  "renderer_config": {
+    "min_magnitude": 4.0,
+    "popup_fields": ["mag", "place", "time", "url"]
+  }
 }
 ```
 

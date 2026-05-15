@@ -15,14 +15,19 @@ import logging
 import time
 
 from django.conf import settings
-from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
-from django.utils.timezone import now, timedelta
-from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.http import require_GET, require_POST
 
-from app_feeds.models import Brief, FeedEntry, FeedSource
+from app_feeds.models import Brief, FeedEntry
 
 logger = logging.getLogger(__name__)
+
+
+def _require_staff(request):
+    """Return a 403 JSON response unless the requester is an authenticated staff user."""
+    if request.user.is_authenticated and request.user.is_staff:
+        return None
+    return JsonResponse({"error": "Permission denied. Staff access required."}, status=403)
 
 
 @require_GET
@@ -73,17 +78,18 @@ def feed_sse(request):
     browser does not retry-spam the server.
     """
     def _event_stream():
+        pubsub = None
         try:
             import redis as _redis_lib
 
-            r = _redis_lib.from_url(settings.CELERY_BROKER_URL)
-            pubsub = r.pubsub()
+            r = _redis_lib.from_url(settings.REDIS_URL)
+            pubsub = r.pubsub(ignore_subscribe_messages=True)
             pubsub.subscribe("feed_updated", "layer_updated")
 
-            # Send a heartbeat every 30 s while waiting for messages
             last_heartbeat = time.time()
-            for message in pubsub.listen():
-                if message["type"] == "message":
+            while True:
+                message = pubsub.get_message(timeout=1.0)
+                if message and message["type"] == "message":
                     channel = message["channel"]
                     if isinstance(channel, bytes):
                         channel = channel.decode()
@@ -97,11 +103,19 @@ def feed_sse(request):
                     yield ": heartbeat\n\n"
                     last_heartbeat = now_ts
 
+        except GeneratorExit:
+            raise
         except Exception as exc:
             logger.debug("SSE Redis error: %s", exc)
             # Send a single comment so the client knows the stream is alive,
             # then close — the browser's EventSource will reconnect.
             yield ": redis unavailable\n\n"
+        finally:
+            if pubsub is not None:
+                try:
+                    pubsub.close()
+                except Exception:
+                    pass
 
     response = StreamingHttpResponse(
         _event_stream(), content_type="text/event-stream"
@@ -133,10 +147,13 @@ def brief_view(request, region: str):
     )
 
 
-@csrf_exempt
 @require_POST
 def brief_generate(request, region: str):
     """Force-regenerate an intelligence brief for *region*."""
+    permission_error = _require_staff(request)
+    if permission_error:
+        return permission_error
+
     from app_feeds.tasks import generate_brief
 
     task = generate_brief.delay(region)

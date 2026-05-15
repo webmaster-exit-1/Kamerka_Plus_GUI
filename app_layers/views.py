@@ -11,15 +11,18 @@ GET  /api/layers/<slug>/refresh/           — manually trigger a layer refresh
 from __future__ import annotations
 
 import json
-import logging
 
-from django.http import HttpResponse, JsonResponse
-from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_http_methods
 
 from app_layers.models import DataLayer, LayerFeature
 
-logger = logging.getLogger(__name__)
+
+def _require_staff(request):
+    """Return a 403 JSON response unless the requester is an authenticated staff user."""
+    if request.user.is_authenticated and request.user.is_staff:
+        return None
+    return JsonResponse({"error": "Permission denied. Staff access required."}, status=403)
 
 
 @require_GET
@@ -44,9 +47,9 @@ def layer_list(request):
 def layer_features(request, slug: str):
     """Return a GeoJSON FeatureCollection for the named layer."""
     try:
-        layer = DataLayer.objects.get(slug=slug)
+        layer = DataLayer.objects.get(slug=slug, enabled=True)
     except DataLayer.DoesNotExist:
-        return JsonResponse({"error": "not found"}, status=404)
+        return JsonResponse({"error": "not found or disabled"}, status=404)
 
     features = []
     for feat in layer.features.all():
@@ -74,7 +77,6 @@ def layer_features(request, slug: str):
     )
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 def layer_import(request):
     """Import a GeoJSON FeatureCollection as a new DataLayer (or update existing).
@@ -93,6 +95,10 @@ def layer_import(request):
     except (json.JSONDecodeError, UnicodeDecodeError):
         return JsonResponse({"error": "invalid JSON"}, status=400)
 
+    permission_error = _require_staff(request)
+    if permission_error:
+        return permission_error
+
     slug = payload.get("slug", "")
     name = payload.get("name", slug)
     color = payload.get("color", "#ffffff")
@@ -100,20 +106,34 @@ def layer_import(request):
     if not slug:
         return JsonResponse({"error": "slug is required"}, status=400)
 
-    layer, _ = DataLayer.objects.get_or_create(
-        slug=slug,
-        defaults={"name": name, "color": color},
-    )
-
     fc = payload.get("features") or {}
+    if not isinstance(fc, dict):
+        return JsonResponse({"error": "features must be a GeoJSON FeatureCollection"}, status=400)
+
+    feature_rows = []
     imported = 0
-    for feat in fc.get("features", []):
+    feature_list = fc.get("features", [])
+    if not isinstance(feature_list, list):
+        return JsonResponse({"error": "features.features must be a list"}, status=400)
+
+    for index, feat in enumerate(feature_list, start=1):
         geom = feat.get("geometry") or {}
         props = feat.get("properties") or {}
         coords = geom.get("coordinates", [])
         lat = lon = None
-        if geom.get("type") == "Point" and len(coords) >= 2:
-            lon, lat = float(coords[0]), float(coords[1])
+        if geom.get("type") == "Point":
+            if len(coords) < 2:
+                return JsonResponse(
+                    {"error": f"feature {index} has invalid Point coordinates"},
+                    status=400,
+                )
+            try:
+                lon, lat = float(coords[0]), float(coords[1])
+            except (TypeError, ValueError):
+                return JsonResponse(
+                    {"error": f"feature {index} has non-numeric Point coordinates"},
+                    status=400,
+                )
         ext_id = str(props.get("id", ""))
         defaults = {
             "lat": lat,
@@ -121,6 +141,24 @@ def layer_import(request):
             "geometry": geom,
             "properties": props,
         }
+        feature_rows.append((ext_id, defaults))
+
+    layer, created = DataLayer.objects.get_or_create(
+        slug=slug,
+        defaults={"name": name, "color": color},
+    )
+    if not created:
+        updated_fields = []
+        if layer.name != name:
+            layer.name = name
+            updated_fields.append("name")
+        if layer.color != color:
+            layer.color = color
+            updated_fields.append("color")
+        if updated_fields:
+            layer.save(update_fields=updated_fields)
+
+    for ext_id, defaults in feature_rows:
         if ext_id:
             LayerFeature.objects.update_or_create(
                 layer=layer, external_id=ext_id, defaults=defaults

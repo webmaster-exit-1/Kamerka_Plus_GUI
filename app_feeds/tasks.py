@@ -204,7 +204,7 @@ def _publish_redis(channel: str, payload: dict) -> None:
         import redis as _redis_lib
         from django.conf import settings
 
-        r = _redis_lib.from_url(settings.CELERY_BROKER_URL)
+        r = _redis_lib.from_url(settings.REDIS_URL)
         r.publish(channel, json.dumps(payload))
     except Exception:
         pass

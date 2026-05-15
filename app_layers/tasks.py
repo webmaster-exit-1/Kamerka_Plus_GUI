@@ -14,6 +14,7 @@ from typing import Any, Dict, List
 
 import requests
 from celery import shared_task
+from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
 
@@ -350,14 +351,11 @@ def refresh_layer(self, slug: str) -> str:
 
     # Notify SSE subscribers
     try:
-        from django.core.cache import cache as _cache
         import redis as _redis_lib
-        _r = _redis_lib.from_url(
-            __import__("django.conf", fromlist=["settings"]).settings.CELERY_BROKER_URL
-        )
+        _r = _redis_lib.from_url(settings.REDIS_URL)
         _r.publish("layer_updated", json.dumps({"slug": slug, "count": count}))
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("layer_updated publish failed for %s: %s", slug, exc)
 
     return f"refreshed {slug}: {count} new features, {len(features)} total"
 
@@ -366,8 +364,8 @@ def refresh_layer(self, slug: str) -> str:
 def refresh_all_layers() -> str:
     """Trigger refresh for every enabled DataLayer."""
     layers = DataLayer.objects.filter(enabled=True)
-    results = []
+    queued = 0
     for layer in layers:
-        result = refresh_layer(layer.slug)
-        results.append(result)
-    return "; ".join(results)
+        refresh_layer.delay(layer.slug)
+        queued += 1
+    return f"queued {queued} layer refresh tasks"

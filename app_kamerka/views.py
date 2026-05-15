@@ -1250,7 +1250,7 @@ def export_geojson_enhanced(request, id):
     output is directly compatible with Kepler.gl, QGIS, and WorldMonitor
     seed imports.
 
-    URL: GET /api/export/geojson/<search_id>/
+    URL: GET /api/export/geojson/<search_id>
     """
     devices = Device.objects.filter(search_id=id)
     features = []

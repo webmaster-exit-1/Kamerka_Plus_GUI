@@ -212,6 +212,12 @@ function initialize() {
         return L.circleMarker(latlng, _layerStyle(color));
     }
 
+    function _escapeHtml(value) {
+        var node = document.createElement('div');
+        node.textContent = value;
+        return node.innerHTML;
+    }
+
     function _onEachFeature(feature, layer) {
         if (!feature.properties) return;
         var props = feature.properties;
@@ -221,7 +227,8 @@ function initialize() {
             var val = props[k];
             if (val === null || val === undefined || val === '') return;
             if (typeof val === 'object') val = JSON.stringify(val);
-            html += '<b>' + k + ':</b> ' + String(val).substring(0, 120) + '<br>';
+            html += '<b>' + _escapeHtml(k) + ':</b> ' +
+                _escapeHtml(String(val).substring(0, 120)) + '<br>';
         });
         html += '</div>';
         layer.bindPopup(html);
@@ -318,7 +325,6 @@ document.addEventListener('DOMContentLoaded', function() {
 </html>
 
 {% endblock %}
-
 
 
 

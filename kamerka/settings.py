@@ -45,8 +45,9 @@ ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', 'localhost,1
 
 # CELERY STUFF (Celery 5.x configuration)
 _redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379')
-CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', _redis_url)
-CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', _redis_url)
+REDIS_URL = _redis_url
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', REDIS_URL)
+CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', REDIS_URL)
 CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
@@ -83,7 +84,7 @@ CELERY_BEAT_SCHEDULE = {
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": os.environ.get("REDIS_URL", "redis://localhost:6379"),
+        "LOCATION": REDIS_URL,
         "KEY_PREFIX": "kamerka",
         "TIMEOUT": 60,  # default TTL; individual keys override as needed
     }
