@@ -11,6 +11,7 @@ GET  /api/layers/<slug>/refresh/           — manually trigger a layer refresh
 from __future__ import annotations
 
 import json
+import math
 
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_http_methods
@@ -88,6 +89,8 @@ def _parse_bbox(raw_bbox: str):
     except ValueError:
         return None
     if len(parts) != 4:
+        return None
+    if not all(math.isfinite(value) for value in parts):
         return None
     min_lon, min_lat, max_lon, max_lat = parts
     if min_lon >= max_lon or min_lat >= max_lat:

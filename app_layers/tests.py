@@ -96,6 +96,22 @@ class LayerViewsTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    def test_layer_features_rejects_non_finite_bbox(self):
+        DataLayer.objects.create(slug="bbox-non-finite", name="BBox Non-Finite", enabled=True)
+
+        invalid_bbox_values = [
+            "nan,0,20,20",
+            "0,0,inf,20",
+            "0,-inf,20,20",
+        ]
+        for bbox in invalid_bbox_values:
+            with self.subTest(bbox=bbox):
+                response = self.client.get(
+                    reverse("layer_features", args=["bbox-non-finite"]),
+                    {"bbox": bbox},
+                )
+                self.assertEqual(response.status_code, 400)
+
 
 class LayerTasksTests(TestCase):
     @patch("app_layers.tasks.refresh_layer.delay")
