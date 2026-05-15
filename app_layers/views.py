@@ -26,7 +26,11 @@ def _require_staff(request):
 
 
 def _iter_lon_lat_pairs(node):
-    """Yield ``(lon, lat)`` pairs from a GeoJSON coordinates tree."""
+    """Yield ``(lon, lat)`` float pairs from GeoJSON-style coordinates data.
+
+    ``node`` should be a GeoJSON ``coordinates`` value, i.e. a nested list/tuple
+    structure that eventually contains numeric ``[lon, lat]`` pairs.
+    """
     if not isinstance(node, (list, tuple)):
         return
     if len(node) >= 2 and all(isinstance(v, (int, float)) for v in node[:2]):
@@ -37,7 +41,11 @@ def _iter_lon_lat_pairs(node):
 
 
 def _geometry_intersects_bbox(geometry, bbox):
-    """Return True if any coordinate in *geometry* falls within *bbox*."""
+    """Return True if any geometry coordinate falls within ``bbox``.
+
+    ``geometry`` is expected to be a GeoJSON geometry dict with a
+    ``coordinates`` key. ``bbox`` must be ``(min_lon, min_lat, max_lon, max_lat)``.
+    """
     if not isinstance(geometry, dict):
         return False
     min_lon, min_lat, max_lon, max_lat = bbox
@@ -48,7 +56,10 @@ def _geometry_intersects_bbox(geometry, bbox):
 
 
 def _parse_bbox(raw_bbox: str):
-    """Parse ``min_lon,min_lat,max_lon,max_lat`` query parameter."""
+    """Parse ``min_lon,min_lat,max_lon,max_lat`` into a 4-float tuple.
+
+    Returns ``(min_lon, min_lat, max_lon, max_lat)`` on success, else ``None``.
+    """
     try:
         parts = [float(p.strip()) for p in (raw_bbox or "").split(",")]
     except ValueError:
