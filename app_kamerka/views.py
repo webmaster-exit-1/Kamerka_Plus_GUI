@@ -996,7 +996,9 @@ def exploit_cve_view(request, device_id, cve_id):
         # Auth guard — only authenticated staff users may dispatch exploits
         if not (request.user.is_authenticated and request.user.is_staff):
             return HttpResponse(
-                json.dumps({"error": "Permission denied. Staff access required."}),
+                json.dumps({
+                    "error": "Permission denied. Staff access required."
+                }),
                 content_type="application/json",
                 status=403,
             )
