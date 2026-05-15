@@ -311,6 +311,9 @@ function initialize() {
                 console.warn('layer_updated parse error', e);
             }
         });
+        events.addEventListener('error', function() {
+            console.warn('layer live updates unavailable; retrying');
+        });
     }
 
     // Build the layer control panel
@@ -378,6 +381,5 @@ document.addEventListener('DOMContentLoaded', function() {
 </html>
 
 {% endblock %}
-
 
 
