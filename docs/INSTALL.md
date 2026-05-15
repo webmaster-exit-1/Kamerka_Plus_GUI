@@ -239,10 +239,10 @@ sudo -u postgres createuser --createdb kamerka
 sudo -u postgres createdb -O kamerka kamerka
 ```
 
-2. Install the Python PostgreSQL adapter:
+2. Ensure Python dependencies are installed (includes PostgreSQL adapter):
 
 ```bash
-pip3 install psycopg2-binary
+pip3 install -r requirements.txt
 ```
 
 3. Export the database environment variables before starting Django and Celery:
@@ -255,7 +255,8 @@ export DB_HOST=localhost
 export DB_PORT=5432
 ```
 
-4. Update `kamerka/settings.py` `DATABASES` to use PostgreSQL (or see [DATABASE.md](DATABASE.md) for the snippet).
+4. Start Django/Celery with those environment variables set.
+   `kamerka/settings.py` switches to PostgreSQL automatically when `DB_NAME` is present.
 
 5. Run migrations:
 

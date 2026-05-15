@@ -140,15 +140,27 @@ WSGI_APPLICATION = 'kamerka.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/3.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
-        'OPTIONS': {
-            'timeout': 30,  # seconds; reduces "database is locked" under concurrent access
-        },
+if os.environ.get("DB_NAME"):
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.environ.get("DB_NAME", "kamerka"),
+            "USER": os.environ.get("DB_USER", "kamerka"),
+            "PASSWORD": os.environ.get("DB_PASSWORD", ""),
+            "HOST": os.environ.get("DB_HOST", "localhost"),
+            "PORT": os.environ.get("DB_PORT", "5432"),
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": os.path.join(BASE_DIR, "db.sqlite3"),
+            "OPTIONS": {
+                "timeout": 30,  # seconds; reduces "database is locked" under concurrent access
+            },
+        }
+    }
 
 # Password validation
 # https://docs.djangoproject.com/en/3.2/ref/settings/#auth-password-validators
@@ -298,4 +310,3 @@ LAYER_REFRESH_INTERVAL_MINUTES: int = int(
 
 # Maximum number of FeedEntry rows to retain (oldest pruned automatically).
 FEED_MAX_ENTRIES: int = int(os.environ.get("FEED_MAX_ENTRIES", "500"))
-
