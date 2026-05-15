@@ -985,14 +985,10 @@ def exploit_cve_view(request, device_id, cve_id):
     Dispatches the ``run_cve_exploit`` Celery task and returns the task ID so
     the frontend can poll ``/get-task-info/`` for progress and results.
 
-    Access is restricted to authenticated staff users.  The feature flag
-    ``KAMERKA_EXPLOIT_EXECUTION_ENABLED`` must also be set to ``True`` in
-    settings (via the environment variable) or the task will abort safely.
+    Access is restricted to authenticated staff users.
 
     GET /exploit/<device_id>/cve/<cve_id>  →  {"task_id": "..."}
     """
-    from django.conf import settings as _settings
-
     if (
         request.method == "GET"
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
@@ -1001,20 +997,6 @@ def exploit_cve_view(request, device_id, cve_id):
         if not (request.user.is_authenticated and request.user.is_staff):
             return HttpResponse(
                 json.dumps({"error": "Permission denied. Staff access required."}),
-                content_type="application/json",
-                status=403,
-            )
-
-        # Feature-flag check — inform the client immediately if execution is disabled
-        if not getattr(_settings, "KAMERKA_EXPLOIT_EXECUTION_ENABLED", False):
-            return HttpResponse(
-                json.dumps({
-                    "error": (
-                        "Exploit execution is disabled. Set "
-                        "KAMERKA_EXPLOIT_EXECUTION_ENABLED=true on a dedicated, "
-                        "isolated host to enable it."
-                    )
-                }),
                 content_type="application/json",
                 status=403,
             )

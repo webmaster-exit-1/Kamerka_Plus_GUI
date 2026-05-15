@@ -1282,8 +1282,6 @@ $('#exploit').on('click', function(){
                         $results.html(library.json.prettyPrint(result));
                         if (result.status === 'executed') {
                             noty({text: "Exploit executed: " + selectedCve + " (exit code " + result.returncode + ")", layout: 'topRight', type: 'success', timeout: 8000});
-                        } else if (result.status === 'disabled') {
-                            noty({text: result.output, layout: 'topRight', type: 'warning', timeout: 8000});
                         } else if (result.status === 'not_found') {
                             noty({text: "No ExploitDB entry found for " + selectedCve, layout: 'topRight', type: 'warning', timeout: 5000});
                         } else {
@@ -1296,7 +1294,7 @@ $('#exploit').on('click', function(){
                 $btn.prop('disabled', false).text('Exploit');
                 $pbar.hide();
                 var msg = "Exploit request failed";
-                if (xhr.status === 403) { msg = "Permission denied — staff access and KAMERKA_EXPLOIT_EXECUTION_ENABLED=true required."; }
+                if (xhr.status === 403) { msg = "Permission denied — staff access required."; }
                 console.error("Exploit CVE request failed", xhr);
                 noty({text: msg, layout: 'topRight', type: 'error', timeout: 6000});
             }
