@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
-from app_layers.models import DataLayer
+from app_layers.models import DataLayer, LayerFeature
 
 
 class LayerViewsTests(TestCase):
@@ -62,6 +62,39 @@ class LayerViewsTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertFalse(DataLayer.objects.filter(slug="custom").exists())
+
+    def test_layer_features_can_be_filtered_by_bbox(self):
+        layer = DataLayer.objects.create(slug="bbox-layer", name="BBox Layer", enabled=True)
+        LayerFeature.objects.create(
+            layer=layer,
+            geometry={"type": "Point", "coordinates": [10.0, 10.0]},
+            properties={"id": "inside"},
+        )
+        LayerFeature.objects.create(
+            layer=layer,
+            geometry={"type": "Point", "coordinates": [50.0, 50.0]},
+            properties={"id": "outside"},
+        )
+
+        response = self.client.get(
+            reverse("layer_features", args=["bbox-layer"]),
+            {"bbox": "0,0,20,20"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["features"]), 1)
+        self.assertEqual(payload["features"][0]["properties"]["id"], "inside")
+
+    def test_layer_features_rejects_invalid_bbox(self):
+        DataLayer.objects.create(slug="bbox-invalid", name="BBox Invalid", enabled=True)
+
+        response = self.client.get(
+            reverse("layer_features", args=["bbox-invalid"]),
+            {"bbox": "0,0,0,20"},
+        )
+
+        self.assertEqual(response.status_code, 400)
 
 
 class LayerTasksTests(TestCase):

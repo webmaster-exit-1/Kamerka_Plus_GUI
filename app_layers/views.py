@@ -25,6 +25,42 @@ def _require_staff(request):
     return JsonResponse({"error": "Permission denied. Staff access required."}, status=403)
 
 
+def _iter_lon_lat_pairs(node):
+    """Yield ``(lon, lat)`` pairs from a GeoJSON coordinates tree."""
+    if not isinstance(node, (list, tuple)):
+        return
+    if len(node) >= 2 and all(isinstance(v, (int, float)) for v in node[:2]):
+        yield float(node[0]), float(node[1])
+        return
+    for item in node:
+        yield from _iter_lon_lat_pairs(item)
+
+
+def _geometry_intersects_bbox(geometry, bbox):
+    """Return True if any coordinate in *geometry* falls within *bbox*."""
+    if not isinstance(geometry, dict):
+        return False
+    min_lon, min_lat, max_lon, max_lat = bbox
+    for lon, lat in _iter_lon_lat_pairs(geometry.get("coordinates")):
+        if min_lon <= lon <= max_lon and min_lat <= lat <= max_lat:
+            return True
+    return False
+
+
+def _parse_bbox(raw_bbox: str):
+    """Parse ``min_lon,min_lat,max_lon,max_lat`` query parameter."""
+    try:
+        parts = [float(p.strip()) for p in (raw_bbox or "").split(",")]
+    except ValueError:
+        return None
+    if len(parts) != 4:
+        return None
+    min_lon, min_lat, max_lon, max_lat = parts
+    if min_lon >= max_lon or min_lat >= max_lat:
+        return None
+    return min_lon, min_lat, max_lon, max_lat
+
+
 @require_GET
 def layer_list(request):
     """Return metadata for all enabled layers as JSON."""
@@ -51,8 +87,20 @@ def layer_features(request, slug: str):
     except DataLayer.DoesNotExist:
         return JsonResponse({"error": "not found"}, status=404)
 
+    bbox = None
+    raw_bbox = request.GET.get("bbox", "")
+    if raw_bbox:
+        bbox = _parse_bbox(raw_bbox)
+        if bbox is None:
+            return JsonResponse(
+                {"error": "invalid bbox; expected min_lon,min_lat,max_lon,max_lat"},
+                status=400,
+            )
+
     features = []
     for feat in layer.features.all():
+        if bbox and not _geometry_intersects_bbox(feat.geometry, bbox):
+            continue
         features.append({
             "type": "Feature",
             "geometry": feat.geometry,

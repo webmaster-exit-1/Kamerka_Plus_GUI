@@ -73,9 +73,9 @@ Browser     → GET /api/feeds/entries/sse/
                     → Django view subscribes to Redis channels
                     → streams events to browser JS
 
-Browser     → GET /api/layers/<slug>/features.json
+Browser     → GET /api/layers/<slug>/features.json?bbox=min_lon,min_lat,max_lon,max_lat
                     → returns LayerFeature GeoJSON FeatureCollection
-                    → Leaflet layer control adds/removes layer
+                    → Leaflet layer control adds/removes layer (viewport-filtered)
 
 Browser     → POST /api/layers/import/
                     → accepts GeoJSON FeatureCollection

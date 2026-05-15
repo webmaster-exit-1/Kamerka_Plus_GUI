@@ -354,6 +354,7 @@ celery --app kamerka worker --loglevel=info &
 |---|---|---|
 | `OLLAMA_HOST` | *(unset)* | Ollama API base URL for AI brief generation |
 | `OLLAMA_MODEL` | `llama3` | Ollama model name |
+| `OLLAMA_TIMEOUT` | `60` | Timeout (seconds) for Ollama `/api/generate` calls |
 | `LAYER_REFRESH_INTERVAL_MINUTES` | `60` | How often layers are refreshed by Celery Beat |
 | `FEED_MAX_ENTRIES` | `500` | Maximum RSS entries to retain (oldest pruned) |
 
@@ -362,7 +363,7 @@ celery --app kamerka worker --loglevel=info &
 | Endpoint | Description |
 |---|---|
 | `GET /api/layers/` | List all enabled data layers |
-| `GET /api/layers/<slug>/features.json` | GeoJSON features for a layer |
+| `GET /api/layers/<slug>/features.json` | GeoJSON features for a layer (`?bbox=min_lon,min_lat,max_lon,max_lat` optional viewport filter) |
 | `GET /api/layers/<slug>/refresh/` | Manually trigger a layer refresh |
 | `POST /api/layers/import/` | Import a GeoJSON FeatureCollection as a layer |
 | `GET /api/feeds/entries/` | Recent news feed entries (filterable by country) |

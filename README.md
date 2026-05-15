@@ -57,9 +57,11 @@ export SHODAN_API_KEY=your_key_here
 # Optional: export NVD_API_KEY=your_nvd_key_here  (see docs/INSTALL.md)
 redis-server &
 python3 manage.py migrate
+python3 manage.py seed_layers
+python3 manage.py seed_feeds
 python3 manage.py create_default_superuser
 python3 manage.py runserver &
-celery --app kamerka worker --loglevel=info
+celery --app kamerka worker --beat --loglevel=info
 ```
 
 See [docs/INSTALL.md](docs/INSTALL.md) for the full installation guide, including
