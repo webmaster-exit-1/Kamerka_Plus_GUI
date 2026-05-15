@@ -1,8 +1,8 @@
 """
 app_feeds/ai_briefs.py — AI-synthesised intelligence brief generation.
 
-Tries Ollama first (if OLLAMA_HOST env var is set), falls back to a simple
-extractive summariser using sentence scoring.
+Tries Ollama first (if OLLAMA_HOST is set in Django settings), falls back to a
+simple extractive summariser using sentence scoring.
 
 Public API
 ----------
@@ -10,13 +10,18 @@ generate(region, texts) -> (content: str, method: str)
 """
 from __future__ import annotations
 
-import os
 import re
 from typing import List, Tuple
 
-_OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "")
-_OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3")
-_OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", "60"))
+
+def _get_ollama_settings():
+    """Return (host, model, timeout) from Django settings."""
+    from django.conf import settings
+
+    host = getattr(settings, "OLLAMA_HOST", "")
+    model = getattr(settings, "OLLAMA_MODEL", "llama3")
+    timeout = int(getattr(settings, "OLLAMA_TIMEOUT", 60))
+    return host, model, timeout
 
 
 def generate(region: str, texts: List[str]) -> Tuple[str, str]:
@@ -35,7 +40,7 @@ def generate(region: str, texts: List[str]) -> Tuple[str, str]:
         *content* — the brief text.
         *method*  — ``"ollama"`` or ``"extractive"``.
     """
-    if _OLLAMA_HOST:
+    if _get_ollama_settings()[0]:
         try:
             return _ollama_brief(region, texts)
         except Exception:
@@ -47,6 +52,7 @@ def _ollama_brief(region: str, texts: List[str]) -> Tuple[str, str]:
     """Generate a brief via the Ollama HTTP API."""
     import requests
 
+    host, model, timeout = _get_ollama_settings()
     combined = "\n".join(f"- {t}" for t in texts)
     prompt = (
         f"You are a cybersecurity and geopolitical analyst. "
@@ -55,9 +61,9 @@ def _ollama_brief(region: str, texts: List[str]) -> Tuple[str, str]:
         f"ICS/SCADA systems. Be concise and factual.\n\n{combined}"
     )
     resp = requests.post(
-        f"{_OLLAMA_HOST.rstrip('/')}/api/generate",
-        json={"model": _OLLAMA_MODEL, "prompt": prompt, "stream": False},
-        timeout=_OLLAMA_TIMEOUT,
+        f"{host.rstrip('/')}/api/generate",
+        json={"model": model, "prompt": prompt, "stream": False},
+        timeout=timeout,
     )
     resp.raise_for_status()
     content = resp.json().get("response", "").strip()

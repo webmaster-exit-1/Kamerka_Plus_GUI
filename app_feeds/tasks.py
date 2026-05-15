@@ -33,7 +33,13 @@ _CENTROIDS = {
     "PH": (13.0, 122.0), "VN": (16.0, 108.0),
 }
 
-_MAX_ENTRIES = int(os.environ.get("FEED_MAX_ENTRIES", "500"))
+_MAX_ENTRIES = None  # resolved lazily from settings to respect runtime config
+
+
+def _get_max_entries() -> int:
+    """Return the configured FEED_MAX_ENTRIES value from Django settings."""
+    from django.conf import settings
+    return getattr(settings, "FEED_MAX_ENTRIES", 500)
 
 
 def _extract_country_codes(text: str) -> List[str]:
@@ -137,7 +143,6 @@ def refresh_feeds(self) -> str:
 
     return f"refresh_feeds: {total_new} new entries across {sources.count()} sources"
 
-
 @shared_task(name="app_feeds.tasks.geo_tag_entries")
 def geo_tag_entries(hours: int = 24) -> str:
     """Extract country codes from recently fetched entries that lack geo tags."""
@@ -206,14 +211,15 @@ def _publish_redis(channel: str, payload: dict) -> None:
 
 
 def _prune_old_entries() -> None:
-    """Keep only the most recent _MAX_ENTRIES FeedEntry rows."""
+    """Keep only the most recent FEED_MAX_ENTRIES FeedEntry rows."""
     from app_feeds.models import FeedEntry
 
+    max_entries = _get_max_entries()
     total = FeedEntry.objects.count()
-    if total > _MAX_ENTRIES:
+    if total > max_entries:
         cutoff_id = (
             FeedEntry.objects.order_by("-fetched_at")
-            .values_list("id", flat=True)[_MAX_ENTRIES - 1 : _MAX_ENTRIES]
+            .values_list("id", flat=True)[max_entries - 1 : max_entries]
         )
         if cutoff_id:
             FeedEntry.objects.filter(id__lt=cutoff_id[0]).delete()

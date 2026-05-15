@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 _CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config", "layers.json")
 
 
+_OVERPASS_TIMEOUT = 30  # seconds — longer than _HTTP_TIMEOUT because Overpass can be slow
+
+
 def _load_config() -> List[Dict[str, Any]]:
     with open(_CONFIG_PATH) as fh:
         return json.load(fh)["layers"]
@@ -301,7 +304,7 @@ def refresh_layer(self, slug: str) -> str:
                 resp = requests.post(
                     source_url,
                     data={"data": overpass_query},
-                    timeout=30,
+                    timeout=_OVERPASS_TIMEOUT,
                     headers={"User-Agent": "KamerkaPlusGUI/1.0"},
                 )
                 resp.raise_for_status()
