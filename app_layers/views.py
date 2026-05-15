@@ -40,19 +40,42 @@ def _iter_lon_lat_pairs(node):
         yield from _iter_lon_lat_pairs(item)
 
 
+def _bbox_overlaps(a, b):
+    """Return True when two ``(min_lon, min_lat, max_lon, max_lat)`` boxes overlap."""
+    a_min_lon, a_min_lat, a_max_lon, a_max_lat = a
+    b_min_lon, b_min_lat, b_max_lon, b_max_lat = b
+    return not (
+        a_max_lon < b_min_lon
+        or a_min_lon > b_max_lon
+        or a_max_lat < b_min_lat
+        or a_min_lat > b_max_lat
+    )
+
+
+def _geometry_bounds(geometry):
+    """Return the bounds of a GeoJSON geometry as ``(min_lon, min_lat, max_lon, max_lat)``."""
+    if not isinstance(geometry, dict):
+        return None
+
+    coords = list(_iter_lon_lat_pairs(geometry.get("coordinates")))
+    if not coords:
+        return None
+
+    lons = [lon for lon, _lat in coords]
+    lats = [lat for _lon, lat in coords]
+    return min(lons), min(lats), max(lons), max(lats)
+
+
 def _geometry_intersects_bbox(geometry, bbox):
-    """Return True if any geometry coordinate falls within ``bbox``.
+    """Return True if the geometry bounds overlap ``bbox``.
 
     ``geometry`` is expected to be a GeoJSON geometry dict with a
     ``coordinates`` key. ``bbox`` must be ``(min_lon, min_lat, max_lon, max_lat)``.
     """
-    if not isinstance(geometry, dict):
+    geometry_bbox = _geometry_bounds(geometry)
+    if geometry_bbox is None:
         return False
-    min_lon, min_lat, max_lon, max_lat = bbox
-    for lon, lat in _iter_lon_lat_pairs(geometry.get("coordinates")):
-        if min_lon <= lon <= max_lon and min_lat <= lat <= max_lat:
-            return True
-    return False
+    return _bbox_overlaps(geometry_bbox, bbox)
 
 
 def _parse_bbox(raw_bbox: str):
