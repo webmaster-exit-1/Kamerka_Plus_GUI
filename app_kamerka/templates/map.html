@@ -191,6 +191,101 @@ function initialize() {
         }
     });
     mapEl.appendChild(heatBtn);
+
+    // ── WorldMonitor-style data layer control panel ──────────────────────
+    // Fetch available layers from the API and add toggle buttons.
+    var _layerGeoJsonLayers = {};
+
+    function _layerStyle(color) {
+        return {
+            color: color || '#00e1ff',
+            fillColor: color || '#00e1ff',
+            weight: 2,
+            opacity: 0.85,
+            fillOpacity: 0.6,
+            radius: 6
+        };
+    }
+
+    function _pointToLayer(feature, latlng) {
+        var color = (feature.properties && feature.properties._layer_color) || '#00e1ff';
+        return L.circleMarker(latlng, _layerStyle(color));
+    }
+
+    function _onEachFeature(feature, layer) {
+        if (!feature.properties) return;
+        var props = feature.properties;
+        var html = '<div style="font-family:monospace;font-size:0.82em;">';
+        Object.keys(props).forEach(function(k) {
+            if (k.startsWith('_')) return;
+            var val = props[k];
+            if (val === null || val === undefined || val === '') return;
+            if (typeof val === 'object') val = JSON.stringify(val);
+            html += '<b>' + k + ':</b> ' + String(val).substring(0, 120) + '<br>';
+        });
+        html += '</div>';
+        layer.bindPopup(html);
+    }
+
+    function _toggleLayer(slug, color, btn) {
+        if (_layerGeoJsonLayers[slug]) {
+            map.removeLayer(_layerGeoJsonLayers[slug]);
+            delete _layerGeoJsonLayers[slug];
+            btn.style.color = '#00e1ff';
+            btn.style.borderColor = '#0064d7';
+            return;
+        }
+        fetch('/api/layers/' + slug + '/features.json')
+            .then(function(r) { return r.json(); })
+            .then(function(fc) {
+                // Tag each feature with its layer color for styling
+                (fc.features || []).forEach(function(f) {
+                    f.properties = f.properties || {};
+                    f.properties._layer_color = color;
+                });
+                var glayer = L.geoJSON(fc, {
+                    pointToLayer: _pointToLayer,
+                    onEachFeature: _onEachFeature,
+                    style: function(f) {
+                        return { color: color, weight: 2, opacity: 0.8 };
+                    }
+                }).addTo(map);
+                _layerGeoJsonLayers[slug] = glayer;
+                btn.style.color = color;
+                btn.style.borderColor = color;
+            })
+            .catch(function(e) { console.warn('layer fetch error', slug, e); });
+    }
+
+    // Build the layer control panel
+    var layerPanel = document.createElement('div');
+    layerPanel.id = 'layer-control-panel';
+    layerPanel.style.cssText = 'position:absolute;top:45px;left:8px;z-index:1000;' +
+        'background:rgba(10,13,18,0.88);border:1px solid var(--cp-border,#0064d7);' +
+        'padding:6px 10px;font-family:monospace;font-size:0.78em;color:#aaa;' +
+        'max-width:180px;';
+    layerPanel.innerHTML = '<div style="color:#ff00cd;letter-spacing:0.1em;margin-bottom:4px;">DATA LAYERS</div>';
+    mapEl.appendChild(layerPanel);
+
+    fetch('/api/layers/')
+        .then(function(r) { return r.json(); })
+        .then(function(layers) {
+            layers.forEach(function(layer) {
+                var btn = document.createElement('button');
+                btn.textContent = (layer.icon || '●') + ' ' + layer.name;
+                btn.title = 'Toggle ' + layer.name + ' layer';
+                btn.style.cssText = 'display:block;width:100%;text-align:left;margin:2px 0;' +
+                    'background:transparent;border:1px solid #0064d7;color:#00e1ff;' +
+                    'font-family:monospace;font-size:0.9em;padding:2px 5px;cursor:pointer;';
+                btn.addEventListener('click', function() {
+                    _toggleLayer(layer.slug, layer.color, btn);
+                });
+                layerPanel.appendChild(btn);
+            });
+        })
+        .catch(function() {
+            layerPanel.innerHTML += '<span style="color:#666">unavailable</span>';
+        });
 }
 
 document.addEventListener('DOMContentLoaded', function() {

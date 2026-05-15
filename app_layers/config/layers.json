@@ -1,0 +1,88 @@
+{
+  "layers": [
+    {
+      "slug": "earthquakes",
+      "name": "Earthquakes (USGS)",
+      "layer_type": "point",
+      "source_url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.geojson",
+      "refresh_minutes": 60,
+      "color": "#ff6600",
+      "icon": "⚡",
+      "enabled": true,
+      "renderer_config": {
+        "min_magnitude": 4.0,
+        "scale_by": "mag",
+        "popup_fields": ["mag", "place", "time", "url"]
+      }
+    },
+    {
+      "slug": "submarine_cables",
+      "name": "Submarine Cables",
+      "layer_type": "linestring",
+      "source_url": "https://raw.githubusercontent.com/telegeography/www.submarinecablemap.com/master/web/public/api/v3/cable/cable-geo.json",
+      "refresh_minutes": 10080,
+      "color": "#00e1ff",
+      "icon": "〰",
+      "enabled": true,
+      "renderer_config": {
+        "popup_fields": ["name", "rfs", "owners"]
+      }
+    },
+    {
+      "slug": "internet_outages",
+      "name": "Internet Outages (IODA)",
+      "layer_type": "point",
+      "source_url": "https://api.ioda.caida.org/v2/signals/raw/country?from=-3600&until=0&datasource=bgp",
+      "refresh_minutes": 30,
+      "color": "#ff00cd",
+      "icon": "🔴",
+      "enabled": true,
+      "renderer_config": {
+        "popup_fields": ["entity", "score", "from", "until"]
+      }
+    },
+    {
+      "slug": "power_infrastructure",
+      "name": "Power Infrastructure (OSM)",
+      "layer_type": "point",
+      "source_url": "https://overpass-api.de/api/interpreter",
+      "refresh_minutes": 1440,
+      "color": "#ffff00",
+      "icon": "⚡",
+      "enabled": false,
+      "renderer_config": {
+        "overpass_query": "[out:json][timeout:25];node[power=plant](bbox);out body;",
+        "popup_fields": ["name", "operator", "plant:type"]
+      }
+    },
+    {
+      "slug": "ics_clusters",
+      "name": "ICS/SCADA Clusters",
+      "layer_type": "point",
+      "source_url": "",
+      "refresh_minutes": 0,
+      "color": "#ff0055",
+      "icon": "🏭",
+      "enabled": true,
+      "renderer_config": {
+        "derived_from": "shodan_devices",
+        "filter_types": ["modbus", "dnp3", "s7", "bacnet", "ics", "scada", "plc", "hmi"],
+        "popup_fields": ["ip", "type", "org", "city", "vulns"]
+      }
+    },
+    {
+      "slug": "critical_facilities",
+      "name": "Critical Facilities (OSM)",
+      "layer_type": "point",
+      "source_url": "https://overpass-api.de/api/interpreter",
+      "refresh_minutes": 1440,
+      "color": "#ff8800",
+      "icon": "🏥",
+      "enabled": false,
+      "renderer_config": {
+        "overpass_query": "[out:json][timeout:25];(node[amenity~\"hospital|fire_station|police\"](bbox););out body;",
+        "popup_fields": ["name", "amenity", "addr:city"]
+      }
+    }
+  ]
+}

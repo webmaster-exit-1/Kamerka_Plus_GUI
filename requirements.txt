@@ -22,3 +22,7 @@ wappalyzer
 # Screenshot capture (requires Chrome/Chromium and ChromeDriver installed on system,
 # or Selenium 4.6+ which includes selenium-manager to auto-manage drivers)
 selenium>=4.6.0
+# WorldMonitor integration — RSS feed ingestion
+feedparser>=6.0
+# WorldMonitor integration — proximity scoring for device enrichment
+geopy>=2.3

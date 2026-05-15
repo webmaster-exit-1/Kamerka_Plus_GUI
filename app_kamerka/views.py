@@ -1243,6 +1243,62 @@ def export_json(request, id):
     return response
 
 
+def export_geojson_enhanced(request, id):
+    """Export devices for a search as an enhanced GeoJSON FeatureCollection.
+
+    Includes risk_score, layer_context, vuln_count, and category so the
+    output is directly compatible with Kepler.gl, QGIS, and WorldMonitor
+    seed imports.
+
+    URL: GET /api/export/geojson/<search_id>/
+    """
+    devices = Device.objects.filter(search_id=id)
+    features = []
+    for d in devices:
+        try:
+            lat = float(d.lat)
+            lon = float(d.lon)
+        except (ValueError, TypeError):
+            continue
+
+        vuln_count = 0
+        if d.vulns:
+            try:
+                vlist = json.loads(d.vulns.replace("'", '"'))
+                vuln_count = len(vlist) if isinstance(vlist, list) else 0
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [lon, lat]},
+            "properties": {
+                "id": d.pk,
+                "ip": d.ip,
+                "product": d.product or "",
+                "type": d.type or "",
+                "port": d.port or "",
+                "city": d.city or "",
+                "org": d.org or "",
+                "country": d.country_code or "",
+                "vuln_count": vuln_count,
+                "risk_score": getattr(d, "risk_score", 0),
+                "layer_context": getattr(d, "layer_context", {}) or {},
+                "category": d.category or "",
+            },
+        })
+
+    fc = json.dumps(
+        {"type": "FeatureCollection", "features": features},
+        indent=2,
+    )
+    response = HttpResponse(fc, content_type="application/geo+json")
+    response["Content-Disposition"] = (
+        'attachment; filename="kamerka_enhanced_{}.geojson"'.format(id)
+    )
+    return response
+
+
 def rtsp_scan_view(request, id):
     """Trigger RTSP enumeration scan for a device."""
     if request.method == "GET":

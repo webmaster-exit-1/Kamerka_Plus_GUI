@@ -1,0 +1,42 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-05-15 06:54+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+#: kamerka/settings.py:186
+msgid "English"
+msgstr ""
+
+#: kamerka/settings.py:187
+msgid "Spanish"
+msgstr ""
+
+#: kamerka/settings.py:188
+msgid "German"
+msgstr ""
+
+#: kamerka/settings.py:189
+msgid "French"
+msgstr ""
+
+#: kamerka/settings.py:190
+msgid "Simplified Chinese"
+msgstr ""
+
+#: kamerka/settings.py:191
+msgid "Russian"
+msgstr ""

@@ -51,7 +51,29 @@ CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = os.environ.get('CELERY_TIMEZONE', 'UTC')
-CELERY_IMPORTS = ('kamerka.tasks',)
+CELERY_IMPORTS = ('kamerka.tasks', 'app_layers.tasks', 'app_feeds.tasks')
+
+# ---------------------------------------------------------------------------
+# Celery Beat schedule — periodic tasks for layer refresh and feed ingestion
+# ---------------------------------------------------------------------------
+_LAYER_REFRESH_INTERVAL = int(
+    os.environ.get("LAYER_REFRESH_INTERVAL_MINUTES", "60")
+) * 60  # convert to seconds
+
+CELERY_BEAT_SCHEDULE = {
+    "refresh-feeds-hourly": {
+        "task": "app_feeds.tasks.refresh_feeds",
+        "schedule": 3600,  # every hour
+    },
+    "geo-tag-entries-hourly": {
+        "task": "app_feeds.tasks.geo_tag_entries",
+        "schedule": 3600,
+    },
+    "refresh-all-layers": {
+        "task": "app_layers.tasks.refresh_all_layers",
+        "schedule": _LAYER_REFRESH_INTERVAL,
+    },
+}
 
 # ---------------------------------------------------------------------------
 # Cache – backed by the same Redis instance used by Celery.
@@ -78,12 +100,16 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'app_kamerka.apps.AppKamerkaConfig',
-    "celery_progress"
+    "celery_progress",
+    # WorldMonitor integration apps
+    "app_layers.apps.AppLayersConfig",
+    "app_feeds.apps.AppFeedsConfig",
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.locale.LocaleMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -150,8 +176,24 @@ LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
 
 USE_I18N = True
+USE_L10N = True
 
 USE_TZ = True
+
+# Supported UI languages
+from django.utils.translation import gettext_lazy as _  # noqa: E402
+LANGUAGES = [
+    ("en", _("English")),
+    ("es", _("Spanish")),
+    ("de", _("German")),
+    ("fr", _("French")),
+    ("zh-hans", _("Simplified Chinese")),
+    ("ru", _("Russian")),
+]
+
+LOCALE_PATHS = [
+    os.path.join(BASE_DIR, "locale"),
+]
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
@@ -238,3 +280,23 @@ SHODAN_API_KEY: str = os.environ.get("SHODAN_API_KEY", "")
 KAMERKA_EXPLOIT_EXECUTION_ENABLED: bool = os.environ.get(
     "KAMERKA_EXPLOIT_EXECUTION_ENABLED", "false"
 ).lower() in ("true", "1", "yes")
+
+# ---------------------------------------------------------------------------
+# WorldMonitor integration settings
+# ---------------------------------------------------------------------------
+
+# Optional Ollama host for AI brief generation.
+# Leave unset to use the extractive summariser fallback.
+# Example: export OLLAMA_HOST=http://localhost:11434
+OLLAMA_HOST: str = os.environ.get("OLLAMA_HOST", "")
+OLLAMA_MODEL: str = os.environ.get("OLLAMA_MODEL", "llama3")
+
+# Interval (minutes) between automatic layer refresh runs via Celery Beat.
+# Defaults to 60 minutes.
+LAYER_REFRESH_INTERVAL_MINUTES: int = int(
+    os.environ.get("LAYER_REFRESH_INTERVAL_MINUTES", "60")
+)
+
+# Maximum number of FeedEntry rows to retain (oldest pruned automatically).
+FEED_MAX_ENTRIES: int = int(os.environ.get("FEED_MAX_ENTRIES", "500"))
+

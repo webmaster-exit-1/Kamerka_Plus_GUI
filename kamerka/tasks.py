@@ -4647,3 +4647,32 @@ def run_cve_exploit(self, device_id: int, cve_id: str):
 
     progress_recorder.set_progress(4, 4, description="Done")
     return {"status": "failed", "cve_id": cve_id, "output": last_error}
+
+
+# ---------------------------------------------------------------------------
+# Device enrichment — risk score + layer context (Phase 4)
+# ---------------------------------------------------------------------------
+
+@shared_task(name="kamerka.tasks.enrich_device_context", bind=True)
+def enrich_device_context(self, device_id: int) -> dict:
+    """Compute risk_score and layer_context for a single Device and save them.
+
+    Safe to call repeatedly; always overwrites the previous values.
+    Designed to be triggered automatically after a Shodan search completes.
+    """
+    try:
+        from app_kamerka.enrichment import compute_risk_score, build_layer_context
+        from app_kamerka.models import Device
+
+        device = Device.objects.get(pk=device_id)
+        score = compute_risk_score(device_id)
+        context = build_layer_context(device_id)
+
+        device.risk_score = score
+        device.layer_context = context
+        device.save(update_fields=["risk_score", "layer_context"])
+
+        return {"device_id": device_id, "risk_score": score, "layer_context": context}
+    except Exception as exc:
+        logger.warning("enrich_device_context failed for device %s: %s", device_id, exc)
+        return {"device_id": device_id, "error": str(exc)}
