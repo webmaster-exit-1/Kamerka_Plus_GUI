@@ -110,4 +110,6 @@ urlpatterns = [
     path("<id>/shodan/trends",   views.shodan_trends_view,   name="shodan_trends"),
     # Shodan Credits
     path("shodan/credits",       views.shodan_credits_view,  name="shodan_credits"),
+    # Enhanced GeoJSON export (Phase 7)
+    path("api/export/geojson/<id>", views.export_geojson_enhanced, name="export_geojson_enhanced"),
 ]

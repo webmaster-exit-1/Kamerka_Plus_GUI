@@ -3,6 +3,7 @@ Django>=4.2,<5.0
 celery>=5.2.0,<6.0
 celery_progress>=0.4
 redis>=4.0.0,<8.0
+psycopg2-binary>=2.9,<3.0
 pycountry>=22.3.5
 shodan>=1.28.0
 bs4
@@ -22,3 +23,7 @@ wappalyzer
 # Screenshot capture (requires Chrome/Chromium and ChromeDriver installed on system,
 # or Selenium 4.6+ which includes selenium-manager to auto-manage drivers)
 selenium>=4.6.0
+# WorldMonitor integration — RSS feed ingestion
+feedparser>=6.0
+# WorldMonitor integration — proximity scoring for device enrichment
+geopy>=2.3

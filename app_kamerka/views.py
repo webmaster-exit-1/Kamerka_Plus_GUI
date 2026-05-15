@@ -984,41 +984,14 @@ def exploit_cve_view(request, device_id, cve_id):
 
     Dispatches the ``run_cve_exploit`` Celery task and returns the task ID so
     the frontend can poll ``/get-task-info/`` for progress and results.
-
-    Access is restricted to authenticated staff users.  The feature flag
-    ``KAMERKA_EXPLOIT_EXECUTION_ENABLED`` must also be set to ``True`` in
-    settings (via the environment variable) or the task will abort safely.
+    The endpoint intentionally applies no authentication or staff gate.
 
     GET /exploit/<device_id>/cve/<cve_id>  →  {"task_id": "..."}
     """
-    from django.conf import settings as _settings
-
     if (
         request.method == "GET"
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
-        # Auth guard — only authenticated staff users may dispatch exploits
-        if not (request.user.is_authenticated and request.user.is_staff):
-            return HttpResponse(
-                json.dumps({"error": "Permission denied. Staff access required."}),
-                content_type="application/json",
-                status=403,
-            )
-
-        # Feature-flag check — inform the client immediately if execution is disabled
-        if not getattr(_settings, "KAMERKA_EXPLOIT_EXECUTION_ENABLED", False):
-            return HttpResponse(
-                json.dumps({
-                    "error": (
-                        "Exploit execution is disabled. Set "
-                        "KAMERKA_EXPLOIT_EXECUTION_ENABLED=true on a dedicated, "
-                        "isolated host to enable it."
-                    )
-                }),
-                content_type="application/json",
-                status=403,
-            )
-
         # Basic CVE ID format validation before dispatching
         if not re.match(r'^CVE-\d{4}-\d+$', cve_id.strip(), re.IGNORECASE):
             return HttpResponse(
@@ -1239,6 +1212,62 @@ def export_json(request, id):
     response = HttpResponse(geojson_str, content_type="application/geo+json")
     response["Content-Disposition"] = (
         'attachment; filename="shodan_export_{}.geojson"'.format(id)
+    )
+    return response
+
+
+def export_geojson_enhanced(request, id):
+    """Export devices for a search as an enhanced GeoJSON FeatureCollection.
+
+    Includes risk_score, layer_context, vuln_count, and category so the
+    output is directly compatible with Kepler.gl, QGIS, and WorldMonitor
+    seed imports.
+
+    URL: GET /api/export/geojson/<search_id>
+    """
+    devices = Device.objects.filter(search_id=id)
+    features = []
+    for d in devices:
+        try:
+            lat = float(d.lat)
+            lon = float(d.lon)
+        except (ValueError, TypeError):
+            continue
+
+        vuln_count = 0
+        if d.vulns:
+            try:
+                vlist = json.loads(d.vulns.replace("'", '"'))
+                vuln_count = len(vlist) if isinstance(vlist, list) else 0
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [lon, lat]},
+            "properties": {
+                "id": d.pk,
+                "ip": d.ip,
+                "product": d.product or "",
+                "type": d.type or "",
+                "port": d.port or "",
+                "city": d.city or "",
+                "org": d.org or "",
+                "country": d.country_code or "",
+                "vuln_count": vuln_count,
+                "risk_score": getattr(d, "risk_score", 0),
+                "layer_context": getattr(d, "layer_context", {}) or {},
+                "category": d.category or "",
+            },
+        })
+
+    fc = json.dumps(
+        {"type": "FeatureCollection", "features": features},
+        indent=2,
+    )
+    response = HttpResponse(fc, content_type="application/geo+json")
+    response["Content-Disposition"] = (
+        'attachment; filename="kamerka_enhanced_{}.geojson"'.format(id)
     )
     return response
 

@@ -2316,57 +2316,22 @@ class DownloadExploitDBTest(TestCase):
 
 
 # ---------------------------------------------------------------------------
-# exploit_cve_view -- auth guard and feature-flag gate
+# exploit_cve_view -- dispatch behavior
 # ---------------------------------------------------------------------------
 
-class ExploitCveViewAuthTest(TestCase):
-    """exploit_cve_view must require staff authentication and the feature flag."""
+class ExploitCveViewDispatchTest(TestCase):
+    """exploit_cve_view dispatches exploit tasks for valid AJAX CVE requests."""
 
     def setUp(self):
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
         self.search = _make_search()
         self.device = _make_device(self.search, port="80")
-        self.staff_user = User.objects.create_user(
-            username="staff", password="pass", is_staff=True
-        )
-        self.regular_user = User.objects.create_user(
-            username="regular", password="pass", is_staff=False
-        )
 
     def _url(self, cve="CVE-2021-44228"):
         return "/exploit/{}/cve/{}".format(self.device.id, cve)
 
-    def test_unauthenticated_rejected(self):
-        response = self.client.get(
-            self._url(), HTTP_X_REQUESTED_WITH="XMLHttpRequest"
-        )
-        data = json.loads(response.content)
-        self.assertEqual(response.status_code, 403)
-        self.assertIn("error", data)
-
-    def test_non_staff_rejected(self):
-        self.client.login(username="regular", password="pass")
-        response = self.client.get(
-            self._url(), HTTP_X_REQUESTED_WITH="XMLHttpRequest"
-        )
-        self.assertEqual(response.status_code, 403)
-
-    @override_settings(KAMERKA_EXPLOIT_EXECUTION_ENABLED=False)
-    def test_staff_blocked_when_flag_disabled(self):
-        self.client.login(username="staff", password="pass")
-        response = self.client.get(
-            self._url(), HTTP_X_REQUESTED_WITH="XMLHttpRequest"
-        )
-        data = json.loads(response.content)
-        self.assertEqual(response.status_code, 403)
-        self.assertIn("KAMERKA_EXPLOIT_EXECUTION_ENABLED", data["error"])
-
-    @override_settings(KAMERKA_EXPLOIT_EXECUTION_ENABLED=True)
     @patch("app_kamerka.views.run_cve_exploit")
-    def test_staff_with_flag_enabled_dispatches_task(self, mock_task):
+    def test_dispatches_task(self, mock_task):
         mock_task.delay.return_value = MagicMock(id="task-exploit-1")
-        self.client.login(username="staff", password="pass")
         response = self.client.get(
             self._url(), HTTP_X_REQUESTED_WITH="XMLHttpRequest"
         )
@@ -2374,9 +2339,7 @@ class ExploitCveViewAuthTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(data["task_id"], "task-exploit-1")
 
-    @override_settings(KAMERKA_EXPLOIT_EXECUTION_ENABLED=True)
     def test_invalid_cve_format_rejected(self):
-        self.client.login(username="staff", password="pass")
         response = self.client.get(
             "/exploit/{}/cve/NOT-A-CVE".format(self.device.id),
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",

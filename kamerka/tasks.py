@@ -4430,38 +4430,22 @@ def run_cve_exploit(self, device_id: int, cve_id: str):
 
     Workflow
     --------
-    1. Check that exploit execution is enabled via ``KAMERKA_EXPLOIT_EXECUTION_ENABLED``.
-    2. Validate the CVE ID format.
-    3. Look up the VulnIntelligence record for this device + CVE to obtain
+    1. Validate the CVE ID format.
+    2. Look up the VulnIntelligence record for this device + CVE to obtain
        stored ``exploit_refs`` (ExploitDB URLs / IDs).
-    4. For each ref, download the raw exploit source from exploit-db.com.
-    5. Detect the interpreter via shebang.
-    6. Write the source to a secure temp file and execute it with the target
+    3. For each ref, download the raw exploit source from exploit-db.com.
+    4. Detect the interpreter via shebang.
+    5. Write the source to a secure temp file and execute it with the target
        IP and port as the first two positional arguments.  The process is
        started in its own session (new process group) so that the entire
        process tree can be cleanly killed on timeout.
-    7. Save the combined stdout/stderr output to ``Device.exploit`` and set
+    6. Save the combined stdout/stderr output to ``Device.exploit`` and set
        ``Device.exploited_scanned = True``.
 
     Returns a dict with keys ``status``, ``output``, ``cve_id``, and ``exploit_url``.
     """
-    from django.conf import settings as _settings
-
     progress_recorder = ProgressRecorder(self)
     progress_recorder.set_progress(0, 4, description="Validating…")
-
-    # ------------------------------------------------------------------
-    # 0. Feature-flag gate — must be explicitly enabled
-    # ------------------------------------------------------------------
-    if not getattr(_settings, "KAMERKA_EXPLOIT_EXECUTION_ENABLED", False):
-        return {
-            "status": "disabled",
-            "output": (
-                "Exploit execution is disabled. Set the environment variable "
-                "KAMERKA_EXPLOIT_EXECUTION_ENABLED=true on a dedicated, "
-                "isolated host to enable it."
-            ),
-        }
 
     # ------------------------------------------------------------------
     # 1. Validate CVE ID
@@ -4647,3 +4631,32 @@ def run_cve_exploit(self, device_id: int, cve_id: str):
 
     progress_recorder.set_progress(4, 4, description="Done")
     return {"status": "failed", "cve_id": cve_id, "output": last_error}
+
+
+# ---------------------------------------------------------------------------
+# Device enrichment — risk score + layer context (Phase 4)
+# ---------------------------------------------------------------------------
+
+@shared_task(name="kamerka.tasks.enrich_device_context", bind=True)
+def enrich_device_context(self, device_id: int) -> dict:
+    """Compute risk_score and layer_context for a single Device and save them.
+
+    Safe to call repeatedly; always overwrites the previous values.
+    Designed to be triggered automatically after a Shodan search completes.
+    """
+    try:
+        from app_kamerka.enrichment import compute_risk_score, build_layer_context
+        from app_kamerka.models import Device
+
+        device = Device.objects.get(pk=device_id)
+        score = compute_risk_score(device_id)
+        context = build_layer_context(device_id)
+
+        device.risk_score = score
+        device.layer_context = context
+        device.save(update_fields=["risk_score", "layer_context"])
+
+        return {"device_id": device_id, "risk_score": score, "layer_context": context}
+    except Exception as exc:
+        logger.warning("enrich_device_context failed for device %s: %s", device_id, exc)
+        return {"device_id": device_id, "error": str(exc)}

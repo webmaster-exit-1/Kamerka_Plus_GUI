@@ -29,8 +29,12 @@ via a `connection_created` signal handler in `app_kamerka/sqlite_wal.py`.
 ## Recommendation for Production / Heavy Concurrency
 
 SQLite is not designed for multi-process concurrent writes.  If you run multiple
-Celery workers or a multi-threaded/multi-process WSGI server, consider switching
-to **PostgreSQL**:
+Celery workers or a multi-threaded/multi-process WSGI server, switch to
+**PostgreSQL**.
+
+This project already supports automatic PostgreSQL selection: if `DB_NAME` is set
+in the environment, Django uses PostgreSQL; otherwise it falls back to SQLite.
+The effective configuration is:
 
 ```python
 DATABASES = {

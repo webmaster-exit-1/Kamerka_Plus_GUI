@@ -199,6 +199,12 @@ In a new window (in the main directory) run the Celery worker:
 celery --app kamerka worker --loglevel=info
 ```
 
+To also run periodic tasks (feed ingestion, layer refresh), start Celery with beat:
+
+```bash
+celery --app kamerka worker --beat --loglevel=info
+```
+
 In a new window start Redis:
 
 ```bash
@@ -233,10 +239,10 @@ sudo -u postgres createuser --createdb kamerka
 sudo -u postgres createdb -O kamerka kamerka
 ```
 
-2. Install the Python PostgreSQL adapter:
+2. Ensure Python dependencies are installed (includes PostgreSQL adapter):
 
 ```bash
-pip3 install psycopg2-binary
+pip3 install -r requirements.txt
 ```
 
 3. Export the database environment variables before starting Django and Celery:
@@ -249,7 +255,8 @@ export DB_HOST=localhost
 export DB_PORT=5432
 ```
 
-4. Update `kamerka/settings.py` `DATABASES` to use PostgreSQL (or see [DATABASE.md](DATABASE.md) for the snippet).
+4. Start Django/Celery with those environment variables set.
+   `kamerka/settings.py` switches to PostgreSQL automatically when `DB_NAME` is present.
 
 5. Run migrations:
 
@@ -298,6 +305,71 @@ The helper walks you through obtaining and testing your API keys step by step.
 ```bash
 python3 manage.py test app_kamerka -v2
 ```
+
+---
+
+## WorldMonitor Integration Features
+
+After completing the base installation, seed the new data layers and feed sources:
+
+```bash
+# Apply migrations (includes new app_layers and app_feeds tables)
+python3 manage.py migrate
+
+# Seed default data layers (earthquakes, cables, ICS clusters …)
+python3 manage.py seed_layers
+
+# Seed ~50 curated RSS/news feed sources (CISA, Krebs, Dragos …)
+python3 manage.py seed_feeds
+```
+
+### Optional: Ollama AI Briefs
+
+Set `OLLAMA_HOST` to enable AI-synthesised intelligence briefs:
+
+```bash
+export OLLAMA_HOST=http://localhost:11434
+export OLLAMA_MODEL=llama3   # or any model you have pulled
+```
+
+When `OLLAMA_HOST` is unset, Kamerka falls back to an extractive summariser
+that requires no additional dependencies.
+
+### Celery Beat (required for real-time layer/feed refresh)
+
+The WorldMonitor-integration features use Celery Beat for scheduled tasks:
+
+```bash
+# Start worker + beat scheduler in a single process (development)
+celery --app kamerka worker --beat --loglevel=info
+
+# Or run beat as a separate process (recommended for production)
+celery --app kamerka beat --loglevel=info &
+celery --app kamerka worker --loglevel=info &
+```
+
+### Environment variables for integration features
+
+| Variable | Default | Description |
+|---|---|---|
+| `OLLAMA_HOST` | *(unset)* | Ollama API base URL for AI brief generation |
+| `OLLAMA_MODEL` | `llama3` | Ollama model name |
+| `LAYER_REFRESH_INTERVAL_MINUTES` | `60` | How often layers are refreshed by Celery Beat |
+| `FEED_MAX_ENTRIES` | `500` | Maximum RSS entries to retain (oldest pruned) |
+
+### New API endpoints
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/layers/` | List all enabled data layers |
+| `GET /api/layers/<slug>/features.json` | GeoJSON features for a layer |
+| `GET /api/layers/<slug>/refresh/` | Manually trigger a layer refresh |
+| `POST /api/layers/import/` | Import a GeoJSON FeatureCollection as a layer |
+| `GET /api/feeds/entries/` | Recent news feed entries (filterable by country) |
+| `GET /api/feeds/entries/sse/` | SSE stream for live feed/layer updates |
+| `GET /api/feeds/brief/<region>/` | Latest AI/extractive brief for a region |
+| `POST /api/feeds/brief/<region>/generate/` | Force-regenerate a brief |
+| `GET /api/export/geojson/<search_id>` | Enhanced GeoJSON export (risk_score, layer_context) |
 
 <details>
 <summary>Running on Android (Termux, no root)</summary>

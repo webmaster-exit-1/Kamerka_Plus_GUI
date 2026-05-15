@@ -45,13 +45,36 @@ ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', 'localhost,1
 
 # CELERY STUFF (Celery 5.x configuration)
 _redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379')
-CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', _redis_url)
-CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', _redis_url)
+REDIS_URL = _redis_url
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', REDIS_URL)
+CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', REDIS_URL)
 CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = os.environ.get('CELERY_TIMEZONE', 'UTC')
-CELERY_IMPORTS = ('kamerka.tasks',)
+CELERY_IMPORTS = ('kamerka.tasks', 'app_layers.tasks', 'app_feeds.tasks')
+
+# ---------------------------------------------------------------------------
+# Celery Beat schedule — periodic tasks for layer refresh and feed ingestion
+# ---------------------------------------------------------------------------
+_LAYER_REFRESH_INTERVAL = int(
+    os.environ.get("LAYER_REFRESH_INTERVAL_MINUTES", "60")
+) * 60  # convert to seconds
+
+CELERY_BEAT_SCHEDULE = {
+    "refresh-feeds-hourly": {
+        "task": "app_feeds.tasks.refresh_feeds",
+        "schedule": 3600,  # every hour
+    },
+    "geo-tag-entries-hourly": {
+        "task": "app_feeds.tasks.geo_tag_entries",
+        "schedule": 3600,
+    },
+    "refresh-all-layers": {
+        "task": "app_layers.tasks.refresh_all_layers",
+        "schedule": _LAYER_REFRESH_INTERVAL,
+    },
+}
 
 # ---------------------------------------------------------------------------
 # Cache – backed by the same Redis instance used by Celery.
@@ -61,7 +84,7 @@ CELERY_IMPORTS = ('kamerka.tasks',)
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": os.environ.get("REDIS_URL", "redis://localhost:6379"),
+        "LOCATION": REDIS_URL,
         "KEY_PREFIX": "kamerka",
         "TIMEOUT": 60,  # default TTL; individual keys override as needed
     }
@@ -78,12 +101,16 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'app_kamerka.apps.AppKamerkaConfig',
-    "celery_progress"
+    "celery_progress",
+    # WorldMonitor integration apps
+    "app_layers.apps.AppLayersConfig",
+    "app_feeds.apps.AppFeedsConfig",
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.locale.LocaleMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -114,15 +141,27 @@ WSGI_APPLICATION = 'kamerka.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/3.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
-        'OPTIONS': {
-            'timeout': 30,  # seconds; reduces "database is locked" under concurrent access
-        },
+if os.environ.get("DB_NAME"):
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.environ.get("DB_NAME", "kamerka"),
+            "USER": os.environ.get("DB_USER", "kamerka"),
+            "PASSWORD": os.environ.get("DB_PASSWORD", ""),
+            "HOST": os.environ.get("DB_HOST", "localhost"),
+            "PORT": os.environ.get("DB_PORT", "5432"),
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": os.path.join(BASE_DIR, "db.sqlite3"),
+            "OPTIONS": {
+                "timeout": 30,  # seconds; reduces "database is locked" under concurrent access
+            },
+        }
+    }
 
 # Password validation
 # https://docs.djangoproject.com/en/3.2/ref/settings/#auth-password-validators
@@ -152,6 +191,21 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 
 USE_TZ = True
+
+# Supported UI languages
+from django.utils.translation import gettext_lazy as _  # noqa: E402
+LANGUAGES = [
+    ("en", _("English")),
+    ("es", _("Spanish")),
+    ("de", _("German")),
+    ("fr", _("French")),
+    ("zh-hans", _("Simplified Chinese")),
+    ("ru", _("Russian")),
+]
+
+LOCALE_PATHS = [
+    os.path.join(BASE_DIR, "locale"),
+]
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
@@ -221,20 +275,20 @@ from kamerka.tool_settings import (  # noqa: E402
 SHODAN_API_KEY: str = os.environ.get("SHODAN_API_KEY", "")
 
 # ---------------------------------------------------------------------------
-# CVE Exploit Execution — disabled by default for safety.
-#
-# Enabling this setting allows Kamerka to download exploit source code from
-# ExploitDB and execute it directly on this host against a target device.
-# This is intentionally disabled by default because running untrusted remote
-# code is a serious security risk.
-#
-# Only enable this on a dedicated, isolated, non-production machine and ONLY
-# after reviewing what an exploit does.  Consider using a dedicated VM or
-# container with restricted network access for running exploits.
-#
-# To enable, set the environment variable:
-#   export KAMERKA_EXPLOIT_EXECUTION_ENABLED=true
+# WorldMonitor integration settings
 # ---------------------------------------------------------------------------
-KAMERKA_EXPLOIT_EXECUTION_ENABLED: bool = os.environ.get(
-    "KAMERKA_EXPLOIT_EXECUTION_ENABLED", "false"
-).lower() in ("true", "1", "yes")
+
+# Optional Ollama host for AI brief generation.
+# Leave unset to use the extractive summariser fallback.
+# Example: export OLLAMA_HOST=http://localhost:11434
+OLLAMA_HOST: str = os.environ.get("OLLAMA_HOST", "")
+OLLAMA_MODEL: str = os.environ.get("OLLAMA_MODEL", "llama3")
+
+# Interval (minutes) between automatic layer refresh runs via Celery Beat.
+# Defaults to 60 minutes.
+LAYER_REFRESH_INTERVAL_MINUTES: int = int(
+    os.environ.get("LAYER_REFRESH_INTERVAL_MINUTES", "60")
+)
+
+# Maximum number of FeedEntry rows to retain (oldest pruned automatically).
+FEED_MAX_ENTRIES: int = int(os.environ.get("FEED_MAX_ENTRIES", "500"))

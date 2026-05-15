@@ -20,11 +20,9 @@ from django.urls import path, include
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', include('app_kamerka.urls'),
-
-         )
-    # the endpoint is configurabl)
-
+    path('', include('app_kamerka.urls')),
+    path('api/', include('app_layers.urls')),
+    path('api/', include('app_feeds.urls')),
 ]
 
 if settings.DEBUG:

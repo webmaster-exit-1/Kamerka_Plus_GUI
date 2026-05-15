@@ -307,8 +307,11 @@ class GlobeWidget(QWidget if _PYQT6_AVAILABLE else object):
             lat = spike["lat"]
             lon = spike["lon"]
             height = spike["height"]
-            # Use theme-aware colour so spikes remain readable on all backgrounds
-            colour = self._theme.spike_colour(spike["severity"])
+            # Per-layer colour override wins over severity palette
+            if "colour_override" in spike:
+                colour = spike["colour_override"]
+            else:
+                colour = self._theme.spike_colour(spike["severity"])
 
             bx, by, bz = spike_base_xyz(lat, lon)
             nx, ny, nz = latlon_to_xyz(lat, lon)
@@ -360,3 +363,67 @@ class GlobeWidget(QWidget if _PYQT6_AVAILABLE else object):
             return 0.0
         min_dist, max_dist = 1.0, 5.0
         return 1.0 - min(max((dist - min_dist) / (max_dist - min_dist), 0.0), 1.0)
+
+    # ------------------------------------------------------------------
+    # Public API — multi-layer support (WorldMonitor integration)
+    # ------------------------------------------------------------------
+
+    def load_layers(
+        self,
+        layer_devices: "Dict[str, List[Dict[str, Any]]]",
+        layer_colors: "Optional[Dict[str, tuple]]" = None,
+        zoom_level: "Optional[float]" = None,
+    ) -> None:
+        """Render multiple named data layers simultaneously on the globe.
+
+        Each layer is rendered with its own colour so analysts can visually
+        distinguish Shodan device spikes from earthquake locations, submarine
+        cable endpoints, etc.
+
+        Parameters
+        ----------
+        layer_devices : dict[str, list[dict]]
+            Mapping of layer slug → list of feature dicts.  Each dict must
+            contain at minimum ``lat`` and ``lon``; ``severity`` is used for
+            Shodan device layers.
+        layer_colors : dict[str, tuple], optional
+            Mapping of slug → RGB colour (0–1 floats).  Falls back to the
+            theme severity palette when a slug is absent.
+        zoom_level : float, optional
+            LOD override; uses current camera distance when omitted.
+        """
+        from globe_3d.lod_manager import get_multi_layer_render_data
+        from globe_3d.spike_renderer import build_spike_data
+
+        self._clear_spikes()
+
+        effective_zoom = zoom_level if zoom_level is not None else self._estimate_zoom()
+        self._current_zoom = effective_zoom
+
+        multi = get_multi_layer_render_data(
+            layer_devices,
+            effective_zoom,
+            layer_colors=layer_colors,
+        )
+
+        # Merge all layers into a single spike list, preserving colour overrides
+        all_spikes: List[Dict[str, Any]] = []
+        for slug, clusters in multi.items():
+            spikes = build_spike_data(clusters)
+            # Propagate colour_override from cluster to spike
+            for cluster, spike in zip(clusters, spikes):
+                if "colour_override" in cluster:
+                    spike["colour_override"] = cluster["colour_override"]
+            all_spikes.extend(spikes)
+
+        self._spike_data = all_spikes
+        self._render_spikes()
+
+    def set_layer_visible(self, visible: bool) -> None:
+        """Show or hide all currently rendered spikes without re-loading data."""
+        for actor in self._spike_actors:
+            try:
+                actor.SetVisibility(1 if visible else 0)
+            except Exception:
+                pass
+        self._plotter.render()
