@@ -85,6 +85,25 @@ class FeedViewsTests(TestCase):
         self.assertEqual(payload["method"], "extractive")
         self.assertEqual(payload["content"], "Ready brief")
 
+    @patch("app_kamerka.views.check_credits", return_value=[0])
+    def test_index_includes_regions_from_feed_geo_countries(self, _mock_credits):
+        FeedEntry.objects.create(
+            source=self.source,
+            title="FR and DE update",
+            summary="Regional item",
+            url="https://example.com/fr-de",
+            published=timezone.now() - timedelta(hours=2),
+            geo_countries="FR,DE",
+            entry_id="entry-fr-de",
+        )
+
+        response = self.client.get(reverse("index"))
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode("utf-8")
+        self.assertIn('<option value="FR">FR</option>', content)
+        self.assertIn('<option value="DE">DE</option>', content)
+
 
 class FeedTaskTests(TestCase):
     @override_settings(REDIS_URL="redis://test-fake-redis:6379/0")

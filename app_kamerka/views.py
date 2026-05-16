@@ -33,6 +33,7 @@ from app_kamerka.models import (
     SBOMComponent,
     GFWStatus,
 )
+from app_feeds.models import FeedEntry
 from kamerka.tasks import (
     shodan_search,
     devices_nearby,
@@ -431,6 +432,13 @@ def index(request):
         normalized = (code or "").strip().upper()
         if len(normalized) == 2 and normalized.isalpha():
             intel_regions.add(normalized)
+    for countries in FeedEntry.objects.exclude(geo_countries="").values_list(
+        "geo_countries", flat=True
+    ):
+        for code in str(countries).split(","):
+            normalized = code.strip().upper()
+            if len(normalized) == 2 and normalized.isalpha():
+                intel_regions.add(normalized)
     intel_regions = sorted(intel_regions)
 
     # make list out of last 5 searches
