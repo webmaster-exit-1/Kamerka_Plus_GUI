@@ -1027,7 +1027,7 @@
                     listEl.appendChild(btn);
                 });
                 setLayerStatus('toggle a layer to render on globe', '#aaa');
-            } catch (_err) {
+            } catch (err) {
                 setLayerStatus('layer catalog unavailable', '#ff6030');
             }
         }
@@ -1048,7 +1048,7 @@
                     if (!payload.slug || !activeDataLayers[payload.slug]) return;
                     const btn = layerButtons[payload.slug];
                     loadDataLayer(payload.slug, btn).catch(() => {});
-                } catch (_err) {
+                } catch (err) {
                     // no-op
                 }
             });
@@ -1076,12 +1076,12 @@
             document.getElementById('globe-loading').style.display = 'none';
         }
 
-        let _layerRefreshTimer = null;
+        let layerRefreshTimer = null;
         function scheduleActiveLayerRefresh() {
-            if (_layerRefreshTimer) {
-                clearTimeout(_layerRefreshTimer);
+            if (layerRefreshTimer) {
+                clearTimeout(layerRefreshTimer);
             }
-            _layerRefreshTimer = setTimeout(() => {
+            layerRefreshTimer = setTimeout(() => {
                 refreshActiveDataLayers();
             }, 250);
         }
