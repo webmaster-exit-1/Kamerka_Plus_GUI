@@ -932,9 +932,39 @@
         const raycaster = new THREE.Raycaster();
         const mouse     = new THREE.Vector2();
 
+        function disposeLayerMaterial(material) {
+            if (!material) return;
+
+            Object.keys(material).forEach(key => {
+                const value = material[key];
+                if (value && value.isTexture) {
+                    value.dispose();
+                }
+            });
+
+            material.dispose();
+        }
+
+        function disposeLayerGroup(group) {
+            if (!group) return;
+
+            group.traverse(obj => {
+                if (obj.geometry) {
+                    obj.geometry.dispose();
+                }
+
+                if (Array.isArray(obj.material)) {
+                    obj.material.forEach(disposeLayerMaterial);
+                } else if (obj.material) {
+                    disposeLayerMaterial(obj.material);
+                }
+            });
+        }
+
         function clearLayerGroup(slug) {
             const active = activeDataLayers[slug];
             if (!active) return;
+            disposeLayerGroup(active.group);
             dataLayersRootGroup.remove(active.group);
             dataLayerObjects = dataLayerObjects.filter(entry => entry.layer.slug !== slug);
             delete activeDataLayers[slug];
