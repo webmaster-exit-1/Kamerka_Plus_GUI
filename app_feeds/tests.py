@@ -1,5 +1,5 @@
 from unittest.mock import patch
-import datetime
+from datetime import timedelta
 
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -30,7 +30,7 @@ class FeedViewsTests(TestCase):
             title="DE cyber update",
             summary="Regional incident in Germany.",
             url="https://example.com/de-1",
-            published=timezone.now() - datetime.timedelta(hours=1),
+            published=timezone.now() - timedelta(hours=1),
             geo_countries="DE",
             entry_id="entry-de-1",
         )
@@ -58,6 +58,13 @@ class FeedViewsTests(TestCase):
         payload = response.json()
         self.assertEqual(payload["count"], 1)
         self.assertEqual(len(payload["entries"]), 1)
+
+    def test_feed_sse_endpoint_returns_event_stream_headers(self):
+        response = self.client.get(reverse("feed_sse"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/event-stream", response["Content-Type"])
+        self.assertEqual(response["Cache-Control"], "no-cache")
 
     @patch("app_feeds.tasks.generate_brief.delay")
     def test_brief_view_returns_pending_and_queues_generation(self, mock_delay):

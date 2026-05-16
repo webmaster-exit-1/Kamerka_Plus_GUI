@@ -558,9 +558,19 @@ $(document).ready(function(){
 </script>
 <script>
 (function() {
+    // Keep feed cards compact in the dashboard panel while preserving signal.
+    var MAX_SUMMARY_LENGTH = Number('{{ intel_feed_summary_max|default:"200"|escapejs }}');
+    if (!Number.isFinite(MAX_SUMMARY_LENGTH) || MAX_SUMMARY_LENGTH <= 0) {
+        MAX_SUMMARY_LENGTH = 200;
+    }
+    // Poll every 3s after a pending brief response to avoid tight-loop retries.
+    var BRIEF_POLL_INTERVAL_MS = 3000;
+    // Stop brief polling after ~24s (8 * 3s) to keep UI responsive.
+    var MAX_BRIEF_POLL_ATTEMPTS = 8;
+
     function escHtml(value) {
         var node = document.createElement('div');
-        node.textContent = value == null ? '' : String(value);
+        node.textContent = (value === null || value === undefined) ? '' : String(value);
         return node.innerHTML;
     }
 
@@ -578,10 +588,38 @@ $(document).ready(function(){
         return (regionSelect.value || '').trim().toUpperCase();
     }
 
+    function isIso2Region(value) {
+        return /^[A-Z]{2}$/.test(value || '');
+    }
+
+    function formatPublished(value) {
+        if (!value) return 'n/a';
+        var parsed = new Date(value);
+        if (!isNaN(parsed.getTime())) {
+            var iso = parsed.toISOString();
+            if (iso.endsWith('Z')) {
+                iso = iso.slice(0, -1) + ' UTC';
+            }
+            return iso.replace('T', ' ');
+        }
+        return String(value);
+    }
+
+    function safeHttpUrl(value) {
+        if (!value) return '';
+        try {
+            var parsed = new URL(String(value), window.location.origin);
+            if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                return encodeURI(parsed.href);
+            }
+        } catch (e) {}
+        return '';
+    }
+
     async function loadFeedEntries() {
         var region = selectedRegion();
         var url = '/api/feeds/entries/?limit=12';
-        if (region) {
+        if (region && isIso2Region(region)) {
             url += '&country=' + encodeURIComponent(region);
         }
 
@@ -596,9 +634,11 @@ $(document).ready(function(){
                 var html = entries.map(function(e) {
                     var title = escHtml(e.title || '(untitled)');
                     var source = escHtml(e.source || 'unknown');
-                    var published = escHtml((e.published || '').replace('T', ' ').slice(0, 19) || 'n/a');
-                    var summary = escHtml((e.summary || '').slice(0, 200));
-                    var url = e.url ? String(e.url) : '';
+                    var published = escHtml(formatPublished(e.published));
+                    var rawSummary = e.summary || '';
+                    var wasTruncated = rawSummary.length > MAX_SUMMARY_LENGTH;
+                    var summary = escHtml(rawSummary.slice(0, MAX_SUMMARY_LENGTH) + (wasTruncated ? '…' : ''));
+                    var url = safeHttpUrl(e.url);
                     var link = url ? '<a href="' + escHtml(url) + '" target="_blank" rel="noopener noreferrer" style="color:#00e1ff;">open</a>' : '';
                     return (
                         '<div style="padding:8px 2px;border-bottom:1px dashed #1b2b3a;">' +
@@ -625,6 +665,11 @@ $(document).ready(function(){
             briefContentEl.textContent = 'No brief loaded.';
             return;
         }
+        if (!isIso2Region(region)) {
+            briefStatusEl.textContent = 'Invalid region code.';
+            briefContentEl.textContent = 'Select a 2-letter ISO country code.';
+            return;
+        }
 
         try {
             var response = await fetch('/api/feeds/brief/' + encodeURIComponent(region) + '/');
@@ -632,8 +677,8 @@ $(document).ready(function(){
             if (response.status === 202 || payload.method === 'pending') {
                 briefStatusEl.textContent = 'Generating brief for ' + region + '…';
                 briefContentEl.textContent = payload.content || 'Generating brief…';
-                if ((attempt || 0) < 8) {
-                    setTimeout(function() { loadBrief((attempt || 0) + 1); }, 3000);
+                if ((attempt || 0) < MAX_BRIEF_POLL_ATTEMPTS) {
+                    setTimeout(function() { loadBrief((attempt || 0) + 1); }, BRIEF_POLL_INTERVAL_MS);
                 }
                 return;
             }
@@ -677,7 +722,3 @@ $(document).ready(function(){
 </html>
 
 {% endblock %}
-
-
-
-

@@ -75,6 +75,7 @@ from kamerka.tasks import (
 from shodan import Shodan as _ShodanAPI
 
 _views_logger = logging.getLogger(__name__)
+INTEL_FEED_SUMMARY_MAX = 200
 
 # CVE → Metasploit module path mapping (well-known, high-signal entries only)
 _CVE_TO_MSF = {
@@ -459,6 +460,7 @@ def index(request):
         "search_len": search_all,
         "credits": credits,
         "intel_regions": intel_regions,
+        "intel_feed_summary_max": INTEL_FEED_SUMMARY_MAX,
     }
     return render(request, "index.html", context)
 
