@@ -697,14 +697,23 @@
             return ESCAPE_NODE.innerHTML;
         }
 
+        const LAYER_POINT_GEOMETRY = new THREE.SphereGeometry(0.012, 10, 10);
+        const LAYER_POINT_MATERIALS = new Map();
+
+        function getLayerPointMaterial(color) {
+            const materialColor = color || '#00e1ff';
+            if (!LAYER_POINT_MATERIALS.has(materialColor)) {
+                LAYER_POINT_MATERIALS.set(materialColor, new THREE.MeshBasicMaterial({
+                    color: materialColor,
+                    transparent: true,
+                    opacity: 0.9,
+                }));
+            }
+            return LAYER_POINT_MATERIALS.get(materialColor);
+        }
+
         function layerPointMesh(lat, lon, color) {
-            const geo = new THREE.SphereGeometry(0.012, 10, 10);
-            const mat = new THREE.MeshBasicMaterial({
-                color: color || '#00e1ff',
-                transparent: true,
-                opacity: 0.9,
-            });
-            const mesh = new THREE.Mesh(geo, mat);
+            const mesh = new THREE.Mesh(LAYER_POINT_GEOMETRY, getLayerPointMaterial(color));
             mesh.position.copy(latLonToVec3(lat, lon, EARTH_RADIUS + 0.014));
             return mesh;
         }
