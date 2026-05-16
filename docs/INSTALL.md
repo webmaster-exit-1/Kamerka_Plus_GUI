@@ -373,6 +373,29 @@ celery --app kamerka worker --loglevel=info &
 | `POST /api/feeds/brief/<region>/generate/` | Force-regenerate a brief |
 | `GET /api/export/geojson/<search_id>` | Enhanced GeoJSON export (risk_score, layer_context) |
 
+### Dashboard live intelligence panel (Phase 3 vertical slice)
+
+The dashboard (`/index`) now includes a **Live Intelligence Feed** panel and a
+**Region Brief** panel:
+
+- Select a region (ISO-2 code) to filter recent ingested feed entries.
+- The brief panel calls `GET /api/feeds/brief/<region>/` and automatically
+  shows pending generation until a brief is ready.
+- Feed updates arrive live via SSE (`/api/feeds/entries/sse/`) and refresh the
+  panel without a full page reload.
+
+To use this effectively:
+
+1. Seed feed sources:
+   ```bash
+   python3 manage.py seed_feeds
+   ```
+2. Run worker + beat so feeds are ingested periodically:
+   ```bash
+   celery --app kamerka worker --beat --loglevel=info
+   ```
+3. Open `/index` and monitor the live panel.
+
 <details>
 <summary>Running on Android (Termux, no root)</summary>
 

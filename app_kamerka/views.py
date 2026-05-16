@@ -419,6 +419,19 @@ def index(request):
     for i in search_all:
         countries[i.country] = "1"
 
+    intel_regions = set()
+    for code in Device.objects.exclude(country_code="").values_list(
+        "country_code", flat=True
+    ):
+        normalized = (code or "").strip().upper()
+        if len(normalized) == 2 and normalized.isalpha():
+            intel_regions.add(normalized)
+    for code in Search.objects.values_list("country", flat=True):
+        normalized = (code or "").strip().upper()
+        if len(normalized) == 2 and normalized.isalpha():
+            intel_regions.add(normalized)
+    intel_regions = sorted(intel_regions)
+
     # make list out of last 5 searches
     for j in last_5_searches:
         try:
@@ -445,6 +458,7 @@ def index(request):
         "task_id": task,
         "search_len": search_all,
         "credits": credits,
+        "intel_regions": intel_regions,
     }
     return render(request, "index.html", context)
 
