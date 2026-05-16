@@ -676,10 +676,7 @@ $(document).ready(function(){
             var payload = await response.json();
             if (response.status === 202 || payload.method === 'pending') {
                 briefStatusEl.textContent = 'Generating brief for ' + region + '…';
-                briefContentEl.textContent = payload.content || 'Generating brief…';
-                if ((attempt || 0) < MAX_BRIEF_POLL_ATTEMPTS) {
-                    setTimeout(function() { loadBrief((attempt || 0) + 1); }, BRIEF_POLL_INTERVAL_MS);
-                }
+                briefContentEl.textContent = (payload.content || 'Generating brief…') + ' Refresh later to check status.';
                 return;
             }
             briefStatusEl.textContent = 'Latest brief [' + (payload.method || 'unknown') + '] for ' + region;
