@@ -108,7 +108,7 @@ def _parse_limit(raw_limit: str, *, max_limit: int = 5000):
     if raw_limit in (None, ""):
         return None
     try:
-        value = int(raw_limit.strip())
+        value = int(str(raw_limit).strip())
     except (TypeError, ValueError):
         return False
     if value <= 0:
