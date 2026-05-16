@@ -339,6 +339,13 @@
                                 <span id="val-labels">100%</span>
                             </div>
                         </div>
+                        <div class="ctrl-group">
+                            <label>DATA LAYERS</label>
+                            <div class="btn-row" id="globe-layer-list"></div>
+                            <div id="globe-layer-status" style="margin-top:6px;font-size:0.78em;color:var(--cp-dim);letter-spacing:0.06em;">
+                                loading…
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Device info panel -->
@@ -679,6 +686,93 @@
             return `${r},${g},${b}`;
         }
 
+        function escapeHtml(value) {
+            const node = document.createElement('div');
+            node.textContent = value == null ? '' : String(value);
+            return node.innerHTML;
+        }
+
+        function layerPointMesh(lat, lon, color) {
+            const geo = new THREE.SphereGeometry(0.012, 10, 10);
+            const mat = new THREE.MeshBasicMaterial({
+                color: color || '#00e1ff',
+                transparent: true,
+                opacity: 0.9,
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.copy(latLonToVec3(lat, lon, EARTH_RADIUS + 0.014));
+            return mesh;
+        }
+
+        function layerLineMesh(coords, color) {
+            if (!Array.isArray(coords) || coords.length < 2) return null;
+            const points = [];
+            coords.forEach(pair => {
+                if (!Array.isArray(pair) || pair.length < 2) return;
+                const lon = parseFloat(pair[0]);
+                const lat = parseFloat(pair[1]);
+                if (Number.isNaN(lat) || Number.isNaN(lon)) return;
+                points.push(latLonToVec3(lat, lon, EARTH_RADIUS + 0.01));
+            });
+            if (points.length < 2) return null;
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const material = new THREE.LineBasicMaterial({
+                color: color || '#00e1ff',
+                transparent: true,
+                opacity: 0.85,
+            });
+            return new THREE.Line(geometry, material);
+        }
+
+        function featureInfoHtml(feature, layerCfg) {
+            const props = (feature && feature.properties) || {};
+            const popupFields = ((layerCfg || {}).renderer_config || {}).popup_fields;
+            let keys = Object.keys(props).filter(k => !k.startsWith('_'));
+            if (Array.isArray(popupFields) && popupFields.length) {
+                keys = popupFields.filter(k => Object.prototype.hasOwnProperty.call(props, k));
+            }
+            if (!keys.length) {
+                return '<div class="dp-row"><span class="dp-label">DATA</span><span class="dp-val">No details</span></div>';
+            }
+            return keys.slice(0, 10).map(key => {
+                const rawVal = props[key];
+                const val = (rawVal == null || rawVal === '') ? '—' :
+                    (typeof rawVal === 'object' ? JSON.stringify(rawVal).slice(0, 160) : String(rawVal).slice(0, 160));
+                return '<div class="dp-row"><span class="dp-label">' + escapeHtml(key.toUpperCase()) +
+                    '</span><span class="dp-val">' + escapeHtml(val) + '</span></div>';
+            }).join('');
+        }
+
+        function showLayerFeaturePanel(feature, layerCfg) {
+            const color = (layerCfg && layerCfg.color) || '#00e1ff';
+            const panel = document.getElementById('device-panel');
+            const title = (layerCfg && layerCfg.name) ? layerCfg.name : 'Data Layer';
+            document.querySelector('#device-panel h4').innerHTML = '› ' + escapeHtml(title);
+            document.getElementById('panel-body').innerHTML = featureInfoHtml(feature, layerCfg);
+            panel.style.display = 'block';
+            panel.style.borderColor = color;
+        }
+
+        function layerFeaturesUrl(layerCfg) {
+            if (layerCfg && layerCfg.endpoints && layerCfg.endpoints.features) {
+                return layerCfg.endpoints.features;
+            }
+            return '/api/layers/' + layerCfg.slug + '/features.json';
+        }
+
+        function layerFeatureLimit() {
+            if (camera.position.z > 4.4) return 400;
+            if (camera.position.z > 3.8) return 800;
+            if (camera.position.z > 3.0) return 1500;
+            return 2500;
+        }
+
+        function setLayerStatus(message, color) {
+            const status = document.getElementById('globe-layer-status');
+            status.textContent = message;
+            if (color) status.style.color = color;
+        }
+
         // ─────────────────────────────────────────────────────────────
         //  Scene setup
         // ─────────────────────────────────────────────────────────────
@@ -745,8 +839,10 @@
         // Groups for spikes and heat-map
         const spikesGroup   = new THREE.Group();
         const heatmapGroup  = new THREE.Group();
+        const dataLayersRootGroup = new THREE.Group();
         scene.add(spikesGroup);
         scene.add(heatmapGroup);
+        scene.add(dataLayersRootGroup);
 
         // State
         let currentTheme = 'cyberpunk';
@@ -754,6 +850,10 @@
         let rotating     = false;   // default: globe starts paused
         let allDevices   = [];
         let spikeObjects = [];  // { mesh, device } for raycasting
+        let dataLayerObjects = []; // { object, feature, layer }
+        const activeDataLayers = {}; // slug -> { cfg, group, featuresCount }
+        const layerConfigs = {}; // slug -> layer metadata
+        const layerButtons = {}; // slug -> button
 
         // ── Label DOM system ──────────────────────────────────────────
         const labelsWrap = document.getElementById('globe-labels-wrap');
@@ -817,6 +917,143 @@
         const raycaster = new THREE.Raycaster();
         const mouse     = new THREE.Vector2();
 
+        function clearLayerGroup(slug) {
+            const active = activeDataLayers[slug];
+            if (!active) return;
+            dataLayersRootGroup.remove(active.group);
+            dataLayerObjects = dataLayerObjects.filter(entry => entry.layer.slug !== slug);
+            delete activeDataLayers[slug];
+            const btn = layerButtons[slug];
+            if (btn) {
+                btn.classList.remove('active');
+                btn.style.borderColor = '';
+                btn.style.color = '';
+            }
+        }
+
+        async function loadDataLayer(slug, button) {
+            const cfg = layerConfigs[slug];
+            if (!cfg) return;
+            const limit = layerFeatureLimit();
+            const baseUrl = layerFeaturesUrl(cfg);
+            const joiner = baseUrl.includes('?') ? '&' : '?';
+            const response = await fetch(baseUrl + joiner + 'limit=' + limit);
+            if (!response.ok) throw new Error('layer fetch failed');
+            const fc = await response.json();
+
+            clearLayerGroup(slug);
+            const group = new THREE.Group();
+            const features = Array.isArray(fc.features) ? fc.features : [];
+            let rendered = 0;
+
+            features.forEach(feature => {
+                const geom = feature && feature.geometry;
+                if (!geom || !geom.type) return;
+                if (geom.type === 'Point') {
+                    const coords = geom.coordinates || [];
+                    const lon = parseFloat(coords[0]);
+                    const lat = parseFloat(coords[1]);
+                    if (Number.isNaN(lat) || Number.isNaN(lon)) return;
+                    const mesh = layerPointMesh(lat, lon, cfg.color);
+                    mesh.userData.layerFeature = feature;
+                    mesh.userData.layerCfg = cfg;
+                    group.add(mesh);
+                    dataLayerObjects.push({ object: mesh, feature: feature, layer: cfg });
+                    rendered += 1;
+                    return;
+                }
+                if (geom.type === 'LineString') {
+                    const line = layerLineMesh(geom.coordinates || [], cfg.color);
+                    if (!line) return;
+                    line.userData.layerFeature = feature;
+                    line.userData.layerCfg = cfg;
+                    group.add(line);
+                    dataLayerObjects.push({ object: line, feature: feature, layer: cfg });
+                    rendered += 1;
+                }
+            });
+
+            dataLayersRootGroup.add(group);
+            activeDataLayers[slug] = { cfg: cfg, group: group, featuresCount: rendered };
+            if (button) {
+                button.classList.add('active');
+                button.style.borderColor = cfg.color;
+                button.style.color = cfg.color;
+            }
+            if (!rendered) {
+                setLayerStatus((cfg.name || slug) + ': no data in current refresh', '#999');
+            } else {
+                setLayerStatus('rendered ' + rendered + ' features from ' + (cfg.name || slug), '#00e1ff');
+            }
+        }
+
+        function toggleDataLayer(slug, button) {
+            if (activeDataLayers[slug]) {
+                clearLayerGroup(slug);
+                if (button) {
+                    button.style.borderColor = '';
+                    button.style.color = '';
+                }
+                setLayerStatus('layer disabled: ' + (layerConfigs[slug].name || slug), '#aaa');
+                return;
+            }
+            loadDataLayer(slug, button).catch(() => {
+                setLayerStatus('layer unavailable: ' + (layerConfigs[slug].name || slug), '#ff6030');
+            });
+        }
+
+        async function initDataLayers() {
+            const listEl = document.getElementById('globe-layer-list');
+            setLayerStatus('loading…', '#aaa');
+            listEl.innerHTML = '';
+            try {
+                const response = await fetch('/api/layers/?view=globe');
+                if (!response.ok) throw new Error('catalog unavailable');
+                const layers = await response.json();
+                if (!Array.isArray(layers) || !layers.length) {
+                    setLayerStatus('no globe-compatible layers', '#999');
+                    return;
+                }
+                layers.forEach(layer => {
+                    layerConfigs[layer.slug] = layer;
+                    const btn = document.createElement('button');
+                    btn.className = 'mode-btn';
+                    btn.textContent = (layer.icon || '●') + ' ' + layer.name;
+                    btn.title = 'Toggle ' + layer.name + ' layer';
+                    btn.style.fontSize = '0.74em';
+                    btn.style.padding = '2px 6px';
+                    btn.addEventListener('click', () => toggleDataLayer(layer.slug, btn));
+                    layerButtons[layer.slug] = btn;
+                    listEl.appendChild(btn);
+                });
+                setLayerStatus('toggle a layer to render on globe', '#aaa');
+            } catch (_err) {
+                setLayerStatus('layer catalog unavailable', '#ff6030');
+            }
+        }
+
+        function refreshActiveDataLayers() {
+            Object.keys(activeDataLayers).forEach(slug => {
+                const btn = layerButtons[slug];
+                loadDataLayer(slug, btn).catch(() => {});
+            });
+        }
+
+        function initLayerLiveUpdates() {
+            if (!window.EventSource) return;
+            const events = new EventSource('/api/feeds/entries/sse/');
+            events.addEventListener('layer_updated', function(ev) {
+                try {
+                    const payload = JSON.parse(ev.data || '{}');
+                    if (!payload.slug || !activeDataLayers[payload.slug]) return;
+                    const btn = layerButtons[payload.slug];
+                    loadDataLayer(payload.slug, btn).catch(() => {});
+                } catch (_err) {
+                    // no-op
+                }
+            });
+        }
+
         // ─────────────────────────────────────────────────────────────
         //  Data loading
         // ─────────────────────────────────────────────────────────────
@@ -837,6 +1074,16 @@
             updateStats();
             rebuildScene();
             document.getElementById('globe-loading').style.display = 'none';
+        }
+
+        let _layerRefreshTimer = null;
+        function scheduleActiveLayerRefresh() {
+            if (_layerRefreshTimer) {
+                clearTimeout(_layerRefreshTimer);
+            }
+            _layerRefreshTimer = setTimeout(() => {
+                refreshActiveDataLayers();
+            }, 250);
         }
 
         function updateStats() {
@@ -950,7 +1197,10 @@
             isDragging = true;
             prevX = e.clientX; prevY = e.clientY;
         });
-        canvas.addEventListener('mouseup',   () => { isDragging = false; });
+        canvas.addEventListener('mouseup',   () => {
+            isDragging = false;
+            scheduleActiveLayerRefresh();
+        });
         canvas.addEventListener('mouseleave',() => { isDragging = false; });
         canvas.addEventListener('mousemove', e => {
             if (!isDragging) return;
@@ -962,6 +1212,8 @@
             spikesGroup.rotation.x  = earthMesh.rotation.x;
             heatmapGroup.rotation.y = earthMesh.rotation.y;
             heatmapGroup.rotation.x = earthMesh.rotation.x;
+            dataLayersRootGroup.rotation.y = earthMesh.rotation.y;
+            dataLayersRootGroup.rotation.x = earthMesh.rotation.x;
             graticule.rotation.y    = earthMesh.rotation.y;
             graticule.rotation.x    = earthMesh.rotation.x;
             prevX = e.clientX; prevY = e.clientY;
@@ -971,6 +1223,7 @@
         canvas.addEventListener('wheel', e => {
             camera.position.z = Math.max(1.4, Math.min(6.0,
                 camera.position.z + e.deltaY * 0.002));
+            scheduleActiveLayerRefresh();
         });
 
         // Touch support
@@ -988,10 +1241,15 @@
             spikesGroup.rotation.x  = earthMesh.rotation.x;
             heatmapGroup.rotation.y = earthMesh.rotation.y;
             heatmapGroup.rotation.x = earthMesh.rotation.x;
+            dataLayersRootGroup.rotation.y = earthMesh.rotation.y;
+            dataLayersRootGroup.rotation.x = earthMesh.rotation.x;
             graticule.rotation.y    = earthMesh.rotation.y;
             graticule.rotation.x    = earthMesh.rotation.x;
             lastTouchX = e.touches[0].clientX;
             lastTouchY = e.touches[0].clientY;
+        });
+        canvas.addEventListener('touchend', () => {
+            scheduleActiveLayerRefresh();
         });
 
         // ─────────────────────────────────────────────────────────────
@@ -1003,15 +1261,23 @@
             mouse.x = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
             mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
             raycaster.setFromCamera(mouse, camera);
-            const hits = raycaster.intersectObjects(spikeObjects);
-            if (hits.length > 0) {
-                showDevicePanel(hits[0].object.userData.device);
+            const inspectables = spikeObjects.concat(dataLayerObjects.map(entry => entry.object));
+            const hits = raycaster.intersectObjects(inspectables);
+            if (!hits.length) return;
+            const hit = hits[0].object.userData || {};
+            if (hit.device) {
+                showDevicePanel(hit.device);
+                return;
+            }
+            if (hit.layerFeature) {
+                showLayerFeaturePanel(hit.layerFeature, hit.layerCfg);
             }
         });
 
         function showDevicePanel(dev) {
             const sev = (dev.severity || 'unknown').toLowerCase();
             const sevClass = 'sev-' + sev;
+            document.querySelector('#device-panel h4').innerHTML = '› Device Info';
             document.getElementById('panel-body').innerHTML = `
                 <div class="dp-row"><span class="dp-label">IP</span><span class="dp-val">${dev.ip || '—'}</span></div>
                 <div class="dp-row"><span class="dp-label">PRODUCT</span><span class="dp-val">${dev.product || '—'}</span></div>
@@ -1023,6 +1289,7 @@
                 <div class="dp-row"><span class="dp-label">VULNS</span><span class="dp-val">${dev.vuln_count ?? '—'}</span></div>
             `;
             document.getElementById('device-panel').style.display = 'block';
+            document.getElementById('device-panel').style.borderColor = 'var(--cp-magenta)';
         }
 
         document.getElementById('panel-close').addEventListener('click', () => {
@@ -1095,6 +1362,7 @@
             renderer.setSize(w, h);
             camera.aspect = w / h;
             camera.updateProjectionMatrix();
+            scheduleActiveLayerRefresh();
         });
 
         // ─────────────────────────────────────────────────────────────
@@ -1107,6 +1375,7 @@
                 earthMesh.rotation.y    += delta;
                 spikesGroup.rotation.y  += delta;
                 heatmapGroup.rotation.y += delta;
+                dataLayersRootGroup.rotation.y += delta;
                 graticule.rotation.y    += delta;
             }
             renderer.render(scene, camera);
@@ -1116,6 +1385,8 @@
 
         // Bootstrap
         loadDevices();
+        initDataLayers();
+        initLayerLiveUpdates();
         </script>
     </body>
 {% endblock %}

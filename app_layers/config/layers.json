@@ -10,6 +10,7 @@
       "icon": "⚡",
       "enabled": true,
       "renderer_config": {
+        "views": ["map", "globe"],
         "min_magnitude": 4.0,
         "scale_by": "mag",
         "popup_fields": ["mag", "place", "time", "url"]
@@ -25,6 +26,7 @@
       "icon": "〰",
       "enabled": true,
       "renderer_config": {
+        "views": ["map", "globe"],
         "popup_fields": ["name", "rfs", "owners"]
       }
     },
@@ -38,6 +40,7 @@
       "icon": "🔴",
       "enabled": true,
       "renderer_config": {
+        "views": ["map", "globe"],
         "popup_fields": ["entity", "score", "from", "until"]
       }
     },
@@ -51,6 +54,7 @@
       "icon": "⚡",
       "enabled": false,
       "renderer_config": {
+        "views": ["map"],
         "overpass_query": "[out:json][timeout:25];node[power=plant](bbox);out body;",
         "popup_fields": ["name", "operator", "plant:type"]
       }
@@ -65,6 +69,7 @@
       "icon": "🏭",
       "enabled": true,
       "renderer_config": {
+        "views": ["map", "globe"],
         "derived_from": "shodan_devices",
         "filter_types": ["modbus", "dnp3", "s7", "bacnet", "ics", "scada", "plc", "hmi"],
         "popup_fields": ["ip", "type", "org", "city", "vulns"]
@@ -80,6 +85,7 @@
       "icon": "🏥",
       "enabled": false,
       "renderer_config": {
+        "views": ["map"],
         "overpass_query": "[out:json][timeout:25];(node[amenity~\"hospital|fire_station|police\"](bbox););out body;",
         "popup_fields": ["name", "amenity", "addr:city"]
       }

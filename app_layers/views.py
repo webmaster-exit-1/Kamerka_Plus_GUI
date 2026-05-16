@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import math
+from urllib.parse import urlencode
 
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_http_methods
@@ -98,21 +99,68 @@ def _parse_bbox(raw_bbox: str):
     return min_lon, min_lat, max_lon, max_lat
 
 
+def _parse_limit(raw_limit: str, *, max_limit: int = 5000):
+    """Parse a positive integer limit query value.
+
+    Returns an integer on success, ``None`` when not provided, or ``False`` when
+    provided but invalid.
+    """
+    if raw_limit in (None, ""):
+        return None
+    try:
+        value = int(str(raw_limit).strip())
+    except (TypeError, ValueError):
+        return False
+    if value <= 0:
+        return False
+    return min(value, max_limit)
+
+
+def _layer_supported_views(layer: DataLayer):
+    """Return supported frontend views for a layer as ``["map", "globe"]`` subset."""
+    cfg = layer.renderer_config or {}
+    cfg_views = cfg.get("views")
+    if isinstance(cfg_views, list):
+        views = [v for v in cfg_views if v in ("map", "globe")]
+        if views:
+            return views
+
+    supports_globe = layer.layer_type in {"point", "linestring"}
+    return ["map", "globe"] if supports_globe else ["map"]
+
+
+def _serialize_layer(layer: DataLayer):
+    """Serialize DataLayer metadata for 2D + 3D consumers."""
+    supported_views = _layer_supported_views(layer)
+    features_path = f"/api/layers/{layer.slug}/features.json"
+    return {
+        "slug": layer.slug,
+        "name": layer.name,
+        "layer_type": layer.layer_type,
+        "color": layer.color,
+        "icon": layer.icon,
+        "renderer_config": layer.renderer_config or {},
+        "supported_views": supported_views,
+        "last_refreshed": layer.last_refreshed.isoformat() if layer.last_refreshed else None,
+        "endpoints": {
+            "features": features_path,
+            "features_with_bbox": f"{features_path}?{urlencode({'bbox': '{bbox}'})}",
+            "features_with_limit": f"{features_path}?{urlencode({'limit': '{limit}'})}",
+        },
+    }
+
+
 @require_GET
 def layer_list(request):
     """Return metadata for all enabled layers as JSON."""
     layers = DataLayer.objects.filter(enabled=True)
-    data = [
-        {
-            "slug": l.slug,
-            "name": l.name,
-            "layer_type": l.layer_type,
-            "color": l.color,
-            "icon": l.icon,
-            "last_refreshed": l.last_refreshed.isoformat() if l.last_refreshed else None,
-        }
-        for l in layers
-    ]
+    view_filter = (request.GET.get("view", "") or "").strip().lower()
+    data = []
+    for layer in layers:
+        payload = _serialize_layer(layer)
+        if view_filter and view_filter not in payload["supported_views"]:
+            continue
+        data.append(payload)
     return JsonResponse(data, safe=False)
 
 
@@ -134,6 +182,13 @@ def layer_features(request, slug: str):
                 status=400,
             )
 
+    limit = _parse_limit(request.GET.get("limit"))
+    if limit is False:
+        return JsonResponse(
+            {"error": "invalid limit; expected a positive integer"},
+            status=400,
+        )
+
     features = []
     for feat in layer.features.all():
         if bbox and not _geometry_intersects_bbox(feat.geometry, bbox):
@@ -147,6 +202,8 @@ def layer_features(request, slug: str):
                 "_id": feat.pk,
             },
         })
+        if limit and len(features) >= limit:
+            break
 
     return JsonResponse(
         {
@@ -155,8 +212,10 @@ def layer_features(request, slug: str):
             "layer": {
                 "slug": layer.slug,
                 "name": layer.name,
+                "layer_type": layer.layer_type,
                 "color": layer.color,
                 "icon": layer.icon,
+                "renderer_config": layer.renderer_config or {},
             },
         }
     )
