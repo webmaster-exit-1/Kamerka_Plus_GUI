@@ -867,6 +867,8 @@
         let spikeObjects = [];  // { mesh, device } for raycasting
         let dataLayerObjects = []; // { object, feature, layer }
         const activeDataLayers = {}; // slug -> { cfg, group, featuresCount }
+        const layerDesiredActive = {}; // slug -> bool, includes in-flight toggles
+        const layerRequestGeneration = {}; // slug -> monotonically increasing request token
         const layerConfigs = {}; // slug -> layer metadata
         const layerButtons = {}; // slug -> button
 
@@ -979,12 +981,25 @@
         async function loadDataLayer(slug, button) {
             const cfg = layerConfigs[slug];
             if (!cfg) return;
+            const requestGeneration = (layerRequestGeneration[slug] || 0) + 1;
+            layerRequestGeneration[slug] = requestGeneration;
             const limit = layerFeatureLimit();
             const baseUrl = layerFeaturesUrl(cfg);
             const joiner = baseUrl.includes('?') ? '&' : '?';
-            const response = await fetch(baseUrl + joiner + 'limit=' + limit);
-            if (!response.ok) throw new Error('layer fetch failed');
-            const fc = await response.json();
+            let fc;
+            try {
+                const response = await fetch(baseUrl + joiner + 'limit=' + limit);
+                if (!response.ok) throw new Error('layer fetch failed');
+                fc = await response.json();
+            } catch (err) {
+                if (layerRequestGeneration[slug] !== requestGeneration || !layerDesiredActive[slug]) {
+                    return;
+                }
+                throw err;
+            }
+            if (layerRequestGeneration[slug] !== requestGeneration || !layerDesiredActive[slug]) {
+                return;
+            }
 
             clearLayerGroup(slug);
             const group = new THREE.Group();
@@ -1017,6 +1032,10 @@
                     rendered += 1;
                 }
             });
+            if (layerRequestGeneration[slug] !== requestGeneration || !layerDesiredActive[slug]) {
+                disposeLayerGroup(group);
+                return;
+            }
 
             dataLayersRootGroup.add(group);
             activeDataLayers[slug] = { cfg: cfg, group: group, featuresCount: rendered };
@@ -1033,7 +1052,9 @@
         }
 
         function toggleDataLayer(slug, button) {
-            if (activeDataLayers[slug]) {
+            if (layerDesiredActive[slug]) {
+                layerDesiredActive[slug] = false;
+                layerRequestGeneration[slug] = (layerRequestGeneration[slug] || 0) + 1;
                 clearLayerGroup(slug);
                 if (button) {
                     button.style.borderColor = '';
@@ -1042,6 +1063,7 @@
                 setLayerStatus('layer disabled: ' + (layerConfigs[slug].name || slug), '#aaa');
                 return;
             }
+            layerDesiredActive[slug] = true;
             loadDataLayer(slug, button).catch(() => {
                 setLayerStatus('layer unavailable: ' + (layerConfigs[slug].name || slug), '#ff6030');
             });
@@ -1061,6 +1083,7 @@
                 }
                 layers.forEach(layer => {
                     layerConfigs[layer.slug] = layer;
+                    layerDesiredActive[layer.slug] = false;
                     const btn = document.createElement('button');
                     btn.className = 'mode-btn';
                     btn.textContent = (layer.icon || '●') + ' ' + layer.name;
