@@ -388,6 +388,53 @@
                         </div>
                     </div>
 
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="panel panel-default">
+                                <div class="panel-heading">
+                                    <div class="panel-title-box">
+                                        <h3>Live Intelligence Feed</h3>
+                                    </div>
+                                </div>
+                                <div class="panel-body" style="background-color:#0a141d;">
+                                    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+                                        <div style="display:flex;align-items:center;gap:8px;">
+                                            <label for="cp-intel-region" style="margin:0;font-family:var(--cp-font,monospace);color:#00e1ff;">Region</label>
+                                            <select id="cp-intel-region" style="min-width:120px;">
+                                                <option value="">ALL</option>
+                                                {% for region in intel_regions %}
+                                                <option value="{{ region }}">{{ region }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                        <div id="cp-intel-feed-status" style="font-family:var(--cp-font,monospace);font-size:0.85em;color:#3a4555;">
+                                            waiting for feed updates…
+                                        </div>
+                                    </div>
+                                    <div id="cp-intel-feed-list" style="max-height:260px;overflow-y:auto;border:1px solid #153046;padding:8px;">
+                                        <div style="color:#3a4555;font-family:monospace;">Loading feed entries…</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="panel panel-default">
+                                <div class="panel-heading">
+                                    <div class="panel-title-box">
+                                        <h3>Region Brief</h3>
+                                    </div>
+                                </div>
+                                <div class="panel-body" style="background-color:#0a141d;">
+                                    <div id="cp-intel-brief-status" style="font-family:var(--cp-font,monospace);font-size:0.85em;color:#3a4555;margin-bottom:8px;">
+                                        Select a region to load an intelligence brief.
+                                    </div>
+                                    <pre id="cp-intel-brief-content" style="white-space:pre-wrap;word-break:break-word;max-height:240px;overflow-y:auto;background:#050b12;border:1px solid #153046;color:#c9d6e3;padding:8px;font-size:0.86em;">No brief loaded.</pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
 
                 </div>
                 <!-- END PAGE CONTENT WRAPPER -->
@@ -509,6 +556,162 @@ $(document).ready(function(){
     }
 });
 </script>
+<script>
+(function() {
+    // Keep feed cards compact in the dashboard panel while preserving signal.
+    var MAX_SUMMARY_LENGTH = Number('{{ intel_feed_summary_max|default:"200"|escapejs }}');
+    if (!Number.isFinite(MAX_SUMMARY_LENGTH) || MAX_SUMMARY_LENGTH <= 0) {
+        MAX_SUMMARY_LENGTH = 200;
+    }
+    // Poll every 3s after a pending brief response to avoid tight-loop retries.
+    var BRIEF_POLL_INTERVAL_MS = 3000;
+    // Stop brief polling after ~24s (8 * 3s) to keep UI responsive.
+    var MAX_BRIEF_POLL_ATTEMPTS = 8;
+
+    function escHtml(value) {
+        var node = document.createElement('div');
+        node.textContent = (value === null || value === undefined) ? '' : String(value);
+        return node.innerHTML;
+    }
+
+    var regionSelect = document.getElementById('cp-intel-region');
+    var feedListEl = document.getElementById('cp-intel-feed-list');
+    var feedStatusEl = document.getElementById('cp-intel-feed-status');
+    var briefStatusEl = document.getElementById('cp-intel-brief-status');
+    var briefContentEl = document.getElementById('cp-intel-brief-content');
+
+    if (!regionSelect || !feedListEl || !feedStatusEl || !briefStatusEl || !briefContentEl) {
+        return;
+    }
+
+    function selectedRegion() {
+        return (regionSelect.value || '').trim().toUpperCase();
+    }
+
+    function isIso2Region(value) {
+        return /^[A-Z]{2}$/.test(value || '');
+    }
+
+    function formatPublished(value) {
+        if (!value) return 'n/a';
+        var parsed = new Date(value);
+        if (!isNaN(parsed.getTime())) {
+            var iso = parsed.toISOString();
+            if (iso.endsWith('Z')) {
+                iso = iso.slice(0, -1) + ' UTC';
+            }
+            return iso.replace('T', ' ');
+        }
+        return String(value);
+    }
+
+    function safeHttpUrl(value) {
+        if (!value) return '';
+        try {
+            var parsed = new URL(String(value), window.location.origin);
+            if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                return encodeURI(parsed.href);
+            }
+        } catch (e) {}
+        return '';
+    }
+
+    async function loadFeedEntries() {
+        var region = selectedRegion();
+        var url = '/api/feeds/entries/?limit=12';
+        if (region && isIso2Region(region)) {
+            url += '&country=' + encodeURIComponent(region);
+        }
+
+        try {
+            var response = await fetch(url);
+            if (!response.ok) throw new Error('feed endpoint unavailable');
+            var payload = await response.json();
+            var entries = Array.isArray(payload.entries) ? payload.entries : [];
+            if (!entries.length) {
+                feedListEl.innerHTML = '<div style="color:#3a4555;font-family:monospace;">No entries for current filter.</div>';
+            } else {
+                var html = entries.map(function(e) {
+                    var title = escHtml(e.title || '(untitled)');
+                    var source = escHtml(e.source || 'unknown');
+                    var published = escHtml(formatPublished(e.published));
+                    var rawSummary = e.summary || '';
+                    var wasTruncated = rawSummary.length > MAX_SUMMARY_LENGTH;
+                    var summary = escHtml(rawSummary.slice(0, MAX_SUMMARY_LENGTH) + (wasTruncated ? '…' : ''));
+                    var url = safeHttpUrl(e.url);
+                    var link = url ? '<a href="' + escHtml(url) + '" target="_blank" rel="noopener noreferrer" style="color:#00e1ff;">open</a>' : '';
+                    return (
+                        '<div style="padding:8px 2px;border-bottom:1px dashed #1b2b3a;">' +
+                        '<div style="font-family:var(--cp-font,monospace);font-size:0.88em;color:#00e1ff;">' + title + '</div>' +
+                        '<div style="font-size:0.78em;color:#6f8092;margin-top:2px;">[' + source + '] ' + published + ' ' + link + '</div>' +
+                        '<div style="font-size:0.82em;color:#b7c5d3;margin-top:4px;">' + summary + '</div>' +
+                        '</div>'
+                    );
+                }).join('');
+                feedListEl.innerHTML = html;
+            }
+            var label = region ? region : 'ALL';
+            feedStatusEl.textContent = 'showing ' + entries.length + ' entries [' + label + ']';
+        } catch (err) {
+            feedStatusEl.textContent = 'feed unavailable';
+            feedListEl.innerHTML = '<div style="color:#ff6030;font-family:monospace;">Failed to load feed entries.</div>';
+        }
+    }
+
+    async function loadBrief(attempt) {
+        var region = selectedRegion();
+        if (!region) {
+            briefStatusEl.textContent = 'Select a region to request a brief.';
+            briefContentEl.textContent = 'No brief loaded.';
+            return;
+        }
+        if (!isIso2Region(region)) {
+            briefStatusEl.textContent = 'Invalid region code.';
+            briefContentEl.textContent = 'Select a 2-letter ISO country code.';
+            return;
+        }
+
+        try {
+            var response = await fetch('/api/feeds/brief/' + encodeURIComponent(region) + '/');
+            var payload = await response.json();
+            if (response.status === 202 || payload.method === 'pending') {
+                briefStatusEl.textContent = 'Generating brief for ' + region + '…';
+                briefContentEl.textContent = (payload.content || 'Generating brief…') + ' Refresh later to check status.';
+                return;
+            }
+            briefStatusEl.textContent = 'Latest brief [' + (payload.method || 'unknown') + '] for ' + region;
+            briefContentEl.textContent = payload.content || 'No brief available for this region.';
+        } catch (err) {
+            briefStatusEl.textContent = 'Brief unavailable for ' + region;
+            briefContentEl.textContent = 'Failed to load region brief.';
+        }
+    }
+
+    function refreshIntelWidgets() {
+        loadFeedEntries();
+        loadBrief(0);
+    }
+
+    regionSelect.addEventListener('change', refreshIntelWidgets);
+
+    if (window.EventSource) {
+        try {
+            var events = new EventSource('/api/feeds/entries/sse/');
+            events.addEventListener('feed_updated', function() {
+                feedStatusEl.textContent = 'live update received — refreshing…';
+                loadFeedEntries();
+            });
+            events.addEventListener('error', function() {
+                feedStatusEl.textContent = 'live updates temporarily unavailable';
+            });
+        } catch (e) {
+            feedStatusEl.textContent = 'live updates unavailable';
+        }
+    }
+
+    refreshIntelWidgets();
+})();
+</script>
 
         <!-- END TEMPLATE -->
     <!-- END SCRIPTS -->
@@ -516,8 +719,3 @@ $(document).ready(function(){
 </html>
 
 {% endblock %}
-
-
-
-
-
