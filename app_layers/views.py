@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import math
-from urllib.parse import urlencode
 
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_http_methods
@@ -102,8 +101,9 @@ def _parse_bbox(raw_bbox: str):
 def _parse_limit(raw_limit: str, *, max_limit: int = 5000):
     """Parse a positive integer limit query value.
 
-    Returns an integer on success, ``None`` when not provided, or ``False`` when
-    provided but invalid.
+    Returns a clamped integer on success, ``None`` when not provided, or
+    ``False`` when provided but invalid. Values greater than ``max_limit`` are
+    clamped to ``max_limit``.
     """
     if raw_limit in (None, ""):
         return None
@@ -144,8 +144,6 @@ def _serialize_layer(layer: DataLayer):
         "last_refreshed": layer.last_refreshed.isoformat() if layer.last_refreshed else None,
         "endpoints": {
             "features": features_path,
-            "features_with_bbox": f"{features_path}?{urlencode({'bbox': '{bbox}'})}",
-            "features_with_limit": f"{features_path}?{urlencode({'limit': '{limit}'})}",
         },
     }
 

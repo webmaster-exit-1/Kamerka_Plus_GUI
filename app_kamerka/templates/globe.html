@@ -414,6 +414,12 @@
 
         const EARTH_RADIUS = 1.0;
         const SPIKE_BASE   = 0.012;
+        const LAYER_FEATURE_LIMIT_FAR = 400;
+        const LAYER_FEATURE_LIMIT_MID = 800;
+        const LAYER_FEATURE_LIMIT_NEAR = 1500;
+        const LAYER_FEATURE_LIMIT_CLOSE = 2500;
+        const LAYER_REFRESH_DEBOUNCE_MS = 250;
+        const ESCAPE_NODE = document.createElement('div');
 
         // ── Label visibility tuning ───────────────────────────────────
         // Camera z > this threshold hides city labels (too far zoomed out).
@@ -687,9 +693,8 @@
         }
 
         function escapeHtml(value) {
-            const node = document.createElement('div');
-            node.textContent = value == null ? '' : String(value);
-            return node.innerHTML;
+            ESCAPE_NODE.textContent = value == null ? '' : String(value);
+            return ESCAPE_NODE.innerHTML;
         }
 
         function layerPointMesh(lat, lon, color) {
@@ -761,10 +766,11 @@
         }
 
         function layerFeatureLimit() {
-            if (camera.position.z > 4.4) return 400;
-            if (camera.position.z > 3.8) return 800;
-            if (camera.position.z > 3.0) return 1500;
-            return 2500;
+            // Basic LOD heuristic: lower payload while zoomed far out.
+            if (camera.position.z > 4.4) return LAYER_FEATURE_LIMIT_FAR;
+            if (camera.position.z > 3.8) return LAYER_FEATURE_LIMIT_MID;
+            if (camera.position.z > 3.0) return LAYER_FEATURE_LIMIT_NEAR;
+            return LAYER_FEATURE_LIMIT_CLOSE;
         }
 
         function setLayerStatus(message, color) {
@@ -1083,7 +1089,7 @@
             }
             layerRefreshTimer = setTimeout(() => {
                 refreshActiveDataLayers();
-            }, 250);
+            }, LAYER_REFRESH_DEBOUNCE_MS);
         }
 
         function updateStats() {
