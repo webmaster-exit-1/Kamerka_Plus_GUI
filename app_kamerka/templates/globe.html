@@ -693,7 +693,7 @@
         }
 
         function escapeHtml(value) {
-            ESCAPE_NODE.textContent = value == null ? '' : String(value);
+            ESCAPE_NODE.textContent = (value === null || value === undefined) ? '' : String(value);
             return ESCAPE_NODE.innerHTML;
         }
 
@@ -741,7 +741,7 @@
             }
             return keys.slice(0, 10).map(key => {
                 const rawVal = props[key];
-                const val = (rawVal == null || rawVal === '') ? '—' :
+                const val = (rawVal === null || rawVal === undefined || rawVal === '') ? '—' :
                     (typeof rawVal === 'object' ? JSON.stringify(rawVal).slice(0, 160) : String(rawVal).slice(0, 160));
                 return '<div class="dp-row"><span class="dp-label">' + escapeHtml(key.toUpperCase()) +
                     '</span><span class="dp-val">' + escapeHtml(val) + '</span></div>';
@@ -1055,7 +1055,7 @@
                     const btn = layerButtons[payload.slug];
                     loadDataLayer(payload.slug, btn).catch(() => {});
                 } catch (err) {
-                    // no-op
+                    console.warn('layer_updated parse error', err);
                 }
             });
         }
