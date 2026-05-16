@@ -362,8 +362,9 @@ celery --app kamerka worker --loglevel=info &
 
 | Endpoint | Description |
 |---|---|
-| `GET /api/layers/` | List all enabled data layers |
-| `GET /api/layers/<slug>/features.json` | GeoJSON features for a layer (`?bbox=min_lon,min_lat,max_lon,max_lat` optional viewport filter) |
+| `GET /api/layers/` | List all enabled data layers (shared metadata for map/globe) |
+| `GET /api/layers/?view=map|globe` | Filter shared layer catalog by frontend view |
+| `GET /api/layers/<slug>/features.json` | GeoJSON features for a layer (`?bbox=min_lon,min_lat,max_lon,max_lat` and `?limit=N` optional filters) |
 | `GET /api/layers/<slug>/refresh/` | Manually trigger a layer refresh |
 | `POST /api/layers/import/` | Import a GeoJSON FeatureCollection as a layer |
 | `GET /api/feeds/entries/` | Recent news feed entries (filterable by country) |

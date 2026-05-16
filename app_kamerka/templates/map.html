@@ -249,8 +249,17 @@ function initialize() {
         ].join(',');
     }
 
+    function _layerFeaturesUrl(layerCfg) {
+        if (layerCfg && layerCfg.endpoints && layerCfg.endpoints.features) {
+            return layerCfg.endpoints.features;
+        }
+        return '/api/layers/' + layerCfg.slug + '/features.json';
+    }
+
     function _loadLayer(slug, color, btn) {
-        fetch('/api/layers/' + slug + '/features.json' + _layerBboxQuery())
+        var cfg = _layerConfigs[slug];
+        if (!cfg) return;
+        fetch(_layerFeaturesUrl(cfg) + _layerBboxQuery())
             .then(function(r) { return r.json(); })
             .then(function(fc) {
                 if (_layerGeoJsonLayers[slug]) {
@@ -326,7 +335,7 @@ function initialize() {
     layerPanel.innerHTML = '<div style="color:#ff00cd;letter-spacing:0.1em;margin-bottom:4px;">DATA LAYERS</div>';
     mapEl.appendChild(layerPanel);
 
-    fetch('/api/layers/')
+    fetch('/api/layers/?view=map')
         .then(function(r) { return r.json(); })
         .then(function(layers) {
             layers.forEach(function(layer) {
@@ -381,5 +390,4 @@ document.addEventListener('DOMContentLoaded', function() {
 </html>
 
 {% endblock %}
-
 

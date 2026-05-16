@@ -112,6 +112,69 @@ class LayerViewsTests(TestCase):
                 )
                 self.assertEqual(response.status_code, 400)
 
+    def test_layer_list_supports_view_filter_and_shared_metadata(self):
+        point_layer = DataLayer.objects.create(
+            slug="point-layer",
+            name="Point Layer",
+            enabled=True,
+            layer_type="point",
+        )
+        DataLayer.objects.create(
+            slug="polygon-layer",
+            name="Polygon Layer",
+            enabled=True,
+            layer_type="polygon",
+        )
+        DataLayer.objects.create(
+            slug="map-only-layer",
+            name="Map Only",
+            enabled=True,
+            layer_type="point",
+            renderer_config={"views": ["map"]},
+        )
+
+        response = self.client.get(reverse("layer_list"), {"view": "globe"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual([row["slug"] for row in payload], ["point-layer"])
+        self.assertEqual(payload[0]["supported_views"], ["map", "globe"])
+        self.assertIn("renderer_config", payload[0])
+        self.assertEqual(
+            payload[0]["endpoints"]["features"],
+            "/api/layers/point-layer/features.json",
+        )
+        self.assertEqual(point_layer.slug, payload[0]["slug"])
+
+    def test_layer_features_supports_limit(self):
+        layer = DataLayer.objects.create(slug="limit-layer", name="Limit Layer", enabled=True)
+        for idx in range(3):
+            LayerFeature.objects.create(
+                layer=layer,
+                geometry={"type": "Point", "coordinates": [10.0 + idx, 10.0 + idx]},
+                properties={"id": f"f-{idx}"},
+            )
+
+        response = self.client.get(
+            reverse("layer_features", args=["limit-layer"]),
+            {"limit": "2"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["features"]), 2)
+        self.assertEqual(payload["layer"]["layer_type"], "point")
+        self.assertIn("renderer_config", payload["layer"])
+
+    def test_layer_features_rejects_invalid_limit(self):
+        DataLayer.objects.create(slug="limit-invalid", name="Limit Invalid", enabled=True)
+
+        response = self.client.get(
+            reverse("layer_features", args=["limit-invalid"]),
+            {"limit": "not-a-number"},
+        )
+        self.assertEqual(response.status_code, 400)
+
 
 class LayerTasksTests(TestCase):
     @patch("app_layers.tasks.refresh_layer.delay")

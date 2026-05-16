@@ -77,6 +77,13 @@ Browser     → GET /api/layers/<slug>/features.json?bbox=min_lon,min_lat,max_lo
                     → returns LayerFeature GeoJSON FeatureCollection
                     → Leaflet layer control adds/removes layer (viewport-filtered)
 
+Browser     → GET /api/layers/?view=map|globe
+                    → shared layer catalog (color/icon/type/renderer_config/endpoints)
+                    → both Leaflet and Three.js consume the same metadata contract
+
+Browser     → GET /api/layers/<slug>/features.json?limit=N
+                    → optional bounded feature payload for globe/LOD-friendly loading
+
 Browser     → POST /api/layers/import/
                     → accepts GeoJSON FeatureCollection
                     → creates DataLayer + LayerFeature records
@@ -113,6 +120,7 @@ Each layer entry:
   "icon": "⚡",
   "enabled": true,
   "renderer_config": {
+    "views": ["map", "globe"],
     "min_magnitude": 4.0,
     "popup_fields": ["mag", "place", "time", "url"]
   }
