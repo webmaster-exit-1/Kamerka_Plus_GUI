@@ -1360,6 +1360,20 @@ class SearchCostViewTest(TestCase):
         self.assertEqual(data["credits_cost"], 3)
         self.assertEqual(len(data["queries"]), 2)
 
+    def test_zero_results_estimate_zero_credits(self):
+        mock_api = MagicMock()
+        mock_api.count.return_value = {"total": 0}
+        with patch("kamerka.tasks.Shodan", return_value=mock_api), \
+             patch("kamerka.tasks._get_env_key", return_value="fake-key"):
+            response = self.client.get(
+                "/search_cost?query=unlikely-device",
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        data = json.loads(response.content)
+        self.assertEqual(data["count"], 0)
+        self.assertEqual(data["credits_cost"], 0)
+        self.assertEqual(data["estimated_pages"], 0)
+
     def test_no_query_returns_error(self):
         response = self.client.get(
             "/search_cost",

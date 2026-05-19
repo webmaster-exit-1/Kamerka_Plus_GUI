@@ -152,7 +152,16 @@ def _get_local_nearby_devices(device, radius_miles=1.0):
         return []
 
     nearby_devices = []
-    for candidate in Device.objects.exclude(pk=device.pk):
+    lat_delta = radius_miles / 69.0
+    cos_lat = math.cos(math.radians(origin_lat))
+    lon_delta = radius_miles / (69.0 * max(abs(cos_lat), 0.01))
+    candidates = Device.objects.exclude(pk=device.pk).filter(
+        lat__gte=origin_lat - lat_delta,
+        lat__lte=origin_lat + lat_delta,
+        lon__gte=origin_lon - lon_delta,
+        lon__lte=origin_lon + lon_delta,
+    )
+    for candidate in candidates:
         cand_lat = _safe_coord(candidate.lat)
         cand_lon = _safe_coord(candidate.lon)
         if cand_lat is None or cand_lon is None:

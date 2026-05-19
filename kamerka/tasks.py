@@ -4022,8 +4022,8 @@ def check_search_cost(query, country=None):
 
         result = api.count(query_str)
         total = result.get("total", 0)
-        estimated_pages = int(math.ceil(total / 100.0)) if total else 1
-        credits_cost = max(1, estimated_pages)
+        estimated_pages = int(math.ceil(total / 100.0)) if total else 0
+        credits_cost = estimated_pages
 
         return {
             "count": total,

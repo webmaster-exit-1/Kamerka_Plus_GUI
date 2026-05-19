@@ -1132,6 +1132,7 @@ function renderNearbyDevicesList(response) {
     var $container = $('#nearby_devices_result');
     if (!$container.length) { return; }
     $container.css('display', 'block');
+    $container.attr('data-loaded', 'true');
     function escapeText(value) {
         return String(value == null ? '' : value)
             .replace(/&/g, '&amp;')
@@ -1797,7 +1798,7 @@ if (x.style.display === "none") {
   } else {
     x.style.display = "none";
   }
-  if(x.innerHTML == "" || x.innerHTML.indexOf("Nearby devices within 1 mile") === -1){
+  if(x.getAttribute('data-loaded') !== 'true'){
         fetchLocalNearbyDevices();
     }
 
