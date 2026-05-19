@@ -277,11 +277,27 @@
                                     <button type="button" id="nearby" class="btn btn-primary active">Search</button>
                                     <progress id="progress-bar3" value="0" max="100" style="display:none; margin-bottom: 1em;"></progress>
 
+                                    <button type="button" id="show_nearby_devices" class="btn btn-primary active">Show 1-mile local results</button>
+                                    <div id="nearby_devices_result" style="display:block; margin-top: 12px;">
+                                        <h4 style="color:#00e1ff; margin:0 0 8px;">Nearby devices within 1 mile (local database)</h4>
+                                        {% if local_nearby_devices %}
+                                        <ul style="list-style:none;padding:0;margin:0;">
+                                            {% for nearby_device in local_nearby_devices %}
+                                            <li style="padding:8px 0;border-bottom:1px solid rgba(0,100,215,0.15);">
+                                                <a href="{% url 'device' id=nearby_device.search_id device_id=nearby_device.id ip=nearby_device.ip %}" style="color:#00e1ff;">{{ nearby_device.ip }}</a>
+                                                <span style="color:#ffe600;">— {{ nearby_device.distance_miles|floatformat:2 }} mi / {{ nearby_device.distance_km|floatformat:2 }} km</span><br>
+                                                <span style="color:#c8d6e5;">{{ nearby_device.product|default:nearby_device.type|default:"Unknown device" }}</span>
+                                                {% if nearby_device.port %}<span style="color:#888;"> · port {{ nearby_device.port }}</span>{% endif %}
+                                                {% if nearby_device.org %}<span style="color:#888;"> · {{ nearby_device.org }}</span>{% endif %}
+                                            </li>
+                                            {% endfor %}
+                                        </ul>
+                                        {% else %}
+                                        <p style="color:#888; margin:0;">No locally stored devices were found within 1 mile (1.6 km).</p>
+                                        {% endif %}
+                                    </div>
 
-                                                                    <button type="button" id="show_nearby_devices" class="btn btn-primary active">Show</button>
-                                    <div id="nearby_devices_result" style="display:none;"></div>
-
-                                    <button type="button" id="add_nearby_devices" class="btn btn-primary active">Add</button>
+                                     <button type="button" id="add_nearby_devices" class="btn btn-primary active">Add</button>
 
                                 </div>
                             </div>
@@ -1111,18 +1127,84 @@ library.json = {
 </script>
         <script>
 var marker;
-            $('#add_nearby_devices').on('click', function(){
-                $.ajax({
-                    url: "/get_nearby_devices_coordinates/{{device.id}}",
-                    type: "get",
-                    success: function(response) {
-            $.each(response, function(key, val) {
-            var m = L.marker([val.fields.lat, val.fields.lon]).addTo(map);
-            m.bindPopup(val.fields.org + " <br> " + val.fields.product + "<br>"+val.fields.ip+"<br>"+val.fields.port);
-            })
+var nearbyMarkers = [];
+function renderNearbyDevicesList(response) {
+    var $container = $('#nearby_devices_result');
+    if (!$container.length) { return; }
+    $container.css('display', 'block');
+    function escapeText(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+    if (!response || response.length === 0) {
+        $container.html('<h4 style="color:#00e1ff; margin:0 0 8px;">Nearby devices within 1 mile (local database)</h4><p style="color:#888; margin:0;">No locally stored devices were found within 1 mile (1.6 km).</p>');
+        return;
+    }
+    var html = '<h4 style="color:#00e1ff; margin:0 0 8px;">Nearby devices within 1 mile (local database)</h4><ul style="list-style:none;padding:0;margin:0;">';
+    $.each(response, function(_, device) {
+        var label = escapeText(device.product || device.type || 'Unknown device');
+        var ip = escapeText(device.ip);
+        html += '<li style="padding:8px 0;border-bottom:1px solid rgba(0,100,215,0.15);">';
+        html += '<a href="/results/' + device.search_id + '/' + device.id + '/' + encodeURIComponent(device.ip) + '" style="color:#00e1ff;">' + ip + '</a>';
+        html += ' <span style="color:#ffe600;">— ' + Number(device.distance_miles || 0).toFixed(2) + ' mi / ' + Number(device.distance_km || 0).toFixed(2) + ' km</span><br>';
+        html += '<span style="color:#c8d6e5;">' + label + '</span>';
+        if (device.port) { html += '<span style="color:#888;"> · port ' + escapeText(device.port) + '</span>'; }
+        if (device.org) { html += '<span style="color:#888;"> · ' + escapeText(device.org) + '</span>'; }
+        html += '</li>';
+    });
+    html += '</ul>';
+    $container.html(html);
+}
+
+function fetchLocalNearbyDevices(callback) {
+    $.ajax({
+        url: "/get_nearby_devices/{{device.id}}",
+        type: "get",
+        success: function(response) {
+            renderNearbyDevicesList(response);
+            if (typeof callback === 'function') { callback(response || []); }
+        },
+        error: function() {
+            $('#nearby_devices_result').css('display', 'block').html('<p style="color:#ff2050;margin:0;">Could not load nearby devices.</p>');
+        }
+    });
+}
+
+fetchLocalNearbyDevices();
+
+$('#add_nearby_devices').on('click', function(){
+    $.ajax({
+        url: "/get_nearby_devices_coordinates/{{device.id}}",
+        type: "get",
+        success: function(response) {
+            nearbyMarkers.forEach(function(existingMarker) { map.removeLayer(existingMarker); });
+            nearbyMarkers = [];
+            if (!response || response.length === 0) {
+                noty({text: "No local nearby devices to plot", layout: 'topRight', type: 'warning', timeout: 3000});
+                return;
             }
-        })
-  });
+            $.each(response, function(_, device) {
+                var m = L.marker([device.lat, device.lon]).addTo(map);
+                var popupText = $('<div>')
+                    .append($('<div>').text(device.org || ''))
+                    .append($('<div>').text(device.product || device.type || ''))
+                    .append($('<div>').text(device.ip || ''))
+                    .append($('<div>').text(device.port || ''))
+                    .html();
+                m.bindPopup(popupText);
+                nearbyMarkers.push(m);
+            });
+            noty({text: "Nearby devices added to map", layout: 'topRight', type: 'success', timeout: 2000});
+        },
+        error: function() {
+            noty({text: "Could not load nearby device coordinates", layout: 'topRight', type: 'error', timeout: 3000});
+        }
+    });
+});
         </script>
 
 
@@ -1455,8 +1537,23 @@ if (x.style.display === "none") {
         }
   });
 
-
 var frm = $('#generate-user-form');
+$.ajaxSetup({
+    beforeSend: function(xhr, settings) {
+        if (settings && settings.url && /^\/(?!\/)/.test(settings.url)) {
+            xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+        }
+    }
+});
+
+function renderToolError(selector, message) {
+    var $box = $(selector);
+    if (!$box.length) { return; }
+    $box.css('display', 'block').empty().append(
+        $('<p>').css({'color':'#ff2050','margin':'0'}).text(message)
+    );
+}
+
 function get_task_info(task_id, pgrbar, attempts, onComplete) {
     attempts = attempts || 0;
     var MAX_ATTEMPTS = 600; // ~10 minutes at 1 s interval
@@ -1482,8 +1579,13 @@ function get_task_info(task_id, pgrbar, attempts, onComplete) {
                 setTimeout(function () { get_task_info(task_id, pgrbar, attempts + 1, onComplete); }, 1000);
             } else if (data.state === 'SUCCESS') {
                 pgrbar.attr('value', 100);
-                noty({text: "Task completed successfully.", layout: 'topRight', type: 'success', timeout: 2000});
                 setTimeout(function () { pgrbar.css('display', 'none'); }, 2000);
+                if (data.result && (data.result.error || data.result.status === 'error' || data.result.status === 'not_found')) {
+                    var msg = data.result.error || data.result.output || data.result.message || 'Task completed with errors.';
+                    noty({text: msg, layout: 'topRight', type: data.result.status === 'not_found' ? 'warning' : 'error', timeout: 4000});
+                } else {
+                    noty({text: "Task completed successfully.", layout: 'topRight', type: 'success', timeout: 2000});
+                }
                 if (typeof onComplete === 'function') { onComplete(data.result); }
             } else {
                 pgrbar.css('display', 'none');
@@ -1694,26 +1796,9 @@ if (x.style.display === "none") {
     x.style.display = "block";
   } else {
     x.style.display = "none";
-  } if(x.innerHTML == ""){
-        $.ajax({
-            url: "/get_nearby_devices/{{device.id}}",
-            type: "get",
-            success: function(response) {
-            $.each(response, function(key, val) {
-        $.each(val.fields, function(fieldname, field) {
-                 // response is form in html format
-                 if (fieldname=="device"){ {} }
-                 else{
-            $("#nearby_devices_result").append("<p><b>" + fieldname + ' </b><br> ' + field + " </p>");
-}
-})
-                          $("#nearby_devices_result").append("---------");
-              }
-
-
-              )
-            }
-        })
+  }
+  if(x.innerHTML == "" || x.innerHTML.indexOf("Nearby devices within 1 mile") === -1){
+        fetchLocalNearbyDevices();
     }
 
 });
@@ -1925,9 +2010,14 @@ $('#honeypot_scan_btn').on('click', function(){
                     noty({text: "Honeypot analysis loaded", layout: 'topRight', type: 'success', timeout: 2000});
                 });
                 noty({text: "Honeypot analysis started", layout: 'topRight', type: 'success', timeout: 3000});
+            } else {
+                renderToolError('#risk_results', 'Honeypot analysis could not be started.');
             }
         },
-        error: function () { console.log("Honeypot check error"); }
+        error: function () {
+            renderToolError('#risk_results', 'Honeypot analysis request failed.');
+            noty({text: "Honeypot analysis request failed", layout: 'topRight', type: 'error', timeout: 4000});
+        }
     });
     return false;
 });
@@ -1948,9 +2038,14 @@ $('#gfw_check_btn').on('click', function(){
                     noty({text: "GFW status loaded", layout: 'topRight', type: 'success', timeout: 2000});
                 });
                 noty({text: "GFW reachability check started", layout: 'topRight', type: 'success', timeout: 3000});
+            } else {
+                renderToolError('#risk_results', 'Great Firewall check could not be started.');
             }
         },
-        error: function () { console.log("GFW check error"); }
+        error: function () {
+            renderToolError('#risk_results', 'Great Firewall check request failed.');
+            noty({text: "GFW check request failed", layout: 'topRight', type: 'error', timeout: 4000});
+        }
     });
     return false;
 });
@@ -1971,9 +2066,14 @@ $('#sbom_scan_btn').on('click', function(){
                     noty({text: "SBOM lookup complete", layout: 'topRight', type: 'success', timeout: 2000});
                 });
                 noty({text: "SBOM component lookup started", layout: 'topRight', type: 'success', timeout: 3000});
+            } else {
+                renderToolError('#sbom_results', 'SBOM lookup could not be started.');
             }
         },
-        error: function () { console.log("SBOM lookup error"); }
+        error: function () {
+            renderToolError('#sbom_results', 'SBOM lookup request failed.');
+            noty({text: "SBOM lookup request failed", layout: 'topRight', type: 'error', timeout: 4000});
+        }
     });
     return false;
 });
@@ -2043,9 +2143,14 @@ $('#exploitdb_search_btn').on('click', function(){
                     }
                 });
                 noty({text: "Searching ExploitDB...", layout: 'topRight', type: 'success', timeout: 3000});
+            } else {
+                renderToolError('#exploitdb_results', 'ExploitDB search could not be started.');
             }
         },
-        error: function () { console.log("ExploitDB search error"); }
+        error: function () {
+            renderToolError('#exploitdb_results', 'ExploitDB search request failed.');
+            noty({text: "ExploitDB search request failed", layout: 'topRight', type: 'error', timeout: 4000});
+        }
     });
     return false;
 });

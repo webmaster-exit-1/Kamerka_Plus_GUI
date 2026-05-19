@@ -4011,19 +4011,24 @@ def check_search_cost(query, country=None):
 
     try:
         api = Shodan(SHODAN_API_KEY)
-        if country:
+        query = (query or "").strip()
+        country = (country or "").strip()
+        if country and re.search(r"(^|\s)country:", query, re.IGNORECASE):
+            query_str = query
+        elif country:
             query_str = "{} country:{}".format(query, country)
         else:
             query_str = query
 
         result = api.count(query_str)
         total = result.get("total", 0)
-        # Shodan charges 1 credit per 100 results (first page is free)
-        credits_cost = max(0, (total // 100))
+        estimated_pages = int(math.ceil(total / 100.0)) if total else 1
+        credits_cost = max(1, estimated_pages)
 
         return {
             "count": total,
             "credits_cost": credits_cost,
+            "estimated_pages": estimated_pages,
             "query": query_str,
         }
     except Exception as e:

@@ -296,6 +296,45 @@ class ShodanSearchWorkerTest(TestCase):
         self.assertEqual(device.city, "Shenzhen")
 
 
+class ShodanSearchMultiSelectionTaskTest(TestCase):
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0", country="US",
+            ics="['modbus', 'siemens']", coordinates_search="[]",
+        )
+
+    def test_multiple_ics_queries_create_devices_for_each_selection(self):
+        def fake_worker(**kwargs):
+            Device.objects.create(
+                search_id=kwargs["fk"],
+                ip="10.0.0.{}".format(Device.objects.count() + 1),
+                product="Created by {}".format(kwargs["search_type"]),
+                port="80",
+                type=kwargs["search_type"],
+                lat="40.7128",
+                lon="-74.0060",
+                country_code="US",
+                category=kwargs["category"],
+            )
+
+        with patch("kamerka.tasks.shodan_search_worker", side_effect=fake_worker), \
+             patch("kamerka.tasks.ProgressRecorder"):
+            from kamerka.tasks import shodan_search
+
+            shodan_search.run(
+                fk=self.search.id,
+                country="US",
+                ics=["modbus", "siemens"],
+            )
+
+        created_types = list(
+            Device.objects.filter(search=self.search)
+            .order_by("type")
+            .values_list("type", flat=True)
+        )
+        self.assertEqual(created_types, ["modbus", "siemens"])
+
+
 # ---------------------------------------------------------------------------
 # ShodanFixtureFileTest — uses tests/fixtures/shodan_response.json (real banner data)
 # ---------------------------------------------------------------------------
@@ -1289,7 +1328,37 @@ class SearchCostViewTest(TestCase):
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.content)
         self.assertEqual(data["count"], 500)
-        self.assertIn("credits_cost", data)
+        self.assertEqual(data["credits_cost"], 5)
+        self.assertEqual(data["estimated_pages"], 5)
+
+    def test_country_filter_is_appended_once(self):
+        mock_api = MagicMock()
+        mock_api.count.return_value = {"total": 125}
+        with patch("kamerka.tasks.Shodan", return_value=mock_api), \
+             patch("kamerka.tasks._get_env_key", return_value="fake-key"):
+            response = self.client.get(
+                "/search_cost?query=webcam&country=US",
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        data = json.loads(response.content)
+        self.assertEqual(data["credits_cost"], 2)
+        self.assertEqual(data["query"], "webcam country:US")
+        mock_api.count.assert_called_once_with("webcam country:US")
+
+    def test_multiple_queries_are_aggregated(self):
+        mock_api = MagicMock()
+        mock_api.count.side_effect = [{"total": 125}, {"total": 40}]
+        with patch("kamerka.tasks.Shodan", return_value=mock_api), \
+             patch("kamerka.tasks._get_env_key", return_value="fake-key"):
+            response = self.client.get(
+                "/search_cost",
+                {"queries": ["webcam", "hikvision"], "country": "US"},
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        data = json.loads(response.content)
+        self.assertEqual(data["count"], 165)
+        self.assertEqual(data["credits_cost"], 3)
+        self.assertEqual(len(data["queries"]), 2)
 
     def test_no_query_returns_error(self):
         response = self.client.get(
@@ -1519,6 +1588,8 @@ class HomepageHamburgerMenuTest(TestCase):
         self.assertIn('/gallery', content)
         self.assertIn('/devices', content)
         self.assertIn('/sources', content)
+        self.assertIn("js/hamburger-nav.js", content)
+        self.assertIn("css/hamburger-nav.css", content)
 
 
 # ---------------------------------------------------------------------------
@@ -1760,6 +1831,7 @@ class SourcesPageTest(TestCase):
         self.assertIn('/index', content)
         self.assertIn('/sources', content)
         self.assertIn('/globe', content)
+        self.assertIn("js/hamburger-nav.js", content)
 
 
 # ---------------------------------------------------------------------------
@@ -1826,6 +1898,54 @@ class NearbyDevicesResultDivTest(TestCase):
         content = response.content.decode()
         self.assertIn('id="nearby_devices_result"', content,
                       "#nearby_devices_result div must exist in device.html")
+
+
+class LocalNearbyDevicesTest(TestCase):
+    def setUp(self):
+        self.search = _make_search()
+        self.device = _make_device(self.search, ip="10.0.0.1")
+        self.nearby = Device.objects.create(
+            search=self.search,
+            ip="10.0.0.2",
+            product="Nearby Camera",
+            port="80",
+            type="camera",
+            lat="40.7210",
+            lon="-74.0005",
+            country_code="US",
+            org="Nearby Org",
+            city="New York",
+        )
+        Device.objects.create(
+            search=self.search,
+            ip="10.0.0.3",
+            product="Far Camera",
+            port="80",
+            type="camera",
+            lat="40.7800",
+            lon="-73.9500",
+            country_code="US",
+            org="Far Org",
+            city="New York",
+        )
+
+    def test_endpoint_returns_only_local_devices_within_one_mile(self):
+        response = self.client.get(
+            f"/get_nearby_devices/{self.device.id}",
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        data = json.loads(response.content)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["ip"], self.nearby.ip)
+        self.assertLessEqual(data[0]["distance_miles"], 1.0)
+
+    def test_device_page_shows_local_nearby_section(self):
+        response = self.client.get(
+            f"/results/{self.search.id}/{self.device.id}/{self.device.ip}"
+        )
+        content = response.content.decode()
+        self.assertIn("Nearby devices within 1 mile", content)
+        self.assertIn(self.nearby.ip, content)
 
 
 class DeadJsHandlersRemovedTest(TestCase):
@@ -1902,6 +2022,47 @@ class InfraFormEmptyItemsCheckTest(TestCase):
             self.assertIn("index", response["Location"])
         else:
             mock_task.delay.assert_called_once()
+
+
+class SearchMainMultiSelectTest(TestCase):
+    def test_ics_multi_select_posts_all_queries(self):
+        with patch("app_kamerka.views.shodan_search") as mock_task:
+            mock_task.delay.return_value = MagicMock(task_id="multi-ics")
+            response = self.client.post(
+                "/",
+                data={
+                    "country": "US",
+                    "ics_country": ["hikvision", "goahead"],
+                    "all": "",
+                },
+            )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Search.objects.latest("id").ics, "['hikvision', 'goahead']")
+        mock_task.delay.assert_called_once()
+        self.assertEqual(
+            mock_task.delay.call_args.kwargs["ics"],
+            ["hikvision", "goahead"],
+        )
+
+    def test_coordinate_multi_select_posts_all_queries(self):
+        with patch("app_kamerka.views.shodan_search") as mock_task:
+            mock_task.delay.return_value = MagicMock(task_id="multi-coords")
+            response = self.client.post(
+                "/",
+                data={
+                    "coordinates": "40.7128,-74.0060",
+                    "coordinates_search": ["webcams", "mikrotik"],
+                },
+            )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            Search.objects.latest("id").coordinates_search,
+            "['webcams', 'mikrotik']",
+        )
+        self.assertEqual(
+            mock_task.delay.call_args.kwargs["coordinates_search"],
+            ["webcams", "mikrotik"],
+        )
 
 
 

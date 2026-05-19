@@ -550,7 +550,7 @@ $(document).ready(function () {
     }
     var $btn = $('#cp-mob-nav-btn');
     if (!$btn.length) {
-        $btn = $('<button class="cp-mob-nav-btn" id="cp-mob-nav-btn" aria-label="Toggle navigation" aria-expanded="false">&#9776;</button>');
+        $btn = $('<button class="cp-mob-nav-btn" id="cp-mob-nav-btn" aria-label="Toggle navigation" aria-controls="cp-mob-sidebar-overlay" aria-expanded="false">&#9776;</button>');
         $('body').prepend($btn);
     }
 
@@ -580,8 +580,28 @@ $(document).ready(function () {
     // Close when clicking the overlay
     $overlay.on('click', function () { closeSidebar(); });
 
+    $(document).on('click', function (e) {
+        if (
+            $('.page-container').hasClass('cp-mob-nav-open') &&
+            !$(e.target).closest('.page-sidebar, #cp-mob-nav-btn').length
+        ) {
+            closeSidebar();
+        }
+    });
+
+    $(document).on('keydown', function (e) {
+        if (e.key === 'Escape' && $('.page-container').hasClass('cp-mob-nav-open')) {
+            closeSidebar();
+            $btn.trigger('focus');
+        }
+    });
+
     // Close sidebar when a nav link inside it is clicked (mobile UX)
     $('.page-sidebar').on('click', 'a', function () {
         if ($(window).width() <= 767) { closeSidebar(); }
+    });
+
+    $(window).on('resize', function () {
+        if ($(window).width() > 767) { closeSidebar(); }
     });
 });
