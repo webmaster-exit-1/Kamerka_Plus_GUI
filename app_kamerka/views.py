@@ -152,6 +152,9 @@ def _get_local_nearby_devices(device, radius_miles=1.0):
         return []
 
     nearby_devices = []
+    # ~69 miles per degree of latitude. Longitude degrees shrink toward the
+    # poles, so we scale by cos(latitude) and clamp the divisor to 0.01 to
+    # avoid extreme blow-ups when the device is very close to a pole.
     lat_delta = radius_miles / 69.0
     cos_lat = math.cos(math.radians(origin_lat))
     lon_delta = radius_miles / (69.0 * max(abs(cos_lat), 0.01))

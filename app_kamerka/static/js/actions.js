@@ -541,6 +541,10 @@ Object.size = function(obj) {
 /* can be toggled without a top navigation bar.                  */
 $(document).ready(function () {
     if (!$('.page-sidebar').length) { return; }
+    var $sidebar = $('.page-sidebar').first();
+    if (!$sidebar.attr('id')) {
+        $sidebar.attr('id', 'cp-mob-sidebar');
+    }
 
     // Reuse existing controls when present to avoid duplicate buttons.
     var $overlay = $('#cp-mob-sidebar-overlay');
@@ -550,7 +554,7 @@ $(document).ready(function () {
     }
     var $btn = $('#cp-mob-nav-btn');
     if (!$btn.length) {
-        $btn = $('<button class="cp-mob-nav-btn" id="cp-mob-nav-btn" aria-label="Toggle navigation" aria-controls="cp-mob-sidebar-overlay" aria-expanded="false">&#9776;</button>');
+        $btn = $('<button class="cp-mob-nav-btn" id="cp-mob-nav-btn" aria-label="Toggle navigation" aria-controls="cp-mob-sidebar" aria-expanded="false">&#9776;</button>');
         $('body').prepend($btn);
     }
 
