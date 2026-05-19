@@ -1328,7 +1328,7 @@ class SearchCostViewTest(TestCase):
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.content)
         self.assertEqual(data["count"], 500)
-        self.assertEqual(data["credits_cost"], 5)
+        self.assertEqual(data["credits_cost"], 4)
         self.assertEqual(data["estimated_pages"], 5)
 
     def test_country_filter_is_appended_once(self):
@@ -1339,9 +1339,9 @@ class SearchCostViewTest(TestCase):
             response = self.client.get(
                 "/search_cost?query=webcam&country=US",
                 HTTP_X_REQUESTED_WITH="XMLHttpRequest",
-            )
+        )
         data = json.loads(response.content)
-        self.assertEqual(data["credits_cost"], 2)
+        self.assertEqual(data["credits_cost"], 1)
         self.assertEqual(data["query"], "webcam country:US")
         mock_api.count.assert_called_once_with("webcam country:US")
 
@@ -1354,10 +1354,10 @@ class SearchCostViewTest(TestCase):
                 "/search_cost",
                 {"queries": ["webcam", "hikvision"], "country": "US"},
                 HTTP_X_REQUESTED_WITH="XMLHttpRequest",
-            )
+        )
         data = json.loads(response.content)
         self.assertEqual(data["count"], 165)
-        self.assertEqual(data["credits_cost"], 3)
+        self.assertEqual(data["credits_cost"], 1)
         self.assertEqual(len(data["queries"]), 2)
 
     def test_zero_results_estimate_zero_credits(self):
@@ -1960,6 +1960,8 @@ class LocalNearbyDevicesTest(TestCase):
         content = response.content.decode()
         self.assertIn("Nearby devices within 1 mile", content)
         self.assertIn(self.nearby.ip, content)
+        self.assertIn('data-loaded="true"', content)
+        self.assertNotIn("fetchLocalNearbyDevices(", content)
 
 
 class DeadJsHandlersRemovedTest(TestCase):

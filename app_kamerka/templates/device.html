@@ -278,7 +278,7 @@
                                     <progress id="progress-bar3" value="0" max="100" style="display:none; margin-bottom: 1em;"></progress>
 
                                     <button type="button" id="show_nearby_devices" class="btn btn-primary active">Show 1-mile local results</button>
-                                    <div id="nearby_devices_result" style="display:block; margin-top: 12px;">
+                                    <div id="nearby_devices_result" data-loaded="true" style="display:block; margin-top: 12px;">
                                         <h4 style="color:#00e1ff; margin:0 0 8px;">Nearby devices within 1 mile (local database)</h4>
                                         {% if local_nearby_devices %}
                                         <ul style="list-style:none;padding:0;margin:0;">
@@ -1185,22 +1185,6 @@ function renderNearbyDevicesList(response) {
     $container.append($list);
 }
 
-function fetchLocalNearbyDevices(callback) {
-    $.ajax({
-        url: "/get_nearby_devices/{{device.id}}",
-        type: "get",
-        success: function(response) {
-            renderNearbyDevicesList(response);
-            if (typeof callback === 'function') { callback(response || []); }
-        },
-        error: function() {
-            $('#nearby_devices_result').css('display', 'block').html('<p style="color:#ff2050;margin:0;">Could not load nearby devices.</p>');
-        }
-    });
-}
-
-fetchLocalNearbyDevices();
-
 $('#add_nearby_devices').on('click', function(){
     $.ajax({
         url: "/get_nearby_devices_coordinates/{{device.id}}",
@@ -1822,9 +1806,6 @@ if (x.style.display === "none") {
   } else {
     x.style.display = "none";
   }
-  if(x.getAttribute('data-loaded') !== 'true'){
-        fetchLocalNearbyDevices();
-    }
 
 });
 

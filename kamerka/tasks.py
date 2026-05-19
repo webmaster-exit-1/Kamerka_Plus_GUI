@@ -4023,7 +4023,7 @@ def check_search_cost(query, country=None):
         result = api.count(query_str)
         total = result.get("total", 0)
         estimated_pages = int(math.ceil(total / 100.0)) if total else 0
-        credits_cost = estimated_pages
+        credits_cost = max(0, estimated_pages - 1)
 
         return {
             "count": total,
