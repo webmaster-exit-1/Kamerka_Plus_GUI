@@ -2,6 +2,7 @@ import ast
 import ipaddress
 import json
 import logging
+import math
 import os
 import re
 import time
@@ -77,6 +78,8 @@ from shodan import Shodan as _ShodanAPI
 
 _views_logger = logging.getLogger(__name__)
 INTEL_FEED_SUMMARY_MAX = 200
+MILES_PER_DEGREE_LAT = 69.0
+MIN_COSINE_FOR_LON_DELTA = 0.01
 
 # CVE → Metasploit module path mapping (well-known, high-signal entries only)
 _CVE_TO_MSF = {
@@ -128,6 +131,72 @@ def _safe_coord(value):
         return float(value)
     except (ValueError, TypeError):
         return None
+
+
+def _haversine_miles(lat1, lon1, lat2, lon2):
+    """Return the distance between two coordinates in miles."""
+    lat1, lon1, lat2, lon2 = [math.radians(value) for value in (lat1, lon1, lat2, lon2)]
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    )
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return 3958.7613 * c
+
+
+def _get_local_nearby_devices(device, radius_miles=1.0):
+    """Return locally-stored devices within *radius_miles* of *device*."""
+    origin_lat = _safe_coord(device.lat)
+    origin_lon = _safe_coord(device.lon)
+    if origin_lat is None or origin_lon is None:
+        return []
+
+    nearby_devices = []
+    lat_delta = radius_miles / MILES_PER_DEGREE_LAT
+    cos_lat = math.cos(math.radians(origin_lat))
+    # Longitude degrees shrink toward the poles, so use cos(latitude) and
+    # clamp the divisor to a small floor to avoid explosive longitude ranges
+    # when the device is very close to a pole.
+    lon_delta = radius_miles / (
+        MILES_PER_DEGREE_LAT * max(abs(cos_lat), MIN_COSINE_FOR_LON_DELTA)
+    )
+    candidates = Device.objects.exclude(pk=device.pk).filter(
+        lat__gte=origin_lat - lat_delta,
+        lat__lte=origin_lat + lat_delta,
+        lon__gte=origin_lon - lon_delta,
+        lon__lte=origin_lon + lon_delta,
+    )
+    for candidate in candidates:
+        cand_lat = _safe_coord(candidate.lat)
+        cand_lon = _safe_coord(candidate.lon)
+        if cand_lat is None or cand_lon is None:
+            continue
+        distance_miles = _haversine_miles(
+            origin_lat, origin_lon, cand_lat, cand_lon
+        )
+        if distance_miles <= radius_miles:
+            nearby_devices.append(
+                {
+                    "id": candidate.id,
+                    "search_id": candidate.search_id,
+                    "ip": candidate.ip,
+                    "product": candidate.product or "",
+                    "type": candidate.type or "",
+                    "port": candidate.port or "",
+                    "org": candidate.org or "",
+                    "city": candidate.city or "",
+                    "country_code": candidate.country_code or "",
+                    "lat": cand_lat,
+                    "lon": cand_lon,
+                    "distance_miles": round(distance_miles, 3),
+                    "distance_km": round(distance_miles * 1.609344, 3),
+                    "source": "local",
+                }
+            )
+    nearby_devices.sort(key=lambda entry: (entry["distance_miles"], entry["ip"]))
+    return nearby_devices
 
 
 def _devices_with_valid_coords(qs):
@@ -623,6 +692,7 @@ def update_coordinates(request, id, coordinates):
 def device(request, id, device_id, ip):
     all_devices = Device.objects.get(search_id=id, id=device_id)
     nearby = DeviceNearby.objects.filter(device_id=all_devices.id)
+    local_nearby_devices = _get_local_nearby_devices(all_devices)
     shodan = ShodanScan.objects.filter(device_id=all_devices.id)
     wappalyzer = WappalyzerResult.objects.filter(device_id=all_devices.id)
     nuclei = NucleiResult.objects.filter(device_id=all_devices.id)
@@ -763,6 +833,7 @@ def device(request, id, device_id, ip):
         "scan_json": _scan_to_json(all_devices.scan),
         "exploit_json": _scan_to_json(all_devices.exploit),
         "nearby": nearby,
+        "local_nearby_devices": local_nearby_devices,
         "shodan": shodan,
         "wappalyzer": wappalyzer,
         "nuclei": nuclei,
@@ -945,11 +1016,10 @@ def get_nearby_devices(request, id):
         request.method == "GET"
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
-        nearby_devices = DeviceNearby.objects.filter(device_id=id)
-
-        response_data = serializers.serialize("json", nearby_devices)
-
-        return HttpResponse(response_data, content_type="application/json")
+        device = Device.objects.filter(id=id).first()
+        if device is None:
+            return JsonResponse([], safe=False)
+        return JsonResponse(_get_local_nearby_devices(device), safe=False)
 
 
 def scan_dev(request, id):
@@ -1340,11 +1410,10 @@ def get_nearby_devices_coordinates(request, id):
         request.method == "GET"
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
-        nearby_devices = DeviceNearby.objects.filter(device_id=id)
-
-        response_data = serializers.serialize("json", nearby_devices)
-
-        return HttpResponse(response_data, content_type="application/json")
+        device = Device.objects.filter(id=id).first()
+        if device is None:
+            return JsonResponse([], safe=False)
+        return JsonResponse(_get_local_nearby_devices(device), safe=False)
 
 
 def send_to_field_agent(request, id, notes):
@@ -1859,14 +1928,39 @@ def search_cost_view(request):
         request.method == "GET"
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
-        query = request.GET.get("query", "")
+        queries = [
+            query.strip()
+            for query in (
+                request.GET.getlist("queries[]")
+                or request.GET.getlist("queries")
+                or [request.GET.get("query", "")]
+            )
+            if query and query.strip()
+        ]
         country = request.GET.get("country", None)
-        if not query:
+        if not queries:
             return HttpResponse(
                 json.dumps({"error": "No query provided"}),
                 content_type="application/json",
             )
-        result = check_search_cost(query, country)
+        if len(queries) == 1:
+            result = check_search_cost(queries[0], country)
+        else:
+            estimates = [check_search_cost(query, country) for query in queries]
+            result = {
+                "count": sum(item.get("count", 0) for item in estimates),
+                "credits_cost": sum(item.get("credits_cost", 0) for item in estimates),
+                "estimated_pages": sum(
+                    item.get("estimated_pages", 0) for item in estimates
+                ),
+                "query": ", ".join(
+                    item.get("query", "") for item in estimates if item.get("query")
+                ),
+                "queries": estimates,
+            }
+            errors = [item.get("error") for item in estimates if item.get("error")]
+            if errors:
+                result["error"] = "; ".join(errors)
         return HttpResponse(json.dumps(result), content_type="application/json")
     return HttpResponse(
         json.dumps({"error": "Invalid request"}), content_type="application/json"
