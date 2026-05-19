@@ -78,6 +78,8 @@ from shodan import Shodan as _ShodanAPI
 
 _views_logger = logging.getLogger(__name__)
 INTEL_FEED_SUMMARY_MAX = 200
+MILES_PER_DEGREE_LAT = 69.0
+MIN_COSINE_FOR_LON_DELTA = 0.01
 
 # CVE → Metasploit module path mapping (well-known, high-signal entries only)
 _CVE_TO_MSF = {
@@ -152,12 +154,14 @@ def _get_local_nearby_devices(device, radius_miles=1.0):
         return []
 
     nearby_devices = []
-    # ~69 miles per degree of latitude. Longitude degrees shrink toward the
-    # poles, so we scale by cos(latitude) and clamp the divisor to 0.01 to
-    # avoid extreme blow-ups when the device is very close to a pole.
-    lat_delta = radius_miles / 69.0
+    lat_delta = radius_miles / MILES_PER_DEGREE_LAT
     cos_lat = math.cos(math.radians(origin_lat))
-    lon_delta = radius_miles / (69.0 * max(abs(cos_lat), 0.01))
+    # Longitude degrees shrink toward the poles, so use cos(latitude) and
+    # clamp the divisor to a small floor to avoid explosive longitude ranges
+    # when the device is very close to a pole.
+    lon_delta = radius_miles / (
+        MILES_PER_DEGREE_LAT * max(abs(cos_lat), MIN_COSINE_FOR_LON_DELTA)
+    )
     candidates = Device.objects.exclude(pk=device.pk).filter(
         lat__gte=origin_lat - lat_delta,
         lat__lte=origin_lat + lat_delta,

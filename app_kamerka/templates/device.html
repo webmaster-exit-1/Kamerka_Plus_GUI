@@ -1133,32 +1133,56 @@ function renderNearbyDevicesList(response) {
     if (!$container.length) { return; }
     $container.css('display', 'block');
     $container.attr('data-loaded', 'true');
-    function escapeText(value) {
-        return String(value == null ? '' : value)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    }
+    $container.empty();
+    $container.append(
+        $('<h4>').css({'color':'#00e1ff','margin':'0 0 8px'}).text('Nearby devices within 1 mile (local database)')
+    );
     if (!response || response.length === 0) {
-        $container.html('<h4 style="color:#00e1ff; margin:0 0 8px;">Nearby devices within 1 mile (local database)</h4><p style="color:#888; margin:0;">No locally stored devices were found within 1 mile (1.6 km).</p>');
+        $container.append(
+            $('<p>').css({'color':'#888','margin':'0'}).text('No locally stored devices were found within 1 mile (1.6 km).')
+        );
         return;
     }
-    var html = '<h4 style="color:#00e1ff; margin:0 0 8px;">Nearby devices within 1 mile (local database)</h4><ul style="list-style:none;padding:0;margin:0;">';
+    var $list = $('<ul>').css({'list-style':'none','padding':'0','margin':'0'});
     $.each(response, function(_, device) {
-        var label = escapeText(device.product || device.type || 'Unknown device');
-        var ip = escapeText(device.ip);
-        html += '<li style="padding:8px 0;border-bottom:1px solid rgba(0,100,215,0.15);">';
-        html += '<a href="/results/' + device.search_id + '/' + device.id + '/' + encodeURIComponent(device.ip) + '" style="color:#00e1ff;">' + ip + '</a>';
-        html += ' <span style="color:#ffe600;">— ' + Number(device.distance_miles || 0).toFixed(2) + ' mi / ' + Number(device.distance_km || 0).toFixed(2) + ' km</span><br>';
-        html += '<span style="color:#c8d6e5;">' + label + '</span>';
-        if (device.port) { html += '<span style="color:#888;"> · port ' + escapeText(device.port) + '</span>'; }
-        if (device.org) { html += '<span style="color:#888;"> · ' + escapeText(device.org) + '</span>'; }
-        html += '</li>';
+        var $item = $('<li>').css({
+            'padding':'8px 0',
+            'border-bottom':'1px solid rgba(0,100,215,0.15)'
+        });
+        $item.append(
+            $('<a>')
+                .attr('href', '/results/' + device.search_id + '/' + device.id + '/' + encodeURIComponent(device.ip))
+                .css('color', '#00e1ff')
+                .text(device.ip || '')
+        );
+        $item.append(
+            $('<span>')
+                .css('color', '#ffe600')
+                .text(' — ' + Number(device.distance_miles || 0).toFixed(2) + ' mi / ' + Number(device.distance_km || 0).toFixed(2) + ' km')
+        );
+        $item.append('<br>');
+        $item.append(
+            $('<span>')
+                .css('color', '#c8d6e5')
+                .text(device.product || device.type || 'Unknown device')
+        );
+        if (device.port) {
+            $item.append(
+                $('<span>')
+                    .css('color', '#888')
+                    .text(' · port ' + device.port)
+            );
+        }
+        if (device.org) {
+            $item.append(
+                $('<span>')
+                    .css('color', '#888')
+                    .text(' · ' + device.org)
+            );
+        }
+        $list.append($item);
     });
-    html += '</ul>';
-    $container.html(html);
+    $container.append($list);
 }
 
 function fetchLocalNearbyDevices(callback) {
