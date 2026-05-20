@@ -358,8 +358,6 @@
 {% block extra_js %}
     <!-- Three.js served locally — no CDN dependency -->
     <script src="{% static 'js/three.min.js' %}"></script>
-        <!-- Three.js (served locally to avoid CDN dependency) -->
-        <script src="{% static 'js/three.min.js' %}"></script>
 
         <script>
         // ─────────────────────────────────────────────────────────────
@@ -1410,4 +1408,5 @@
         // Bootstrap
         loadDevices();
         initDataLayers();
+        </script>
 {% endblock %}
