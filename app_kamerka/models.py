@@ -1,5 +1,7 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
+from datetime import timedelta
 
 # Create your models here.
 
@@ -39,6 +41,10 @@ class Watchlist(models.Model):
 
     def __str__(self):
         return self.name
+
+    def compute_next_run_at(self, from_time=None):
+        base = from_time or timezone.now()
+        return base + timedelta(minutes=max(1, self.refresh_interval_minutes))
 
 
 class Device(models.Model):

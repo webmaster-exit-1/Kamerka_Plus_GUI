@@ -8,7 +8,6 @@ import re
 import shutil
 import subprocess
 import time
-from datetime import timedelta
 from collections import Counter
 from django.conf import settings
 from django.core.cache import cache
@@ -785,9 +784,9 @@ def watchlists(request):
         form = WatchlistForm(request.POST, instance=instance)
         if form.is_valid():
             watchlist = form.save(commit=False)
-            watchlist.query_items = form.cleaned_data.get("query_items_text", [])
-            if watchlist.enabled and not watchlist.next_run_at:
-                watchlist.next_run_at = timezone.now()
+            watchlist.query_items = form.cleaned_data.get("query_items_text") or []
+            if watchlist.enabled:
+                watchlist.next_run_at = watchlist.compute_next_run_at()
             watchlist.save()
             return HttpResponseRedirect("/watchlists")
     else:
@@ -833,9 +832,7 @@ def watchlist_run_now(request, watchlist_id):
         task_args=[watchlist.id],
         tool=TaskRun.TOOL_OTHER,
     )
-    watchlist.next_run_at = timezone.now() + timedelta(
-        minutes=max(1, watchlist.refresh_interval_minutes)
-    )
+    watchlist.next_run_at = watchlist.compute_next_run_at()
     watchlist.save(update_fields=["next_run_at", "updated_at"])
     return HttpResponseRedirect("/watchlists")
 

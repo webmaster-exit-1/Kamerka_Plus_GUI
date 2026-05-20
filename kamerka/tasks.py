@@ -29,7 +29,6 @@ from libnmap.process import NmapProcess
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as et
-from datetime import timedelta
 
 from app_kamerka import exploits
 
@@ -585,7 +584,18 @@ def shodan_search(
 
 
 @shared_task(bind=False)
-def run_watchlist_refresh(watchlist_id):
+def run_watchlist_refresh(watchlist_id, update_schedule=True):
+    """Queue a Shodan refresh for one watchlist and update its timestamps.
+
+    Args:
+        watchlist_id: Primary key of the Watchlist to execute.
+        update_schedule: When True, advance ``next_run_at`` to the next interval.
+            Scheduler-triggered runs set this False because scheduling was already
+            advanced before enqueue.
+
+    Returns:
+        dict: Status payload with ``status`` and optional ``search_id``/``task_id``.
+    """
     watchlist = Watchlist.objects.filter(id=watchlist_id).first()
     if watchlist is None:
         return {"status": "missing"}
@@ -613,26 +623,26 @@ def run_watchlist_refresh(watchlist_id):
     task_result = shodan_search.delay(**task_kwargs)
     now = timezone.now()
     watchlist.last_run_at = now
-    watchlist.next_run_at = now + timedelta(
-        minutes=max(1, watchlist.refresh_interval_minutes)
-    )
-    watchlist.save(update_fields=["last_run_at", "next_run_at", "updated_at"])
+    if update_schedule:
+        watchlist.next_run_at = watchlist.compute_next_run_at(now)
+        watchlist.save(update_fields=["last_run_at", "next_run_at", "updated_at"])
+    else:
+        watchlist.save(update_fields=["last_run_at", "updated_at"])
     return {"status": "queued", "search_id": search.id, "task_id": str(task_result.id)}
 
 
 @shared_task(bind=False)
 def schedule_enabled_watchlists():
+    """Queue refresh tasks for enabled watchlists that are due to run."""
     now = timezone.now()
     due = Watchlist.objects.filter(enabled=True).filter(
         Q(next_run_at__isnull=True) | Q(next_run_at__lte=now)
     )
     queued = 0
     for watchlist in due:
-        run_watchlist_refresh.delay(watchlist.id)
-        watchlist.next_run_at = now + timedelta(
-            minutes=max(1, watchlist.refresh_interval_minutes)
-        )
+        watchlist.next_run_at = watchlist.compute_next_run_at(now)
         watchlist.save(update_fields=["next_run_at", "updated_at"])
+        run_watchlist_refresh.delay(watchlist.id, False)
         queued += 1
     return {"queued": queued}
 
@@ -674,16 +684,27 @@ def _shodan_download_path(search_id):
 
 
 def _upsert_device(search, defaults):
-    """Update an existing Device by (ip, port) or create it when absent."""
+    """Update or create a Device identified by ``ip`` + ``port``.
+
+    Args:
+        search: Search instance to associate with the resulting Device.
+        defaults: Mapping of Device field names to values parsed from scan data.
+
+    Returns:
+        Device: The created or updated device record.
+    """
     ip = defaults.get("ip", "")
     port = defaults.get("port", "")
-    existing = Device.objects.filter(ip=ip, port=port).order_by("-id").first()
+    existing = Device.objects.filter(ip=ip, port=port).first()
     if existing is None:
         return Device.objects.create(search=search, **defaults)
 
     for field, value in defaults.items():
-        if value not in (None, "", [], {}):
-            setattr(existing, field, value)
+        if value is None:
+            continue
+        if isinstance(value, (list, dict)) and len(value) == 0:
+            continue
+        setattr(existing, field, value)
     existing.search = search
     existing.save()
     return existing

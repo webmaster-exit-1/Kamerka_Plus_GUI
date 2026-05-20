@@ -59,7 +59,7 @@ class WatchlistTaskTests(TestCase):
         result = schedule_enabled_watchlists()
 
         self.assertEqual(result["queued"], 1)
-        delay_mock.assert_called_once_with(due.id)
+        delay_mock.assert_called_once_with(due.id, False)
 
 
 class DeviceDedupeTests(TestCase):
