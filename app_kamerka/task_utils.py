@@ -33,7 +33,7 @@ _TASK_TOOL_MAP = {
 def infer_tool(celery_task_name: str, fallback: str | None = None) -> str:
     if fallback:
         return fallback
-    return _TASK_TOOL_MAP.get(celery_task_name or "", TaskRun.TOOL_OTHER)
+    return _TASK_TOOL_MAP.get(celery_task_name or "") or TaskRun.TOOL_OTHER
 
 
 def _resolve_user(user_id=None, user=None):
@@ -72,10 +72,14 @@ def record_task_run(
     search=None,
     search_id=None,
 ):
+    task_id = str(task_id or "")
+    celery_task_name = str(celery_task_name or "")
+    if not task_id:
+        return None
     return TaskRun.objects.create(
         task_id=task_id,
         tool=infer_tool(celery_task_name, tool),
-        celery_task_name=celery_task_name or "",
+        celery_task_name=celery_task_name,
         triggered_by=_resolve_user(user=user, user_id=user_id),
         device=_resolve_device(device=device, device_id=device_id),
         search=_resolve_search(search=search, search_id=search_id),

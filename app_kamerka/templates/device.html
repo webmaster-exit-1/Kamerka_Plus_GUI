@@ -219,7 +219,7 @@
                                                     {% else %}<span class="label label-default">pending</span>{% endif %}
                                                 </td>
                                                 <td>{{ run.started_at }}</td>
-                                                <td><a href="/tasks/{{ run.id }}">view</a></td>
+                                                <td><a href="{% url 'task_detail' pk=run.id %}">view</a></td>
                                             </tr>
                                         {% endfor %}
                                         </tbody>

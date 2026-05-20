@@ -87,7 +87,7 @@
         var parts = value.split('; ' + name + '=');
         if (parts.length === 2) return parts.pop().split(';').shift();
       }
-      function checkedIds(){
+      function checkedDeviceIds(){
         return Array.from(document.querySelectorAll('.device-select:checked')).map(function(el){ return el.value; });
       }
       var selectAll = document.getElementById('select-all-devices');
@@ -99,7 +99,7 @@
       var runBtn = document.getElementById('bulk-run-btn');
       if (!runBtn) { return; }
       runBtn.addEventListener('click', function(){
-        var ids = checkedIds();
+        var ids = checkedDeviceIds();
         if (!ids.length) { alert('Select at least one device.'); return; }
         var tool = document.getElementById('bulk-tool-select').value;
         var progressEl = document.getElementById('bulk-progress');
@@ -124,7 +124,15 @@
           runs.forEach(function(run){
             var row = document.createElement('div');
             row.style.marginBottom = '6px';
-            row.innerHTML = '<strong>' + run.device_ip + '</strong>: <span id=\"task-state-' + run.task_id + '\">queued</span>';
+            var strong = document.createElement('strong');
+            strong.textContent = run.device_ip || '';
+            var sep = document.createTextNode(': ');
+            var state = document.createElement('span');
+            state.id = 'task-state-' + run.task_id;
+            state.textContent = 'queued';
+            row.appendChild(strong);
+            row.appendChild(sep);
+            row.appendChild(state);
             resultsEl.appendChild(row);
             var timer = setInterval(function(){
               fetch('/get-task-info/?task_id=' + encodeURIComponent(run.task_id), {
@@ -136,7 +144,7 @@
                 var el = document.getElementById('task-state-' + run.task_id);
                 if (!el) { clearInterval(timer); return; }
                 el.textContent = (info.state || '').toLowerCase();
-                if (['SUCCESS','FAILURE','REVOKED'].indexOf(info.state) !== -1) {
+                if (['SUCCESS','FAILURE','REVOKED'].includes(info.state)) {
                   done += 1;
                   updateProgress();
                   clearInterval(timer);

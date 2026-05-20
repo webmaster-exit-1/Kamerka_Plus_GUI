@@ -42,7 +42,7 @@
                   {% elif run.status == 'running' %}<span class="label label-info">running</span>
                   {% else %}<span class="label label-default">pending</span>{% endif %}
                 </td>
-                <td>{% if run.device %}<a href="/results/{{ run.device.search_id }}/{{ run.device.id }}/{{ run.device.ip }}">{{ run.device.ip }}</a>{% else %}—{% endif %}</td>
+                <td>{% if run.device %}<a href="{% url 'device' id=run.device.search_id device_id=run.device.id ip=run.device.ip %}">{{ run.device.ip }}</a>{% else %}—{% endif %}</td>
                 <td>{% if run.triggered_by %}{{ run.triggered_by.username }}{% else %}—{% endif %}</td>
                 <td>{{ run.started_at }}</td>
                 <td>{{ run.finished_at|default:'—' }}</td>

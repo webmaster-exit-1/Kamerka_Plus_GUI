@@ -155,9 +155,10 @@ def _enqueue_tracked_task(
     task_args = task_args or []
     task_kwargs = task_kwargs or {}
     async_result = task_callable.delay(*task_args, **task_kwargs)
+    task_id = str(getattr(async_result, "id", "") or getattr(async_result, "task_id", ""))
     task_run = record_task_run(
-        task_id=async_result.id,
-        celery_task_name=getattr(task_callable, "name", ""),
+        task_id=task_id,
+        celery_task_name=str(getattr(task_callable, "name", "") or ""),
         tool=tool,
         user=getattr(request, "user", None),
         device_id=device_id,
@@ -382,7 +383,7 @@ def search_main(request):
                 search_id=search.id,
                 tool=TaskRun.TOOL_OTHER,
             )
-            request.session["task_id"] = shodan_search_task.id
+            request.session["task_id"] = str(shodan_search_task.id)
 
             return HttpResponseRedirect("index")
 
@@ -418,7 +419,7 @@ def search_main(request):
                 search_id=search.id,
                 tool=TaskRun.TOOL_OTHER,
             )
-            request.session["task_id"] = shodan_search_task.id
+            request.session["task_id"] = str(shodan_search_task.id)
 
             return HttpResponseRedirect("index")
 
@@ -447,7 +448,7 @@ def search_main(request):
                 tool=TaskRun.TOOL_OTHER,
             )
 
-            request.session["task_id"] = shodan_search_task.id
+            request.session["task_id"] = str(shodan_search_task.id)
 
             return HttpResponseRedirect("index")
 
@@ -476,7 +477,7 @@ def search_main(request):
                 search_id=search.id,
                 tool=TaskRun.TOOL_OTHER,
             )
-            request.session["task_id"] = shodan_search_task.id
+            request.session["task_id"] = str(shodan_search_task.id)
 
             return HttpResponseRedirect("index")
 
@@ -506,7 +507,7 @@ def search_main(request):
                     tool=TaskRun.TOOL_NMAP,
                 )
 
-                request.session["task_id"] = nmap_task.id
+                request.session["task_id"] = str(nmap_task.id)
                 print("session")
             except Exception as e:
                 print(e)
@@ -757,26 +758,26 @@ def update_coordinates(request, id, coordinates):
 
 
 def device(request, id, device_id, ip):
-    all_devices = Device.objects.get(search_id=id, id=device_id)
-    nearby = DeviceNearby.objects.filter(device_id=all_devices.id)
-    local_nearby_devices = _get_local_nearby_devices(all_devices)
-    shodan = ShodanScan.objects.filter(device_id=all_devices.id)
-    wappalyzer = WappalyzerResult.objects.filter(device_id=all_devices.id)
-    nuclei = NucleiResult.objects.filter(device_id=all_devices.id)
+    device_obj = Device.objects.get(search_id=id, id=device_id)
+    nearby = DeviceNearby.objects.filter(device_id=device_obj.id)
+    local_nearby_devices = _get_local_nearby_devices(device_obj)
+    shodan = ShodanScan.objects.filter(device_id=device_obj.id)
+    wappalyzer = WappalyzerResult.objects.filter(device_id=device_obj.id)
+    nuclei = NucleiResult.objects.filter(device_id=device_obj.id)
 
     try:
-        all_devices.indicator = ast.literal_eval(all_devices.indicator)
+        device_obj.indicator = ast.literal_eval(device_obj.indicator)
     except:
         pass
 
-    if all_devices.type in passwds.keys():
-        info = passwds[all_devices.type]
+    if device_obj.type in passwds.keys():
+        info = passwds[device_obj.type]
     else:
         info = ""
 
     nuclei_templates_dir = os.path.join(settings.BASE_DIR, "nuclei_templates")
     nuclei_template_list = []
-    device_type_lower = (all_devices.type or "").lower()
+    device_type_lower = (device_obj.type or "").lower()
 
     # Load the manifest so we know which template paths are recommended for
     # this device type without relying on directory-name guessing.
@@ -847,20 +848,20 @@ def device(request, id, device_id, ip):
                     }
                 )
 
-    cve_list = _parse_vulns(all_devices.vulns)
+    cve_list = _parse_vulns(device_obj.vulns)
 
     # New intelligence data
-    fingerprints = ProtocolFingerprint.objects.filter(device_id=all_devices.id)
-    vuln_intel = VulnIntelligence.objects.filter(device_id=all_devices.id)
-    honeypot = HoneypotAnalysis.objects.filter(device_id=all_devices.id).first()
+    fingerprints = ProtocolFingerprint.objects.filter(device_id=device_obj.id)
+    vuln_intel = VulnIntelligence.objects.filter(device_id=device_obj.id)
+    honeypot = HoneypotAnalysis.objects.filter(device_id=device_obj.id).first()
     honeypot_reasons = []
     if honeypot and honeypot.reasons:
         try:
             honeypot_reasons = json.loads(honeypot.reasons)
         except (json.JSONDecodeError, TypeError):
             pass
-    sbom_components = SBOMComponent.objects.filter(device_id=all_devices.id)
-    gfw_status = GFWStatus.objects.filter(device_id=all_devices.id).first()
+    sbom_components = SBOMComponent.objects.filter(device_id=device_obj.id)
+    gfw_status = GFWStatus.objects.filter(device_id=device_obj.id).first()
 
     # Compute max EPSS for risk meter
     max_epss = 0.0
@@ -885,20 +886,20 @@ def device(request, id, device_id, ip):
     nse_scripts = [{"label": k, "path": v} for k, v in NSE_SCRIPT_CATALOG.items()]
 
     # Validate device coordinates for safe JS injection
-    safe_lat = _safe_coord(all_devices.lat)
-    safe_lon = _safe_coord(all_devices.lon)
+    safe_lat = _safe_coord(device_obj.lat)
+    safe_lon = _safe_coord(device_obj.lon)
     if safe_lat is None:
         safe_lat = 0.0
     if safe_lon is None:
         safe_lon = 0.0
 
     context = {
-        "device": all_devices,
-        "device_ip_safe": all_devices.ip.replace(".", "_"),
+        "device": device_obj,
+        "device_ip_safe": device_obj.ip.replace(".", "_"),
         "safe_lat": safe_lat,
         "safe_lon": safe_lon,
-        "scan_json": _scan_to_json(all_devices.scan),
-        "exploit_json": _scan_to_json(all_devices.exploit),
+        "scan_json": _scan_to_json(device_obj.scan),
+        "exploit_json": _scan_to_json(device_obj.exploit),
         "nearby": nearby,
         "local_nearby_devices": local_nearby_devices,
         "shodan": shodan,
@@ -919,7 +920,7 @@ def device(request, id, device_id, ip):
         "has_exploit": has_exploit,
         "nse_scripts": nse_scripts,
         "nearby_queries": coordinates_queries,
-        "recent_task_runs": _sync_runs_for_device(all_devices),
+        "recent_task_runs": _sync_runs_for_device(device_obj),
     }
 
     return render(request, "device.html", context)
@@ -1394,8 +1395,12 @@ def export_csv(request, id):
     os.close(fd)
     shodan_csv_export(id, output_path)
     try:
-        with open(output_path, "r", encoding="utf-8", errors="replace") as f:
-            content = f.read()
+        try:
+            with open(output_path, "r", encoding="utf-8", errors="strict") as f:
+                content = f.read()
+        except UnicodeDecodeError:
+            with open(output_path, "r", encoding="latin-1", errors="strict") as f:
+                content = f.read()
         lines = [line for line in content.splitlines() if line.strip()]
         if len(lines) <= 1 and Device.objects.filter(search_id=id).exists():
             out = io.StringIO()
@@ -1448,8 +1453,12 @@ def export_kml(request, id):
     os.close(fd)
     shodan_kml_export(id, output_path)
     try:
-        with open(output_path, "r", encoding="utf-8", errors="replace") as f:
-            content = f.read()
+        try:
+            with open(output_path, "r", encoding="utf-8", errors="strict") as f:
+                content = f.read()
+        except UnicodeDecodeError:
+            with open(output_path, "r", encoding="latin-1", errors="strict") as f:
+                content = f.read()
         if "<Placemark" not in content and Device.objects.filter(search_id=id).exists():
             placemarks = []
             for device in Device.objects.filter(search_id=id):
@@ -2642,7 +2651,6 @@ def worker_status_view(request):
     queue_depth = None
     try:
         from redis import Redis
-        from redis.exceptions import RedisError
 
         client = Redis.from_url(settings.REDIS_URL)
         queue_depth = client.llen("celery")
@@ -2664,6 +2672,8 @@ def setup_check_view(request):
         path = shutil.which(name)
         if not path:
             return {"name": name, "ok": False, "detail": "Not found in PATH"}
+        if os.path.basename(path) != name or not os.path.isfile(path):
+            return {"name": name, "ok": False, "detail": "Resolved binary path is invalid"}
         try:
             result = subprocess.run(
                 [path, "-version"],
