@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block page_title %}Watchlists · ꓘamerka{% endblock %}
+
+{% block content %}
+<div class="page-content-wrap">
+  <div class="row">
+    <div class="col-md-6">
+      <div class="panel panel-default">
+        <div class="panel-heading">
+          <h3 class="panel-title">{% if edit_watchlist %}Edit Watchlist{% else %}Create Watchlist{% endif %}</h3>
+        </div>
+        <div class="panel-body">
+          <form method="post" action="/watchlists">
+            {% csrf_token %}
+            {% if edit_watchlist %}
+              <input type="hidden" name="action" value="update">
+              <input type="hidden" name="watchlist_id" value="{{ edit_watchlist.id }}">
+            {% else %}
+              <input type="hidden" name="action" value="create">
+            {% endif %}
+            {{ form.as_p }}
+            <button type="submit" class="btn btn-primary">Save</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="panel panel-default">
+        <div class="panel-heading">
+          <h3 class="panel-title">Saved Watchlists</h3>
+        </div>
+        <div class="panel-body table-responsive">
+          <table class="table table-striped">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Enabled</th>
+                <th>Interval</th>
+                <th>Next run</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for wl in watchlists %}
+              <tr>
+                <td>{{ wl.name }}</td>
+                <td>{{ wl.get_query_type_display }}</td>
+                <td>{{ wl.enabled|yesno:"Yes,No" }}</td>
+                <td>{{ wl.refresh_interval_minutes }}m</td>
+                <td>{{ wl.next_run_at|default:"-" }}</td>
+                <td>
+                  <form method="post" action="/watchlists/{{ wl.id }}/run" style="display:inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-xs btn-info">Run now</button>
+                  </form>
+                  <form method="post" action="/watchlists/{{ wl.id }}/toggle" style="display:inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-xs btn-warning">{% if wl.enabled %}Disable{% else %}Enable{% endif %}</button>
+                  </form>
+                  <a class="btn btn-xs btn-default" href="/watchlists?edit={{ wl.id }}">Edit</a>
+                  <form method="post" action="/watchlists/{{ wl.id }}/delete" style="display:inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-xs btn-danger">Delete</button>
+                  </form>
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="6">No watchlists saved.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

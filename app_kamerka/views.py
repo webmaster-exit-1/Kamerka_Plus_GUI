@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import time
+from datetime import timedelta
 from collections import Counter
 from django.conf import settings
 from django.core.cache import cache
@@ -25,6 +26,7 @@ from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
+from django.utils import timezone
 from django.contrib.auth.decorators import login_required, user_passes_test
 from app_kamerka import forms
 from app_kamerka.models import (
@@ -42,8 +44,10 @@ from app_kamerka.models import (
     SBOMComponent,
     GFWStatus,
     TaskRun,
+    Watchlist,
 )
 from app_kamerka.task_utils import record_task_run, sync_task_run, sync_task_run_by_task_id
+from .forms import WatchlistForm
 from app_feeds.models import FeedEntry
 from kamerka.tasks import (
     shodan_search,
@@ -83,6 +87,7 @@ from kamerka.tasks import (
     run_cve_exploit,
     _classify_exploit,
     _is_safe_ref_url,
+    run_watchlist_refresh,
 )
 from shodan import Shodan as _ShodanAPI
 
@@ -758,6 +763,81 @@ def history(request):
 
     context = {"history": all_searches}
     return render(request, "history.html", context)
+
+
+def _watchlist_form_for_instance(instance=None):
+    if instance is None:
+        return WatchlistForm()
+    form = WatchlistForm(instance=instance)
+    form.fields["query_items_text"].initial = ",".join(instance.query_items or [])
+    return form
+
+
+def watchlists(request):
+    if request.method == "POST":
+        action = request.POST.get("action", "create")
+        watchlist_id = request.POST.get("watchlist_id")
+        instance = (
+            get_object_or_404(Watchlist, pk=watchlist_id)
+            if watchlist_id and action == "update"
+            else None
+        )
+        form = WatchlistForm(request.POST, instance=instance)
+        if form.is_valid():
+            watchlist = form.save(commit=False)
+            watchlist.query_items = form.cleaned_data.get("query_items_text", [])
+            if watchlist.enabled and not watchlist.next_run_at:
+                watchlist.next_run_at = timezone.now()
+            watchlist.save()
+            return HttpResponseRedirect("/watchlists")
+    else:
+        form = WatchlistForm()
+
+    edit_id = request.GET.get("edit")
+    edit_watchlist = (
+        get_object_or_404(Watchlist, pk=edit_id)
+        if edit_id
+        else None
+    )
+    context = {
+        "watchlists": Watchlist.objects.order_by("name"),
+        "form": _watchlist_form_for_instance(edit_watchlist) if edit_watchlist else form,
+        "edit_watchlist": edit_watchlist,
+    }
+    return render(request, "watchlists.html", context)
+
+
+@require_POST
+def watchlist_toggle(request, watchlist_id):
+    watchlist = get_object_or_404(Watchlist, pk=watchlist_id)
+    watchlist.enabled = not watchlist.enabled
+    if watchlist.enabled:
+        watchlist.next_run_at = timezone.now()
+    watchlist.save(update_fields=["enabled", "next_run_at", "updated_at"])
+    return HttpResponseRedirect("/watchlists")
+
+
+@require_POST
+def watchlist_delete(request, watchlist_id):
+    watchlist = get_object_or_404(Watchlist, pk=watchlist_id)
+    watchlist.delete()
+    return HttpResponseRedirect("/watchlists")
+
+
+@require_POST
+def watchlist_run_now(request, watchlist_id):
+    watchlist = get_object_or_404(Watchlist, pk=watchlist_id)
+    _enqueue_tracked_task(
+        request,
+        run_watchlist_refresh,
+        task_args=[watchlist.id],
+        tool=TaskRun.TOOL_OTHER,
+    )
+    watchlist.next_run_at = timezone.now() + timedelta(
+        minutes=max(1, watchlist.refresh_interval_minutes)
+    )
+    watchlist.save(update_fields=["next_run_at", "updated_at"])
+    return HttpResponseRedirect("/watchlists")
 
 
 def update_coordinates(request, id, coordinates):

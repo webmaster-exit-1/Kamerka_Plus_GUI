@@ -12,6 +12,35 @@ class Search(models.Model):
     nmap = models.BooleanField(default=False)
 
 
+class Watchlist(models.Model):
+    QUERY_COUNTRY = "country"
+    QUERY_COORDINATES = "coordinates"
+    QUERY_TYPE_CHOICES = [
+        (QUERY_COUNTRY, "Country"),
+        (QUERY_COORDINATES, "Coordinates"),
+    ]
+
+    name = models.CharField(max_length=120, unique=True)
+    query_type = models.CharField(
+        max_length=20, choices=QUERY_TYPE_CHOICES, default=QUERY_COUNTRY
+    )
+    country = models.CharField(max_length=100, default="", blank=True)
+    coordinates = models.CharField(max_length=100, default="", blank=True)
+    query_items = models.JSONField(default=list, blank=True)
+    category = models.CharField(max_length=100, default="ics")
+    healthcare = models.BooleanField(default=False)
+    all_results = models.BooleanField(default=False)
+    enabled = models.BooleanField(default=True)
+    refresh_interval_minutes = models.PositiveIntegerField(default=60)
+    last_run_at = models.DateTimeField(null=True, blank=True)
+    next_run_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+
 class Device(models.Model):
     search = models.ForeignKey(Search, on_delete=models.CASCADE)
     ip = models.CharField(max_length=100, default="", db_index=True)
