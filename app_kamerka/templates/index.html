@@ -1,81 +1,16 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "base.html" %}
 {% load static %}
-{% block page_content %}
-    <head>
-        <!-- META SECTION -->
-        <title>ꓘamerka</title>
-        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <!-- END META SECTION -->
 
-        <!-- CSS INCLUDE -->
-        <script src="{% static 'js/d3.js' %}"></script>
-        <script src="{% static 'js/d3.layout.cloud.js' %}" charset="UTF-8"></script>
-        <script src="{% static 'js/d3.wordcloud.js' %}" charset="UTF-8"></script>
-        <link rel="stylesheet" type="text/css" id="theme" href="{% static 'css/theme-default.css' %}"/>
-        <link rel="stylesheet" type="text/css" href="{% static 'css/cyberpunk.css' %}"/>
-        <!-- EOF CSS INCLUDE -->
-    </head>
-    <body>
-        <!-- START PAGE CONTAINER -->
-        <div class="page-container">
+{% block page_title %}ꓘamerka{% endblock %}
 
-            <!-- START PAGE SIDEBAR -->
-            <div class="page-sidebar">
-                <!-- START X-NAVIGATION -->
-                <ul class="x-navigation">
-                    <li class="xn-logo">
-                        <a href="/">ꓘamerka</a>
-                        <a href="#" class="x-navigation-control"></a>
-                    </li>
-                    <li class="xn-profile">
+{% block extra_css %}
+    <!-- d3 loaded in <head> so word-cloud layout runs before body scripts fire -->
+    <script src="{% static 'js/d3.js' %}"></script>
+    <script src="{% static 'js/d3.layout.cloud.js' %}" charset="UTF-8"></script>
+    <script src="{% static 'js/d3.wordcloud.js' %}" charset="UTF-8"></script>
+{% endblock %}
 
-                        <div class="profile">
-                            <div class="profile-image">
-                            </div>
-                            <div class="profile-data">
-                                  <img width=200px height=200px src="{% static 'images/OffensiveOsint-logo-RGB-2.svg' %}">
-                            </div>
-
-                        </div>
-                    </li>
-                    <li class="xn-title">Navigation</li>
-                    <li class="">
-                        <a href="/index"><span class="fa fa-desktop"></span> <span class="xn-text">Dashboard</span></a>
-                    </li>
-                    <li class="">
-                        <a href="/history"><span class="fa fa-files-o"></span> <span class="xn-text">History</span></a>
-                    </li>
-                    <li class="">
-                        <a href="/map"><span class="fa fa-map-marker"></span> <span class="xn-text">Map</span></a>
-                    </li>
-                    <li class="">
-                        <a href="/devices"><span class="fa fa-search"></span> <span class="xn-text">Search</span></a>
-                    </li>
-                    <li class="">
-                        <a href="/gallery"><span class="fa fa-camera"></span> <span class="xn-text">Screenshots</span></a>
-                    </li>
-                    <li class="">
-                        <a href="/globe"><span class="fa fa-globe"></span> <span class="xn-text">Globe</span></a>
-                    </li>
-
-                    <li class="xn-title">Other</li>
-
-                    <li>
-                        <a href="/sources"><span class="fa fa-book"></span> <span class="xn-text">Useful links</span></a>
-                    </li>
-
-
-                </ul>
-                <!-- END X-NAVIGATION -->
-            </div>
-            <!-- END PAGE SIDEBAR -->
-
-            <!-- PAGE CONTENT -->
-            <div class="page-content">
-
+{% block content %}
                 <!-- PAGE HEADER -->
                 <div class="cp-page-header" style="text-align:center; padding:14px 0 6px;">
                   <h1 class="cp-page-title" style="text-align:center; padding:6px 0 4px;">
@@ -438,29 +373,23 @@
 
                 </div>
                 <!-- END PAGE CONTENT WRAPPER -->
-            </div>
-            <!-- END PAGE CONTENT -->
-        </div>
+{% endblock %}
 
-<script src="{% static 'js/d3.wordcloud.js' %}" charset="UTF-8"></script>
-                <script src="{% static 'js/d3.layout.cloud.js' %}" charset="UTF-8"></script>
-
-                <script type="text/javascript" src="{% static 'js/plugins/jquery/jquery.min.js' %}"></script>
-        <script type="text/javascript" src="{% static 'js/plugins/jquery/jquery-ui.min.js' %}"></script>
-        <script type="text/javascript" src="{% static 'js/plugins/bootstrap/bootstrap.min.js' %}"></script>
-        <!-- END PLUGINS -->
-
-        <!-- START THIS PAGE PLUGINS-->
-
-        <script type="text/javascript" src="{% static 'js/plugins/morris/raphael-min.js' %}"></script>
+{% block extra_js %}
+    <script src="{% static 'js/plugins/morris/raphael-min.js' %}"></script>
+    <script src="{% static 'js/plugins/morris/morris.min.js' %}"></script>
+    <script src="{% static 'js/plugins/jvectormap/jquery-jvectormap-1.2.2.min.js' %}"></script>
+    <script src="{% static 'js/plugins/jvectormap/jquery-jvectormap-world-mill-en.js' %}"></script>
+    <script src="{% static 'js/plugins/owl/owl.carousel.min.js' %}"></script>
+    <script src="{% static 'js/index_charts.js' %}"></script>
+    <script src="{% static 'celery_progress/celery_progress.js' %}"></script>
+<script type="text/javascript" src="{% static 'js/plugins/morris/raphael-min.js' %}"></script>
         <script type="text/javascript" src="{% static 'js/plugins/morris/morris.min.js' %}"></script>
 
         <script type='text/javascript' src="{% static 'js/plugins/jvectormap/jquery-jvectormap-1.2.2.min.js' %}"></script>
         <script type='text/javascript' src="{% static 'js/plugins/jvectormap/jquery-jvectormap-world-mill-en.js' %}"></script>
         <script type="text/javascript" src="{% static 'js/plugins/owl/owl.carousel.min.js' %}"></script>
 
-        <script type="text/javascript" src="{% static 'js/plugins.js' %}"></script>
-        <script type="text/javascript" src="{% static 'js/actions.js' %}"></script>
 
         <script type="text/javascript" src="{% static 'js/index_charts.js' %}"></script>
         <script src="{% static 'celery_progress/celery_progress.js' %}"></script>
@@ -712,10 +641,4 @@ $(document).ready(function(){
     refreshIntelWidgets();
 })();
 </script>
-
-        <!-- END TEMPLATE -->
-    <!-- END SCRIPTS -->
-    </body>
-</html>
-
 {% endblock %}

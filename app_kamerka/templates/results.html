@@ -1,83 +1,18 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "base.html" %}
 {% load static %}
-{% block page_content %}
-    <head>
-        <!-- META SECTION -->
-        <title>Results - ꓘamerka</title>
-        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <!-- END META SECTION -->
 
-        <!-- CSS INCLUDE -->
-        <script src="{% static 'js/d3.js' %}"></script>
-        <script src="{% static 'js/d3.layout.cloud.js' %}" charset="UTF-8"></script>
-        <script src="{% static 'js/d3.wordcloud.js' %}" charset="UTF-8"></script>
-        <link rel="stylesheet" type="text/css" id="theme" href="{% static 'css/theme-default.css' %}"/>
-        <link rel="stylesheet" type="text/css" href="{% static 'css/cyberpunk.css' %}"/>
-        <link rel="stylesheet" type="text/css" href="{% static 'css/leaflet.css' %}"/>
-        <!-- EOF CSS INCLUDE -->
-    </head>
-    <body>
-        <!-- START PAGE CONTAINER -->
-        <div class="page-container">
+{% block page_title %}Results - ꓘamerka{% endblock %}
 
-            <!-- START PAGE SIDEBAR -->
-            <div class="page-sidebar">
-                <!-- START X-NAVIGATION -->
-                <ul class="x-navigation">
-                    <li class="xn-logo">
-                        <a href="/">ꓘamerka</a>
-                        <a href="#" class="x-navigation-control"></a>
-                    </li>
-                    <li class="xn-profile">
+{% block extra_css %}
+    <script src="{% static 'js/d3.js' %}"></script>
+    <script src="{% static 'js/d3.layout.cloud.js' %}" charset="UTF-8"></script>
+    <script src="{% static 'js/d3.wordcloud.js' %}" charset="UTF-8"></script>
+    <link rel="stylesheet" type="text/css" href="{% static 'css/leaflet.css' %}"/>
+{% endblock %}
 
-                        <div class="profile">
-                            <div class="profile-image">
-                            </div>
-                            <div class="profile-data">
-                                  <img width=200px height=200px src="{% static 'images/OffensiveOsint-logo-RGB-2.svg' %}">
+{% block page_content_style %}style="height: 100%"{% endblock %}
 
-                            </div>
-
-                        </div>
-                    </li>
-                    <li class="xn-title">Navigation</li>
-                    <li class="">
-                        <a href="/index"><span class="fa fa-desktop"></span> <span class="xn-text">Dashboard</span></a>
-                    </li>
-                    <li class="">
-                        <a href="/history"><span class="fa fa-files-o"></span> <span class="xn-text">History</span></a>
-                    </li>
-                    <li class="">
-                        <a href="/map"><span class="fa fa-map-marker"></span> <span class="xn-text">Map</span></a>
-                    </li>
-                    <li class="">
-                        <a href="/devices"><span class="fa fa-search"></span> <span class="xn-text">Search</span></a>
-                    </li>
-
-                                       <li class="">
-                        <a href="/gallery"><span class="fa fa-camera"></span> <span class="xn-text">Screenshots</span></a>
-                    </li>
-                    <li class="">
-                        <a href="/globe"><span class="fa fa-globe"></span> <span class="xn-text">Globe</span></a>
-                    </li>
-
-                    <li class="xn-title">Components</li>
-
-                    <li>
-                        <a href="/sources"><span class="fa fa-book"></span> <span class="xn-text">Useful links</span></a>
-                    </li>
-
-
-                </ul>
-                <!-- END X-NAVIGATION -->
-            </div>
-            <!-- END PAGE SIDEBAR -->
-
-            <!-- PAGE CONTENT -->
-            <div class="page-content" style="height: 100%">
+{% block content %}
 
                 <!-- START BREADCRUMB -->
 <ul class="breadcrumb">
@@ -290,10 +225,10 @@
         <!-- MESSAGE BOX-->
 
         </div>
+{% endblock %}
 
-
-
-        <!-- END MESSAGE BOX--><script src="{% static 'js/leaflet.js' %}"></script>
+{% block extra_js %}
+<!-- END MESSAGE BOX--><script src="{% static 'js/leaflet.js' %}"></script>
 <script src="{% static 'js/leaflet.heat.js' %}"></script>
 <script src="{% static 'js/map_themes.js' %}"></script>
 
@@ -367,12 +302,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
 
-        <script type="text/javascript" src="{% static 'js/plugins/jquery/jquery.min.js' %}"></script>
-        <script type="text/javascript" src="{% static 'js/plugins/jquery/jquery-ui.min.js' %}"></script>
-        <script type="text/javascript" src="{% static 'js/plugins/bootstrap/bootstrap.min.js' %}"></script>
-        <!-- END PLUGINS -->
 
-        <!-- START THIS PAGE PLUGINS-->
 
         <script type="text/javascript" src="{% static 'js/plugins/morris/raphael-min.js' %}"></script>
         <script type="text/javascript" src="{% static 'js/plugins/morris/morris.min.js' %}"></script>
@@ -380,14 +310,10 @@ document.addEventListener('DOMContentLoaded', function() {
         <script type='text/javascript' src="{% static 'js/plugins/bootstrap/bootstrap-datepicker.js' %}"></script>
 
 
-        <!-- END THIS PAGE PLUGINS-->
 <!--                           <script type="text/javascript" src="js/plugins/morris/raphael-min.js"></script>-->
 <!--        <script type="text/javascript" src="js/plugins/morris/morris.min.js"></script>-->
 
-        <!-- START TEMPLATE -->
-        <script type="text/javascript" src="{% static 'js/plugins.js' %}"></script>
 
-        <script type="text/javascript" src="{% static 'js/actions.js' %}"></script>
         <script type="text/javascript" src="{% static 'js/draw_charts_results.js' %}"></script>
                 <script>drawCharts({{ports|safe}}, {{city|safe}},{{category|safe}});</script>
 
@@ -408,18 +334,4 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         </script>
         {% endif %}
-
-        <!-- END TEMPLATE -->
-
-    <!-- END SCRIPTS -->
-
-
-    </body>
-</html>
-
 {% endblock %}
-
-
-
-
-

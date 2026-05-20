@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+{% load static %}
+<head>
+    <!-- META ──────────────────────────────────────────────────────── -->
+    <title>{% block page_title %}ꓘamerka{% endblock %}</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!--
+        CORE JS loaded here in <head> so that inline <script> blocks
+        inside any child template's content block can safely call
+        jQuery / Bootstrap without waiting for the footer bundle.
+    -->
+    <script src="{% static 'js/plugins/jquery/jquery.min.js' %}"></script>
+    <script src="{% static 'js/plugins/jquery/jquery-ui.min.js' %}"></script>
+    <script src="{% static 'js/plugins/bootstrap/bootstrap.min.js' %}"></script>
+
+    <!-- COMMON CSS ────────────────────────────────────────────────── -->
+    <link rel="stylesheet" type="text/css" id="theme"
+          href="{% static 'css/theme-default.css' %}"/>
+    <link rel="stylesheet" type="text/css"
+          href="{% static 'css/cyberpunk.css' %}"/>
+    <link rel="stylesheet" type="text/css"
+          href="{% static 'css/hamburger-nav.css' %}"/>
+
+    <!-- PAGE-SPECIFIC CSS (and any pre-body <script> tags a page needs) -->
+    {% block extra_css %}{% endblock %}
+
+    <!--
+        HAMBURGER NAV BEHAVIOUR
+        Handles: toggle on button click · click-outside close
+                 ESC-key close · correct aria-expanded state
+        Placed in <head> because it uses DOMContentLoaded and therefore
+        does not need jQuery — pure vanilla JS, safe anywhere.
+    -->
+    <script>
+    (function () {
+        'use strict';
+
+        /** Sync all mutable state to DOM in one place. */
+        function setMenuState(button, overlay, isOpen) {
+            overlay.classList.toggle('open', isOpen);
+            overlay.hidden = !isOpen;
+            button.setAttribute('aria-expanded', String(isOpen));
+            button.innerHTML = isOpen ? '&times;' : '&#9776;';
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            var button  = document.getElementById('kamerka-hamburger-btn');
+            var overlay = document.getElementById('kamerka-hamburger-overlay');
+            if (!button || !overlay) { return; }
+
+            /* Start closed */
+            setMenuState(button, overlay, false);
+
+            /* Toggle open / close on button click */
+            button.addEventListener('click', function (e) {
+                e.stopPropagation();
+                setMenuState(button, overlay, overlay.hidden);
+            });
+
+            /* Clicks that land inside the overlay panel do not bubble
+               up to the document-level close handler below. */
+            overlay.addEventListener('click', function (e) {
+                e.stopPropagation();
+            });
+
+            /* Click-outside close */
+            document.addEventListener('click', function (e) {
+                if (!overlay.hidden &&
+                    !overlay.contains(e.target) &&
+                    e.target !== button) {
+                    setMenuState(button, overlay, false);
+                }
+            });
+
+            /* ESC-key close */
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && !overlay.hidden) {
+                    setMenuState(button, overlay, false);
+                    button.focus();   /* return focus to trigger */
+                }
+            });
+
+            /* Auto-close when the user follows a nav link */
+            overlay.querySelectorAll('a').forEach(function (link) {
+                link.addEventListener('click', function () {
+                    setMenuState(button, overlay, false);
+                });
+            });
+        });
+    }());
+    </script>
+
+</head>
+<body>
+    <div class="page-container">
+
+        <!-- ── HAMBURGER BUTTON (fixed, top-right, every page) ──────── -->
+        <button id="kamerka-hamburger-btn"
+                class="kamerka-hamburger-btn"
+                type="button"
+                aria-label="Open navigation menu"
+                aria-expanded="false"
+                aria-controls="kamerka-hamburger-overlay">&#9776;</button>
+
+        <!-- ── HAMBURGER OVERLAY ────────────────────────────────────── -->
+        <nav id="kamerka-hamburger-overlay"
+             class="kamerka-hamburger-overlay"
+             hidden
+             aria-label="Navigation menu">
+            <a href="/"        class="kamerka-nav-link">&#x1F3E0; Home</a>
+            <a href="/index"   class="kamerka-nav-link">&#x1F4CA; Dashboard</a>
+            <a href="/history" class="kamerka-nav-link">&#x1F4C2; History</a>
+            <a href="/map"     class="kamerka-nav-link">&#x1F4CD; Map</a>
+            <a href="/globe"   class="kamerka-nav-link">&#x1F30D; Globe</a>
+            <a href="/gallery" class="kamerka-nav-link">&#x1F4F7; Screenshots</a>
+            <a href="/devices" class="kamerka-nav-link">&#x1F50D; Search</a>
+            <a href="/sources" class="kamerka-nav-link">&#x1F4D6; Useful Links</a>
+        </nav>
+
+        <!-- ── LEFT SIDEBAR (visible on wide screens) ───────────────── -->
+        <div class="page-sidebar">
+            <ul class="x-navigation">
+                <li class="xn-logo">
+                    <a href="/">ꓘamerka</a>
+                    <a href="#" class="x-navigation-control"></a>
+                </li>
+                <li class="xn-profile">
+                    <div class="profile">
+                        <div class="profile-image"></div>
+                        <div class="profile-data">
+                            <img width="200px" height="200px"
+                                 src="{% static 'images/OffensiveOsint-logo-RGB-2.svg' %}">
+                        </div>
+                    </div>
+                </li>
+                <li class="xn-title">Navigation</li>
+                <li class="">
+                    <a href="/index">
+                        <span class="fa fa-desktop"></span>
+                        <span class="xn-text">Dashboard</span>
+                    </a>
+                </li>
+                <li class="">
+                    <a href="/history">
+                        <span class="fa fa-files-o"></span>
+                        <span class="xn-text">History</span>
+                    </a>
+                </li>
+                <li class="">
+                    <a href="/map">
+                        <span class="fa fa-map-marker"></span>
+                        <span class="xn-text">Map</span>
+                    </a>
+                </li>
+                <li class="">
+                    <a href="/devices">
+                        <span class="fa fa-search"></span>
+                        <span class="xn-text">Search</span>
+                    </a>
+                </li>
+                <li class="">
+                    <a href="/gallery">
+                        <span class="fa fa-camera"></span>
+                        <span class="xn-text">Screenshots</span>
+                    </a>
+                </li>
+                <li class="">
+                    <a href="/globe">
+                        <span class="fa fa-globe"></span>
+                        <span class="xn-text">Globe</span>
+                    </a>
+                </li>
+                <li class="xn-title">Components</li>
+                <li>
+                    <a href="/sources">
+                        <span class="fa fa-book"></span>
+                        <span class="xn-text">Useful links</span>
+                    </a>
+                </li>
+                <!--
+                    Child templates that need extra sidebar sections
+                    (e.g. device.html adds "Scan Tools") override this block.
+                -->
+                {% block sidebar_extra %}{% endblock %}
+            </ul>
+        </div>
+        <!-- ── END LEFT SIDEBAR ─────────────────────────────────────── -->
+
+        <!-- ── MAIN CONTENT ─────────────────────────────────────────── -->
+        <div class="page-content{% block page_content_class %}{% endblock %}"
+             {% block page_content_style %}{% endblock %}>
+            {% block content %}{% endblock %}
+        </div>
+        <!-- ── END MAIN CONTENT ─────────────────────────────────────── -->
+
+    </div><!-- /.page-container -->
+
+    <!--
+        FOOTER JS BUNDLE
+        plugins.js / actions.js run after the DOM so they work reliably.
+        jQuery / Bootstrap were already loaded in <head> above.
+    -->
+    <script src="{% static 'js/plugins.js' %}"></script>
+    <script src="{% static 'js/actions.js' %}"></script>
+
+    <!--
+        PAGE-SPECIFIC BUNDLES
+        Each child template drops its own script tags here
+        (datatables, leaflet, morris, owl carousel, etc.)
+    -->
+    {% block extra_js %}{% endblock %}
+
+</body>
+</html>

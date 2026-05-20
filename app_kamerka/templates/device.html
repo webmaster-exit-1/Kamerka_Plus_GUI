@@ -1,19 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "base.html" %}
 {% load static %}
-{% block page_content %}
-    <head>
-        <!-- META SECTION -->
-        <title>{{ device.ip }} - ꓘamerka</title>
-        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <!-- END META SECTION -->
 
-        <!-- CSS INCLUDE -->
+{% block page_title %}{{ device.ip }} - ꓘamerka{% endblock %}
 
-        <link rel="stylesheet" type="text/css" id="theme" href="{% static 'css/theme-default.css' %}"/>
-        <link rel="stylesheet" type="text/css" href="{% static 'css/cyberpunk.css' %}"/>
+{% block extra_css %}
         <link rel="stylesheet" type="text/css" href="{% static 'css/leaflet.css' %}"/>
         <link rel="stylesheet" href="{% static 'css/pretty-print-json.dark-mode.css' %}">
         <style>
@@ -112,58 +102,9 @@
             }
         }
         </style>
-        <!-- EOF CSS INCLUDE -->
-    </head>
-    <body>
-        <!-- START PAGE CONTAINER -->
-        <div class="page-container">
+{% endblock %}
 
-            <!-- START PAGE SIDEBAR -->
-            <div class="page-sidebar">
-                <!-- START X-NAVIGATION -->
-                <ul class="x-navigation">
-                    <li class="xn-logo">
-                        <a href="/">ꓘamerka</a>
-                        <a href="#" class="x-navigation-control"></a>
-                    </li>
-                    <li class="xn-profile">
-
-                        <div class="profile">
-                            <div class="profile-image">
-                            </div>
-                            <div class="profile-data">
-                                  <img width=200px height=200px src="{% static 'images/OffensiveOsint-logo-RGB-2.svg' %}">
-
-                            </div>
-
-                        </div>
-                    </li>
-                    <li class="xn-title">Navigation</li>
-                    <li class="">
-                        <a href="/index"><span class="fa fa-desktop"></span> <span class="xn-text">Dashboard</span></a>
-                    </li>
-                    <li class="">
-                        <a href="/history"><span class="fa fa-files-o"></span> <span class="xn-text">History</span></a>
-                    </li>
-                    <li class="">
-                        <a href="/map"><span class="fa fa-map-marker"></span> <span class="xn-text">Map</span></a>
-                    </li>
-                    <li class="">
-                        <a href="/devices"><span class="fa fa-search"></span> <span class="xn-text">Search</span></a>
-                    </li>
-                                       <li class="">
-                        <a href="/gallery"><span class="fa fa-camera"></span> <span class="xn-text">Screenshots</span></a>
-                    </li>
-                    <li class="">
-                        <a href="/globe"><span class="fa fa-globe"></span> <span class="xn-text">Globe</span></a>
-                    </li>
-
-                    <li class="xn-title">Components</li>
-
-                    <li>
-                        <a href="/sources"><span class="fa fa-book"></span> <span class="xn-text">Useful links</span></a>
-                    </li>
-
+{% block sidebar_extra %}
                     <li class="xn-title">Scan Tools</li>
                     <li>
                         <a href="javascript:void(0)" onclick="$('[href=\'#tab10\']').tab('show');window.scrollTo(0,0);" title="Run an Nmap port/service scan against this device">
@@ -175,15 +116,11 @@
                             <span class="fa fa-bug" style="color:#ffe600"></span> <span class="xn-text">Exploit</span>
                         </a>
                     </li>
+{% endblock %}
 
+{% block page_content_style %}style="height: 100%"{% endblock %}
 
-                </ul>
-                <!-- END X-NAVIGATION -->
-            </div>
-            <!-- END PAGE SIDEBAR -->
-
-            <!-- PAGE CONTENT -->
-            <div class="page-content" style="height: 100%">
+{% block content %}
 
                 <!-- START BREADCRUMB -->
 <ul class="breadcrumb">
@@ -1029,21 +966,12 @@ mapEl.appendChild(heatBtn);
 
 
         <!-- END MESSAGE BOX-->
+{% endblock %}
 
-
-    <!-- START SCRIPTS -->
-        <!-- START PLUGINS -->
-        <script type="text/javascript" src="{% static 'js/plugins/jquery/jquery.min.js' %}"></script>
-        <script type="text/javascript" src="{% static 'js/plugins/jquery/jquery-ui.min.js' %}"></script>
-        <script type="text/javascript" src="{% static 'js/plugins/bootstrap/bootstrap.min.js' %}"></script>
-        <!-- END PLUGINS -->
-
-        <!-- START THIS PAGE PLUGINS-->
-
-        <script type='text/javascript' src="{% static 'js/plugins/bootstrap/bootstrap-datepicker.js' %}"></script>
+{% block extra_js %}
+<script type='text/javascript' src="{% static 'js/plugins/bootstrap/bootstrap-datepicker.js' %}"></script>
         <script type="text/javascript" src="{% static 'js/plugins/owl/owl.carousel.min.js' %}"></script>
         <script type="text/javascript" src="{% static 'js/plugins/datatables/jquery.dataTables.min.js' %}"></script>
-        <!-- END THIS PAGE PLUGINS-->
 
 
 <script>
@@ -2450,13 +2378,10 @@ $('#recon_download_btn').on('click', function() {
             <script type='text/javascript' src="{% static 'js/plugins/noty/layouts/topRight.js' %}"></script>
 
 
-        <script type="text/javascript" src="{% static 'js/actions.js' %}"></script>
 
         <script type="text/javascript" src="{% static 'js/index_charts.js' %}"></script>
-        <!-- END TEMPLATE -->
 
 
-   <!-- END SCRIPTS -->
 
 <!-- CVE DETAIL POPUP MODAL -->
 <div id="cve-modal-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;justify-content:center;align-items:center;">
@@ -2540,15 +2465,4 @@ $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
     }
 })();
 </script>
-
-    </body>
-
-</html>
-
 {% endblock %}
-
-
-
-
-
-`
