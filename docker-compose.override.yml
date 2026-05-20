@@ -1,0 +1,38 @@
+services:
+  web:
+    environment:
+      DEBUG: "True"
+      DB_NAME: ""
+      DB_USER: ""
+      DB_PASSWORD: ""
+      DB_PORT: ""
+      ALLOWED_HOSTS: localhost,127.0.0.1
+    volumes:
+      - ./:/app
+      - media_data:/app/scans
+      - downloads_data:/app/downloads
+    command: python manage.py runserver 0.0.0.0:8000
+
+  celery:
+    environment:
+      DEBUG: "True"
+      DB_NAME: ""
+      DB_USER: ""
+      DB_PASSWORD: ""
+      DB_PORT: ""
+    volumes:
+      - ./:/app
+      - media_data:/app/scans
+      - downloads_data:/app/downloads
+
+  celery-beat:
+    environment:
+      DEBUG: "True"
+      DB_NAME: ""
+      DB_USER: ""
+      DB_PASSWORD: ""
+      DB_PORT: ""
+    volumes:
+      - ./:/app
+      - media_data:/app/scans
+      - downloads_data:/app/downloads

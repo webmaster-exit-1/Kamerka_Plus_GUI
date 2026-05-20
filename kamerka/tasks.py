@@ -1043,8 +1043,54 @@ def _build_target_urls(ip, ports):
     return result
 
 
-def _rate_limit_check(ip, window_seconds=60, max_scans=10):
-    """Enforce a per-IP scan rate limit using the Django cache (Redis).
+class RateLimiter:
+    """Redis-backed global + per-tool + per-IP rate limiter."""
+
+    def __init__(self):
+        self.window_seconds = int(getattr(settings, "KAMERKA_RATE_WINDOW_SECONDS", 60))
+        self.global_cap = int(getattr(settings, "KAMERKA_GLOBAL_RATE", 120))
+        self.default_tool_cap = int(getattr(settings, "KAMERKA_DEFAULT_TOOL_RATE", 30))
+        self.tool_caps = {
+            "nmap": int(getattr(settings, "KAMERKA_NMAP_RATE", self.default_tool_cap)),
+            "nuclei": int(getattr(settings, "KAMERKA_NUCLEI_RATE", self.default_tool_cap)),
+            "wappalyzer": int(getattr(settings, "KAMERKA_WAPPALYZER_RATE", self.default_tool_cap)),
+            "screenshot": int(getattr(settings, "KAMERKA_SCREENSHOT_RATE", self.default_tool_cap)),
+            "port_scan": int(getattr(settings, "KAMERKA_PORTSCAN_RATE", self.default_tool_cap)),
+        }
+
+    def _check_counter(self, cache, key, limit, window_seconds):
+        count = cache.get(key, 0)
+        if count >= limit:
+            return False
+        if count == 0:
+            cache.set(key, 1, timeout=window_seconds)
+        else:
+            cache.incr(key)
+        return True
+
+    def allow(self, ip, *, tool="scan", window_seconds=None, ip_max_scans=10):
+        from django.core.cache import cache
+
+        if not ip:
+            return True
+        window = window_seconds or self.window_seconds
+        tool_limit = self.tool_caps.get(tool, self.default_tool_cap)
+        try:
+            if not self._check_counter(cache, "ratelimit:global", self.global_cap, window):
+                return False
+            if not self._check_counter(cache, f"ratelimit:tool:{tool}", tool_limit, window):
+                return False
+            return self._check_counter(cache, f"ratelimit:scan:{ip}", ip_max_scans, window)
+        except Exception as exc:
+            logger.warning("RateLimiter unavailable (%s), allowing request", exc)
+            return True
+
+
+_rate_limiter = RateLimiter()
+
+
+def _rate_limit_check(ip, window_seconds=60, max_scans=10, tool="scan"):
+    """Enforce global/per-tool/per-IP scan rate limits using the cache.
 
     Uses a simple counter with a sliding TTL window.  If the number of scans
     initiated against *ip* in the last *window_seconds* seconds exceeds
@@ -1065,32 +1111,21 @@ def _rate_limit_check(ip, window_seconds=60, max_scans=10):
     bool  ``True`` if the scan is within the rate limit, ``False`` if it
           should be rejected.
     """
-    from django.core.cache import cache
-
-    cache_key = "ratelimit:scan:{}".format(ip)
-    try:
-        count = cache.get(cache_key, 0)
-        if count >= max_scans:
-            logger.warning(
-                "_rate_limit_check: IP %s has exceeded %d scans in %ds — scan rejected",
-                ip,
-                max_scans,
-                window_seconds,
-            )
-            return False
-        # Increment; set TTL only on first write so the window resets naturally.
-        if count == 0:
-            cache.set(cache_key, 1, timeout=window_seconds)
-        else:
-            cache.incr(cache_key)
-        return True
-    except Exception as exc:
+    allowed = _rate_limiter.allow(
+        ip,
+        tool=tool,
+        window_seconds=window_seconds,
+        ip_max_scans=max_scans,
+    )
+    if not allowed:
         logger.warning(
-            "_rate_limit_check: cache unavailable (%s) — allowing scan for %s",
-            exc,
+            "_rate_limit_check: blocked tool=%s ip=%s limit=%d window=%ds",
+            tool,
             ip,
+            max_scans,
+            window_seconds,
         )
-        return True  # fail open to avoid blocking legitimate scans
+    return allowed
 
 
 def _resolve_open_ports(device):
@@ -1242,7 +1277,7 @@ def wappalyzer_scan(id, discovered_ports=None):
         return {"error": "Invalid IP address: {}".format(device.ip)}
 
     # Rate limiting — abort if this IP is being scanned too aggressively.
-    if not _rate_limit_check(device.ip):
+    if not _rate_limit_check(device.ip, tool="wappalyzer"):
         return {
             "error": "Rate limit exceeded for {} — try again in 60 seconds".format(
                 device.ip
@@ -1383,7 +1418,7 @@ def nuclei_scan(
         return {"error": "Invalid IP address: {}".format(device.ip)}
 
     # Rate limiting.
-    if not _rate_limit_check(device.ip):
+    if not _rate_limit_check(device.ip, tool="nuclei"):
         return {
             "error": "Rate limit exceeded for {} — try again in 60 seconds".format(
                 device.ip

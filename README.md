@@ -33,6 +33,7 @@ This is a modernized fork of the original [Kamerka-GUI](https://github.com/woj-c
 | [docs/INSTALL.md](docs/INSTALL.md) | Full installation guide, environment variables, API keys (Shodan, NVD, Pastebin), external tools (Nmap, Nuclei, Naabu), PostgreSQL setup, Android/Termux |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 3D globe, verification pipeline, tool path configuration, Celery/Redis architecture |
 | [docs/DATABASE.md](docs/DATABASE.md) | SQLite WAL concurrency mitigations and PostgreSQL migration guide |
+| [docs/docker.md](docs/docker.md) | One-command Docker Compose stack (web + redis + celery + beat + optional postgres) |
 
 ## Features
 
@@ -67,6 +68,16 @@ celery --app kamerka worker --beat --loglevel=info
 See [docs/INSTALL.md](docs/INSTALL.md) for the full installation guide, including
 PostgreSQL setup, Pastebin API configuration, NVD API keys, and external tool
 (`nmap`, `nuclei`, `naabu`) environment variables.
+
+## Quick Start (Docker)
+
+```bash
+cp .env.example .env
+docker compose --profile postgres up --build
+```
+
+For service breakdown, volume persistence, SQLite-vs-Postgres mode, and migration
+commands, see [docs/docker.md](docs/docker.md).
 
 ## NSA and CISA Advisory
 

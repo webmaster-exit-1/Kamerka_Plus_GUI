@@ -14,9 +14,22 @@
                                     <h3 class="panel-title">Devices</h3>
                                 </div>
                                 <div class="panel-body">
+                                    <div class="form-inline" style="margin-bottom:12px;">
+                                        <label for="bulk-tool-select">Run on selected:</label>
+                                        <select id="bulk-tool-select" class="form-control">
+                                            <option value="screenshot">Screenshot</option>
+                                            <option value="nuclei">Nuclei</option>
+                                            <option value="nmap">Nmap</option>
+                                            <option value="port_scan">Port scan</option>
+                                        </select>
+                                        <button type="button" id="bulk-run-btn" class="btn btn-primary">Go</button>
+                                        <span id="bulk-progress" style="margin-left:12px;color:#00e1ff;"></span>
+                                    </div>
+                                    <div id="bulk-results" style="margin-bottom:12px;"></div>
                                     <table id="customers2" class="table datatable">
                                         <thead>
                                             <tr>
+                                                <th><input type="checkbox" id="select-all-devices"></th>
                                                 <th>IP</th>
                                                 <th>Type</th>
                                                 <th>Product / Ports</th>
@@ -33,10 +46,11 @@
                                         <tbody>
                                             {% for device in devices %}
                                             {% if device.located %}
-                                            <tr style="background:#1caf9a">
+                                            <tr style="background:#1caf9a" data-device-id="{{ device.id }}">
                                             {% else %}
-                                            <tr>
+                                            <tr data-device-id="{{ device.id }}">
                                             {% endif %}
+                                                <td><input type="checkbox" class="device-select" value="{{ device.id }}"></td>
                                                 <td><a href="{% url 'device' id=device.search_id ip=device.ip device_id=device.id %}">{{ device.ip }}</a></td>
                                                 <td>{{ device.type }}</td>
                                                 <td>{% if device.type == "NMAP" %}{{ device.port }}{% else %}{{ device.product }}{% endif %}</td>
@@ -66,4 +80,74 @@
 {% block extra_js %}
     <script src="{% static 'js/plugins/datatables/jquery.dataTables.min.js' %}"></script>
     <script src="{% static 'js/plugins/bootstrap/bootstrap-datepicker.js' %}"></script>
+    <script>
+    (function(){
+      function getCookie(name){
+        var value = '; ' + document.cookie;
+        var parts = value.split('; ' + name + '=');
+        if (parts.length === 2) return parts.pop().split(';').shift();
+      }
+      function checkedIds(){
+        return Array.from(document.querySelectorAll('.device-select:checked')).map(function(el){ return el.value; });
+      }
+      var selectAll = document.getElementById('select-all-devices');
+      if (selectAll) {
+        selectAll.addEventListener('change', function(){
+          document.querySelectorAll('.device-select').forEach(function(cb){ cb.checked = selectAll.checked; });
+        });
+      }
+      var runBtn = document.getElementById('bulk-run-btn');
+      if (!runBtn) { return; }
+      runBtn.addEventListener('click', function(){
+        var ids = checkedIds();
+        if (!ids.length) { alert('Select at least one device.'); return; }
+        var tool = document.getElementById('bulk-tool-select').value;
+        var progressEl = document.getElementById('bulk-progress');
+        var resultsEl = document.getElementById('bulk-results');
+        progressEl.textContent = 'Dispatching...';
+        resultsEl.innerHTML = '';
+        fetch('/bulk/run', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') || ''},
+          body: JSON.stringify({tool: tool, device_ids: ids})
+        })
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+          if (data.error) { progressEl.textContent = data.error; return; }
+          var runs = data.runs || [];
+          var done = 0;
+          function updateProgress(){
+            progressEl.textContent = 'Completed ' + done + ' / ' + runs.length;
+          }
+          updateProgress();
+          runs.forEach(function(run){
+            var row = document.createElement('div');
+            row.style.marginBottom = '6px';
+            row.innerHTML = '<strong>' + run.device_ip + '</strong>: <span id=\"task-state-' + run.task_id + '\">queued</span>';
+            resultsEl.appendChild(row);
+            var timer = setInterval(function(){
+              fetch('/get-task-info/?task_id=' + encodeURIComponent(run.task_id), {
+                headers: {'X-Requested-With': 'XMLHttpRequest'},
+                credentials: 'same-origin'
+              })
+              .then(function(r){ return r.json(); })
+              .then(function(info){
+                var el = document.getElementById('task-state-' + run.task_id);
+                if (!el) { clearInterval(timer); return; }
+                el.textContent = (info.state || '').toLowerCase();
+                if (['SUCCESS','FAILURE','REVOKED'].indexOf(info.state) !== -1) {
+                  done += 1;
+                  updateProgress();
+                  clearInterval(timer);
+                }
+              })
+              .catch(function(){});
+            }, 2000);
+          });
+        })
+        .catch(function(){ progressEl.textContent = 'Bulk request failed'; });
+      });
+    })();
+    </script>
 {% endblock %}

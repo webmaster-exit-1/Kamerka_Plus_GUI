@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block page_title %}Task #{{ run.id }} - ꓘamerka{% endblock %}
+
+{% block content %}
+<div class="page-content-wrap">
+  <div class="row">
+    <div class="col-md-12">
+      <div class="panel panel-default">
+        <div class="panel-heading"><h3 class="panel-title">Task Run #{{ run.id }}</h3></div>
+        <div class="panel-body">
+          <p><strong>Tool:</strong> {{ run.get_tool_display }}</p>
+          <p><strong>Status:</strong> {{ run.status }}</p>
+          <p><strong>Task ID:</strong> <code>{{ run.task_id }}</code></p>
+          <p><strong>Celery task:</strong> <code>{{ run.celery_task_name }}</code></p>
+          <p><strong>Device:</strong> {% if run.device %}{{ run.device.ip }}{% else %}—{% endif %}</p>
+          <p><strong>User:</strong> {% if run.triggered_by %}{{ run.triggered_by.username }}{% else %}—{% endif %}</p>
+          <p><strong>Started:</strong> {{ run.started_at }}</p>
+          <p><strong>Finished:</strong> {{ run.finished_at|default:'—' }}</p>
+          <h4>Output</h4>
+          <pre style="max-height:300px;overflow:auto;">{{ run.output|default:'(none)' }}</pre>
+          <h4>Error</h4>
+          <pre style="max-height:300px;overflow:auto;">{{ run.error|default:'(none)' }}</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

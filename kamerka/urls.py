@@ -26,4 +26,9 @@ urlpatterns = [
 ]
 
 if settings.DEBUG:
-    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+handler400 = "app_kamerka.views.error_400"
+handler403 = "app_kamerka.views.error_403"
+handler404 = "app_kamerka.views.error_404"
+handler500 = "app_kamerka.views.error_500"

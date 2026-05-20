@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 # Create your models here.
@@ -193,3 +194,77 @@ class GFWStatus(models.Model):
     last_checked = models.DateTimeField(auto_now=True)
     ooni_report_id = models.CharField(max_length=200, default="")
     blocking_type = models.CharField(max_length=100, default="")
+
+
+class TaskRun(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_RUNNING = "running"
+    STATUS_SUCCESS = "success"
+    STATUS_FAILURE = "failure"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_RUNNING, "Running"),
+        (STATUS_SUCCESS, "Success"),
+        (STATUS_FAILURE, "Failure"),
+    ]
+
+    TOOL_WAPPALYZER = "wappalyzer"
+    TOOL_NUCLEI = "nuclei"
+    TOOL_NMAP = "nmap"
+    TOOL_PORT_SCAN = "port_scan"
+    TOOL_SCREENSHOT = "screenshot"
+    TOOL_RTSP = "rtsp"
+    TOOL_SHODAN_SCAN = "shodan_scan"
+    TOOL_WHOIS = "whois"
+    TOOL_NEARBY = "nearby"
+    TOOL_DEEP_SCAN = "deep_scan"
+    TOOL_NVD = "nvd"
+    TOOL_NRICH = "nrich"
+    TOOL_CVEDB = "cvedb"
+    TOOL_INTEL = "intel"
+    TOOL_HONEYPOT = "honeypot"
+    TOOL_SBOM = "sbom"
+    TOOL_GFW = "gfw"
+    TOOL_EXPLOITDB = "exploitdb"
+    TOOL_OTHER = "other"
+    TOOL_CHOICES = [
+        (TOOL_WAPPALYZER, "Wappalyzer"),
+        (TOOL_NUCLEI, "Nuclei"),
+        (TOOL_NMAP, "Nmap"),
+        (TOOL_PORT_SCAN, "Port Scan"),
+        (TOOL_SCREENSHOT, "Screenshot"),
+        (TOOL_RTSP, "RTSP"),
+        (TOOL_SHODAN_SCAN, "Shodan Scan"),
+        (TOOL_WHOIS, "Whois"),
+        (TOOL_NEARBY, "Nearby"),
+        (TOOL_DEEP_SCAN, "Deep Scan"),
+        (TOOL_NVD, "NVD"),
+        (TOOL_NRICH, "NRICH"),
+        (TOOL_CVEDB, "CVEDB"),
+        (TOOL_INTEL, "Shodan Intel"),
+        (TOOL_HONEYPOT, "Honeypot"),
+        (TOOL_SBOM, "SBOM"),
+        (TOOL_GFW, "GFW"),
+        (TOOL_EXPLOITDB, "ExploitDB"),
+        (TOOL_OTHER, "Other"),
+    ]
+
+    task_id = models.CharField(max_length=100, db_index=True, unique=True)
+    tool = models.CharField(max_length=50, choices=TOOL_CHOICES, default=TOOL_OTHER)
+    triggered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    device = models.ForeignKey(Device, on_delete=models.SET_NULL, null=True, blank=True)
+    search = models.ForeignKey(Search, on_delete=models.SET_NULL, null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    started_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    output = models.TextField(default="", blank=True)
+    error = models.TextField(default="", blank=True)
+    celery_task_name = models.CharField(max_length=255, default="", blank=True)
+
+    class Meta:
+        ordering = ["-started_at"]
+
+    def __str__(self):
+        return f"{self.tool}:{self.task_id}:{self.status}"

@@ -15,6 +15,7 @@ from django.core.management.utils import get_random_secret_key
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.makedirs(os.path.join(BASE_DIR, "logs"), exist_ok=True)
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
@@ -53,6 +54,14 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = os.environ.get('CELERY_TIMEZONE', 'UTC')
 CELERY_IMPORTS = ('kamerka.tasks', 'app_layers.tasks', 'app_feeds.tasks')
+CELERY_WORKER_CONCURRENCY = int(os.environ.get("CELERY_WORKER_CONCURRENCY", "4"))
+CELERY_TASK_ANNOTATIONS = {
+    "kamerka.tasks.nmap_device_scan": {"rate_limit": os.environ.get("KAMERKA_NMAP_RATE_LIMIT", "20/m")},
+    "kamerka.tasks.nuclei_scan": {"rate_limit": os.environ.get("KAMERKA_NUCLEI_RATE_LIMIT", "15/m")},
+    "kamerka.tasks.wappalyzer_scan": {"rate_limit": os.environ.get("KAMERKA_WAPPALYZER_RATE_LIMIT", "20/m")},
+    "kamerka.tasks.capture_screenshot": {"rate_limit": os.environ.get("KAMERKA_SCREENSHOT_RATE_LIMIT", "10/m")},
+    "kamerka.tasks.port_scan_task": {"rate_limit": os.environ.get("KAMERKA_PORTSCAN_RATE_LIMIT", "20/m")},
+}
 
 # ---------------------------------------------------------------------------
 # Celery Beat schedule — periodic tasks for layer refresh and feed ingestion
@@ -109,6 +118,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.locale.LocaleMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -116,6 +126,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'app_kamerka.middleware.SecurityHeadersMiddleware',
 ]
 
 ROOT_URLCONF = 'kamerka.urls'
@@ -150,6 +161,14 @@ if os.environ.get("DB_NAME"):
             "PASSWORD": os.environ.get("DB_PASSWORD", ""),
             "HOST": os.environ.get("DB_HOST", "localhost"),
             "PORT": os.environ.get("DB_PORT", "5432"),
+            "CONN_MAX_AGE": int(os.environ.get("DB_CONN_MAX_AGE", "60")),
+            "OPTIONS": {
+                "connect_timeout": int(os.environ.get("DB_CONNECT_TIMEOUT", "5")),
+                "keepalives": int(os.environ.get("DB_KEEPALIVES", "1")),
+                "keepalives_idle": int(os.environ.get("DB_KEEPALIVES_IDLE", "30")),
+                "keepalives_interval": int(os.environ.get("DB_KEEPALIVES_INTERVAL", "10")),
+                "keepalives_count": int(os.environ.get("DB_KEEPALIVES_COUNT", "5")),
+            },
         }
     }
 else:
@@ -210,6 +229,10 @@ LOCALE_PATHS = [
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
@@ -224,6 +247,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Prevent browsers from MIME-sniffing the content type.
 SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = os.environ.get("SECURE_REFERRER_POLICY", "same-origin")
 
 # Clickjacking protection — also enforced by XFrameOptionsMiddleware above.
 X_FRAME_OPTIONS = 'DENY'
@@ -240,6 +264,48 @@ SECURE_SSL_REDIRECT = os.environ.get('SECURE_SSL_REDIRECT', 'False').lower() in 
 # Mark session and CSRF cookies as secure (HTTPS-only) when SSL is in use.
 SESSION_COOKIE_SECURE = os.environ.get('SESSION_COOKIE_SECURE', 'False').lower() in ('true', '1', 'yes')
 CSRF_COOKIE_SECURE = os.environ.get('CSRF_COOKIE_SECURE', 'False').lower() in ('true', '1', 'yes')
+
+# ---------------------------------------------------------------------------
+# Rate limiter settings
+# ---------------------------------------------------------------------------
+KAMERKA_RATE_WINDOW_SECONDS = int(os.environ.get("KAMERKA_RATE_WINDOW_SECONDS", "60"))
+KAMERKA_GLOBAL_RATE = int(os.environ.get("KAMERKA_GLOBAL_RATE", "120"))
+KAMERKA_DEFAULT_TOOL_RATE = int(os.environ.get("KAMERKA_DEFAULT_TOOL_RATE", "30"))
+KAMERKA_NMAP_RATE = int(os.environ.get("KAMERKA_NMAP_RATE", "20"))
+KAMERKA_NUCLEI_RATE = int(os.environ.get("KAMERKA_NUCLEI_RATE", "15"))
+KAMERKA_WAPPALYZER_RATE = int(os.environ.get("KAMERKA_WAPPALYZER_RATE", "20"))
+KAMERKA_SCREENSHOT_RATE = int(os.environ.get("KAMERKA_SCREENSHOT_RATE", "10"))
+KAMERKA_PORTSCAN_RATE = int(os.environ.get("KAMERKA_PORTSCAN_RATE", "20"))
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "WARNING").upper()
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
+        }
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "default",
+            "level": LOG_LEVEL,
+        },
+        "file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": os.path.join(BASE_DIR, "logs", "kamerka.log"),
+            "maxBytes": 5 * 1024 * 1024,
+            "backupCount": 3,
+            "formatter": "default",
+            "level": LOG_LEVEL,
+        },
+    },
+    "root": {"handlers": ["console", "file"], "level": LOG_LEVEL},
+}
 
 # ---------------------------------------------------------------------------
 # External tool binary paths
