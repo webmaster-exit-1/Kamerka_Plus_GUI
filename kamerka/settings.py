@@ -90,6 +90,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "app_layers.tasks.refresh_all_layers",
         "schedule": _LAYER_REFRESH_INTERVAL,
     },
+    "schedule-enabled-watchlists": {
+        "task": "kamerka.tasks.schedule_enabled_watchlists",
+        "schedule": 60,  # every minute
+    },
 }
 
 # ---------------------------------------------------------------------------

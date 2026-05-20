@@ -36,6 +36,7 @@ from app_kamerka.models import (
     Device,
     DeviceNearby,
     Search,
+    Watchlist,
     ShodanScan,
     Whois,
     Bosch,
@@ -48,6 +49,8 @@ from app_kamerka.models import (
     GFWStatus,
 )
 from django.conf import settings
+from django.db.models import Q
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -580,6 +583,70 @@ def shodan_search(
     return result
 
 
+@shared_task(bind=False)
+def run_watchlist_refresh(watchlist_id, update_schedule=True):
+    """Queue a Shodan refresh for one watchlist and update its timestamps.
+
+    Args:
+        watchlist_id: Primary key of the Watchlist to execute.
+        update_schedule: When True, advance ``next_run_at`` to the next interval.
+            Scheduler-triggered runs set this False because scheduling was already
+            advanced before enqueue.
+
+    Returns:
+        dict: Status payload with ``status`` and optional ``search_id``/``task_id``.
+    """
+    watchlist = Watchlist.objects.filter(id=watchlist_id).first()
+    if watchlist is None:
+        return {"status": "missing"}
+    if not watchlist.enabled:
+        return {"status": "disabled"}
+
+    query_items = watchlist.query_items or []
+    if not query_items:
+        return {"status": "empty"}
+
+    search = Search.objects.create(
+        coordinates=watchlist.coordinates or "",
+        country=watchlist.country or "",
+        ics=str(query_items),
+        coordinates_search=str(query_items),
+    )
+    task_kwargs = {"fk": search.id, "all_results": watchlist.all_results}
+    if watchlist.query_type == Watchlist.QUERY_COORDINATES:
+        task_kwargs["coordinates"] = watchlist.coordinates
+        task_kwargs["coordinates_search"] = query_items
+    else:
+        task_kwargs["country"] = watchlist.country
+        task_kwargs["ics"] = query_items
+        task_kwargs["healthcare"] = watchlist.healthcare
+    task_result = shodan_search.delay(**task_kwargs)
+    now = timezone.now()
+    watchlist.last_run_at = now
+    if update_schedule:
+        watchlist.next_run_at = watchlist.compute_next_run_at(now)
+        watchlist.save(update_fields=["last_run_at", "next_run_at", "updated_at"])
+    else:
+        watchlist.save(update_fields=["last_run_at", "updated_at"])
+    return {"status": "queued", "search_id": search.id, "task_id": str(task_result.id)}
+
+
+@shared_task(bind=False)
+def schedule_enabled_watchlists():
+    """Queue refresh tasks for enabled watchlists that are due to run."""
+    now = timezone.now()
+    due = Watchlist.objects.filter(enabled=True).filter(
+        Q(next_run_at__isnull=True) | Q(next_run_at__lte=now)
+    )
+    queued = 0
+    for watchlist in due:
+        watchlist.next_run_at = watchlist.compute_next_run_at(now)
+        watchlist.save(update_fields=["next_run_at", "updated_at"])
+        run_watchlist_refresh.delay(watchlist.id, False)
+        queued += 1
+    return {"queued": queued}
+
+
 def check_credits():
     keys_list = []
     try:
@@ -614,6 +681,33 @@ def _shodan_download_path(search_id):
     downloads_dir = os.path.join(settings.BASE_DIR, "shodan_downloads")
     os.makedirs(downloads_dir, exist_ok=True)
     return os.path.join(downloads_dir, "{}.json.gz".format(search_id))
+
+
+def _upsert_device(search, defaults):
+    """Update or create a Device identified by ``ip`` + ``port``.
+
+    Args:
+        search: Search instance to associate with the resulting Device.
+        defaults: Mapping of Device field names to values parsed from scan data.
+
+    Returns:
+        Device: The created or updated device record.
+    """
+    ip = defaults.get("ip", "")
+    port = defaults.get("port", "")
+    existing = Device.objects.filter(ip=ip, port=port).first()
+    if existing is None:
+        return Device.objects.create(search=search, **defaults)
+
+    for field, value in defaults.items():
+        if value is None:
+            continue
+        if isinstance(value, (list, dict)) and len(value) == 0:
+            continue
+        setattr(existing, field, value)
+    existing.search = search
+    existing.save()
+    return existing
 
 
 def shodan_search_worker(
@@ -864,28 +958,29 @@ def shodan_search_worker(
                         exc,
                     )
 
-            device = Device(
-                search=search,
-                ip=result["ip_str"],
-                product=product,
-                org=result["org"],
-                data=result["data"],
-                port=str(result["port"]),
-                type=search_type,
-                city=city,
-                lat=lat,
-                lon=lon,
-                country_code=result["location"]["country_code"],
-                query=search_type,
-                category=category,
-                vulns=vulns,
-                indicator=indicator,
-                hostnames=hostnames,
-                screenshot=screenshot,
-                isp=isp,
-                cpe=cpe,
+            _upsert_device(
+                search,
+                {
+                    "ip": result["ip_str"],
+                    "product": product,
+                    "org": result["org"],
+                    "data": result["data"],
+                    "port": str(result["port"]),
+                    "type": search_type,
+                    "city": city,
+                    "lat": lat,
+                    "lon": lon,
+                    "country_code": result["location"]["country_code"],
+                    "query": search_type,
+                    "category": category,
+                    "vulns": vulns,
+                    "indicator": indicator,
+                    "hostnames": hostnames,
+                    "screenshot": screenshot,
+                    "isp": isp,
+                    "cpe": cpe,
+                },
             )
-            device.save()
 
         fout.close()
     except Exception as exc:
@@ -922,26 +1017,27 @@ def nmap_host_worker(host_arg, max_reader, search):
 
     ports_string = ", ".join(str(e) for e in ports_list)
     logger.debug("ports_string length=%d", len(ports_string))
-    device = Device(
-        search=search,
-        ip=host_arg.address,
-        product="",
-        org="",
-        data="",
-        port=ports_string,
-        type="NMAP",
-        city="NMAP",
-        lat=lat if lat is not None else None,
-        lon=lon if lon is not None else None,
-        country_code=country_code,
-        query="NMAP SCAN",
-        category="NMAP",
-        vulns="",
-        indicator="",
-        hostnames=hostname,
-        screenshot="",
+    _upsert_device(
+        search,
+        {
+            "ip": host_arg.address,
+            "product": "",
+            "org": "",
+            "data": "",
+            "port": ports_string,
+            "type": "NMAP",
+            "city": "NMAP",
+            "lat": lat if lat is not None else None,
+            "lon": lon if lon is not None else None,
+            "country_code": country_code,
+            "query": "NMAP SCAN",
+            "category": "NMAP",
+            "vulns": "",
+            "indicator": "",
+            "hostnames": hostname,
+            "screenshot": "",
+        },
     )
-    device.save()
 
 
 def validate_nmap(file):

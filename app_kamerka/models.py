@@ -1,5 +1,7 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
+from datetime import timedelta
 
 # Create your models here.
 
@@ -10,6 +12,39 @@ class Search(models.Model):
     ics = models.CharField(max_length=100)
     coordinates_search = models.CharField(max_length=1000)
     nmap = models.BooleanField(default=False)
+
+
+class Watchlist(models.Model):
+    QUERY_COUNTRY = "country"
+    QUERY_COORDINATES = "coordinates"
+    QUERY_TYPE_CHOICES = [
+        (QUERY_COUNTRY, "Country"),
+        (QUERY_COORDINATES, "Coordinates"),
+    ]
+
+    name = models.CharField(max_length=120, unique=True)
+    query_type = models.CharField(
+        max_length=20, choices=QUERY_TYPE_CHOICES, default=QUERY_COUNTRY
+    )
+    country = models.CharField(max_length=100, default="", blank=True)
+    coordinates = models.CharField(max_length=100, default="", blank=True)
+    query_items = models.JSONField(default=list, blank=True)
+    category = models.CharField(max_length=100, default="ics")
+    healthcare = models.BooleanField(default=False)
+    all_results = models.BooleanField(default=False)
+    enabled = models.BooleanField(default=True)
+    refresh_interval_minutes = models.PositiveIntegerField(default=60)
+    last_run_at = models.DateTimeField(null=True, blank=True)
+    next_run_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+    def compute_next_run_at(self, from_time=None):
+        base = from_time or timezone.now()
+        return base + timedelta(minutes=max(1, self.refresh_interval_minutes))
 
 
 class Device(models.Model):
