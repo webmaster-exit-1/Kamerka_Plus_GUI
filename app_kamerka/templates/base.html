@@ -117,8 +117,10 @@
             <a href="/history" class="kamerka-nav-link">&#x1F4C2; History</a>
             <a href="/map"     class="kamerka-nav-link">&#x1F4CD; Map</a>
             <a href="/globe"   class="kamerka-nav-link">&#x1F30D; Globe</a>
+            <a href="/tasks"   class="kamerka-nav-link">&#x23F1; Tasks</a>
             <a href="/gallery" class="kamerka-nav-link">&#x1F4F7; Screenshots</a>
             <a href="/devices" class="kamerka-nav-link">&#x1F50D; Search</a>
+            <a href="/healthz/setup/" class="kamerka-nav-link">&#x2705; First Run Checks</a>
             <a href="/sources" class="kamerka-nav-link">&#x1F4D6; Useful Links</a>
         </nav>
 
@@ -165,6 +167,12 @@
                     </a>
                 </li>
                 <li class="">
+                    <a href="/tasks">
+                        <span class="fa fa-tasks"></span>
+                        <span class="xn-text">Tasks</span>
+                    </a>
+                </li>
+                <li class="">
                     <a href="/gallery">
                         <span class="fa fa-camera"></span>
                         <span class="xn-text">Screenshots</span>
@@ -178,10 +186,22 @@
                 </li>
                 <li class="xn-title">Components</li>
                 <li>
+                    <a href="/healthz/setup/">
+                        <span class="fa fa-check-circle"></span>
+                        <span class="xn-text">First run checks</span>
+                    </a>
+                </li>
+                <li>
                     <a href="/sources">
                         <span class="fa fa-book"></span>
                         <span class="xn-text">Useful links</span>
                     </a>
+                </li>
+                <li class="xn-title">Worker Status</li>
+                <li style="padding:10px 15px;color:#9fb4d6;font-family:monospace;">
+                    <div>Active: <span id="worker-active">-</span></div>
+                    <div>Reserved: <span id="worker-reserved">-</span></div>
+                    <div>Queue: <span id="worker-queue">-</span></div>
                 </li>
                 <!--
                     Child templates that need extra sidebar sections
@@ -208,6 +228,27 @@
     -->
     <script src="{% static 'js/plugins.js' %}"></script>
     <script src="{% static 'js/actions.js' %}"></script>
+    <script>
+    (function(){
+      function refreshWorkerStatus(){
+        fetch('/api/worker_status', {credentials: 'same-origin'})
+          .then(function(r){ return r.json(); })
+          .then(function(data){
+            var active = document.getElementById('worker-active');
+            var reserved = document.getElementById('worker-reserved');
+            var queue = document.getElementById('worker-queue');
+            if (active) { active.textContent = data.active_tasks; }
+            if (reserved) { reserved.textContent = data.reserved_tasks; }
+            if (queue) { queue.textContent = (data.queue_depth === null ? 'n/a' : data.queue_depth); }
+          })
+          .catch(function(){});
+      }
+      document.addEventListener('DOMContentLoaded', function(){
+        refreshWorkerStatus();
+        setInterval(refreshWorkerStatus, 30000);
+      });
+    })();
+    </script>
 
     <!--
         PAGE-SPECIFIC BUNDLES

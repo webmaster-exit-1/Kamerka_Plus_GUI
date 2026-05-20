@@ -5,10 +5,15 @@ import logging
 import math
 import os
 import re
+import shutil
+import subprocess
 import time
 from collections import Counter
 from django.conf import settings
+from django.core.cache import cache
 from django.core.files.storage import FileSystemStorage
+from django.core.paginator import Paginator
+from django.db import connection
 from .forms import UploadFileForm
 import pycountry
 from celery.result import AsyncResult
@@ -17,7 +22,10 @@ from django.db.models import Count, Max, Exists, OuterRef, Subquery, FloatField
 from django.db.models.functions import Coalesce
 from django.http import HttpResponse, JsonResponse
 from django.http import HttpResponseRedirect
+from django.shortcuts import get_object_or_404
 from django.shortcuts import render
+from django.views.decorators.http import require_POST
+from django.contrib.auth.decorators import login_required, user_passes_test
 from app_kamerka import forms
 from app_kamerka.models import (
     Search,
@@ -33,7 +41,9 @@ from app_kamerka.models import (
     HoneypotAnalysis,
     SBOMComponent,
     GFWStatus,
+    TaskRun,
 )
+from app_kamerka.task_utils import record_task_run, sync_task_run, sync_task_run_by_task_id
 from app_feeds.models import FeedEntry
 from kamerka.tasks import (
     shodan_search,
@@ -131,6 +141,60 @@ def _safe_coord(value):
         return float(value)
     except (ValueError, TypeError):
         return None
+
+
+def _coord_for_csv(value):
+    """Return *value* for CSV output, or "" when the coordinate is None.
+
+    Unlike ``value or ""``, this preserves valid falsy coordinates such as 0.0
+    (equator / prime meridian) that would otherwise be replaced with an empty
+    string.
+    """
+    return "" if value is None else value
+
+
+def _enqueue_tracked_task(
+    request,
+    task_callable,
+    *,
+    task_args=None,
+    task_kwargs=None,
+    device_id=None,
+    search_id=None,
+    tool=None,
+):
+    task_args = task_args or []
+    task_kwargs = task_kwargs or {}
+    async_result = task_callable.delay(*task_args, **task_kwargs)
+    task_id = str(getattr(async_result, "id", "") or getattr(async_result, "task_id", ""))
+    task_run = record_task_run(
+        task_id=task_id,
+        celery_task_name=str(getattr(task_callable, "name", "") or ""),
+        tool=tool,
+        user=getattr(request, "user", None),
+        device_id=device_id,
+        search_id=search_id,
+    )
+    if task_run is None:
+        # Celery returned a result with no id; create a placeholder record so
+        # callers can always rely on task_run.id without AttributeError.
+        import uuid
+        from app_kamerka.task_utils import infer_tool as _infer_tool
+        user = getattr(request, "user", None)
+        task_run = TaskRun.objects.create(
+            task_id=task_id or str(uuid.uuid4()),
+            tool=_infer_tool(str(getattr(task_callable, "name", "") or ""), tool),
+            celery_task_name=str(getattr(task_callable, "name", "") or ""),
+            triggered_by=user if getattr(user, "is_authenticated", False) else None,
+        )
+    return async_result, task_run
+
+
+def _sync_runs_for_device(device):
+    if not device:
+        return []
+    runs = list(TaskRun.objects.filter(device=device).order_by("-started_at")[:5])
+    return [sync_task_run(run) for run in runs]
 
 
 def _haversine_miles(lat1, lon1, lat2, lon2):
@@ -335,10 +399,14 @@ def search_main(request):
             else:
                 all_results = False
 
-            shodan_search_task = shodan_search.delay(
-                fk=search.id, country=code, ics=post, all_results=all_results
+            shodan_search_task, _ = _enqueue_tracked_task(
+                request,
+                shodan_search,
+                task_kwargs={"fk": search.id, "country": code, "ics": post, "all_results": all_results},
+                search_id=search.id,
+                tool=TaskRun.TOOL_OTHER,
             )
-            request.session["task_id"] = shodan_search_task.task_id
+            request.session["task_id"] = str(shodan_search_task.id)
 
             return HttpResponseRedirect("index")
 
@@ -361,14 +429,20 @@ def search_main(request):
             else:
                 all_results = False
 
-            shodan_search_task = shodan_search.delay(
-                fk=search.id,
-                country=code,
-                ics=post,
-                healthcare=True,
-                all_results=all_results,
+            shodan_search_task, _ = _enqueue_tracked_task(
+                request,
+                shodan_search,
+                task_kwargs={
+                    "fk": search.id,
+                    "country": code,
+                    "ics": post,
+                    "healthcare": True,
+                    "all_results": all_results,
+                },
+                search_id=search.id,
+                tool=TaskRun.TOOL_OTHER,
             )
-            request.session["task_id"] = shodan_search_task.task_id
+            request.session["task_id"] = str(shodan_search_task.id)
 
             return HttpResponseRedirect("index")
 
@@ -385,13 +459,19 @@ def search_main(request):
             )
 
             search.save()
-            shodan_search_task = shodan_search.delay(
-                fk=search.id,
-                coordinates=coordinates,
-                coordinates_search=request.POST.getlist("coordinates_search"),
+            shodan_search_task, _ = _enqueue_tracked_task(
+                request,
+                shodan_search,
+                task_kwargs={
+                    "fk": search.id,
+                    "coordinates": coordinates,
+                    "coordinates_search": request.POST.getlist("coordinates_search"),
+                },
+                search_id=search.id,
+                tool=TaskRun.TOOL_OTHER,
             )
 
-            request.session["task_id"] = shodan_search_task.task_id
+            request.session["task_id"] = str(shodan_search_task.id)
 
             return HttpResponseRedirect("index")
 
@@ -413,10 +493,14 @@ def search_main(request):
             else:
                 all_results = False
 
-            shodan_search_task = shodan_search.delay(
-                fk=search.id, country=code, ics=post, all_results=all_results
+            shodan_search_task, _ = _enqueue_tracked_task(
+                request,
+                shodan_search,
+                task_kwargs={"fk": search.id, "country": code, "ics": post, "all_results": all_results},
+                search_id=search.id,
+                tool=TaskRun.TOOL_OTHER,
             )
-            request.session["task_id"] = shodan_search_task.task_id
+            request.session["task_id"] = str(shodan_search_task.id)
 
             return HttpResponseRedirect("index")
 
@@ -437,9 +521,16 @@ def search_main(request):
                 validate_maxmind()
                 search = Search(country="NMAP Scan", ics=myfile.name, nmap=True)
                 search.save()
-                nmap_task = nmap_scan.delay(uploaded_file_path, fk=search.id)
+                nmap_task, _ = _enqueue_tracked_task(
+                    request,
+                    nmap_scan,
+                    task_args=[uploaded_file_path],
+                    task_kwargs={"fk": search.id},
+                    search_id=search.id,
+                    tool=TaskRun.TOOL_NMAP,
+                )
 
-                request.session["task_id"] = nmap_task.task_id
+                request.session["task_id"] = str(nmap_task.id)
                 print("session")
             except Exception as e:
                 print(e)
@@ -690,26 +781,26 @@ def update_coordinates(request, id, coordinates):
 
 
 def device(request, id, device_id, ip):
-    all_devices = Device.objects.get(search_id=id, id=device_id)
-    nearby = DeviceNearby.objects.filter(device_id=all_devices.id)
-    local_nearby_devices = _get_local_nearby_devices(all_devices)
-    shodan = ShodanScan.objects.filter(device_id=all_devices.id)
-    wappalyzer = WappalyzerResult.objects.filter(device_id=all_devices.id)
-    nuclei = NucleiResult.objects.filter(device_id=all_devices.id)
+    device_obj = Device.objects.get(search_id=id, id=device_id)
+    nearby = DeviceNearby.objects.filter(device_id=device_obj.id)
+    local_nearby_devices = _get_local_nearby_devices(device_obj)
+    shodan = ShodanScan.objects.filter(device_id=device_obj.id)
+    wappalyzer = WappalyzerResult.objects.filter(device_id=device_obj.id)
+    nuclei = NucleiResult.objects.filter(device_id=device_obj.id)
 
     try:
-        all_devices.indicator = ast.literal_eval(all_devices.indicator)
+        device_obj.indicator = ast.literal_eval(device_obj.indicator)
     except:
         pass
 
-    if all_devices.type in passwds.keys():
-        info = passwds[all_devices.type]
+    if device_obj.type in passwds.keys():
+        info = passwds[device_obj.type]
     else:
         info = ""
 
     nuclei_templates_dir = os.path.join(settings.BASE_DIR, "nuclei_templates")
     nuclei_template_list = []
-    device_type_lower = (all_devices.type or "").lower()
+    device_type_lower = (device_obj.type or "").lower()
 
     # Load the manifest so we know which template paths are recommended for
     # this device type without relying on directory-name guessing.
@@ -780,20 +871,20 @@ def device(request, id, device_id, ip):
                     }
                 )
 
-    cve_list = _parse_vulns(all_devices.vulns)
+    cve_list = _parse_vulns(device_obj.vulns)
 
     # New intelligence data
-    fingerprints = ProtocolFingerprint.objects.filter(device_id=all_devices.id)
-    vuln_intel = VulnIntelligence.objects.filter(device_id=all_devices.id)
-    honeypot = HoneypotAnalysis.objects.filter(device_id=all_devices.id).first()
+    fingerprints = ProtocolFingerprint.objects.filter(device_id=device_obj.id)
+    vuln_intel = VulnIntelligence.objects.filter(device_id=device_obj.id)
+    honeypot = HoneypotAnalysis.objects.filter(device_id=device_obj.id).first()
     honeypot_reasons = []
     if honeypot and honeypot.reasons:
         try:
             honeypot_reasons = json.loads(honeypot.reasons)
         except (json.JSONDecodeError, TypeError):
             pass
-    sbom_components = SBOMComponent.objects.filter(device_id=all_devices.id)
-    gfw_status = GFWStatus.objects.filter(device_id=all_devices.id).first()
+    sbom_components = SBOMComponent.objects.filter(device_id=device_obj.id)
+    gfw_status = GFWStatus.objects.filter(device_id=device_obj.id).first()
 
     # Compute max EPSS for risk meter
     max_epss = 0.0
@@ -818,20 +909,20 @@ def device(request, id, device_id, ip):
     nse_scripts = [{"label": k, "path": v} for k, v in NSE_SCRIPT_CATALOG.items()]
 
     # Validate device coordinates for safe JS injection
-    safe_lat = _safe_coord(all_devices.lat)
-    safe_lon = _safe_coord(all_devices.lon)
+    safe_lat = _safe_coord(device_obj.lat)
+    safe_lon = _safe_coord(device_obj.lon)
     if safe_lat is None:
         safe_lat = 0.0
     if safe_lon is None:
         safe_lon = 0.0
 
     context = {
-        "device": all_devices,
-        "device_ip_safe": all_devices.ip.replace(".", "_"),
+        "device": device_obj,
+        "device_ip_safe": device_obj.ip.replace(".", "_"),
         "safe_lat": safe_lat,
         "safe_lon": safe_lon,
-        "scan_json": _scan_to_json(all_devices.scan),
-        "exploit_json": _scan_to_json(all_devices.exploit),
+        "scan_json": _scan_to_json(device_obj.scan),
+        "exploit_json": _scan_to_json(device_obj.exploit),
         "nearby": nearby,
         "local_nearby_devices": local_nearby_devices,
         "shodan": shodan,
@@ -852,6 +943,7 @@ def device(request, id, device_id, ip):
         "has_exploit": has_exploit,
         "nse_scripts": nse_scripts,
         "nearby_queries": coordinates_queries,
+        "recent_task_runs": _sync_runs_for_device(device_obj),
     }
 
     return render(request, "device.html", context)
@@ -863,11 +955,15 @@ def nearby(request, id, query):
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
         all_devices = Device.objects.filter(id=id)
-        device_nearby_task = devices_nearby.delay(
-            lat=all_devices[0].lat, lon=all_devices[0].lon, id=id, query=query
+        device_nearby_task, task_run = _enqueue_tracked_task(
+            request,
+            devices_nearby,
+            task_kwargs={"lat": all_devices[0].lat, "lon": all_devices[0].lon, "id": id, "query": query},
+            device_id=id,
+            tool=TaskRun.TOOL_NEARBY,
         )
         return HttpResponse(
-            json.dumps({"task_id": device_nearby_task.id}),
+            json.dumps({"task_id": device_nearby_task.id, "task_run_id": task_run.id}),
             content_type="application/json",
         )
     else:
@@ -888,9 +984,16 @@ def wappalyzer_scan_view(request, id):
                 json.dumps({"Error": "Already in database"}),
                 content_type="application/json",
             )
-        wap_task = wappalyzer_scan.delay(id=id)
+        wap_task, task_run = _enqueue_tracked_task(
+            request,
+            wappalyzer_scan,
+            task_kwargs={"id": id},
+            device_id=id,
+            tool=TaskRun.TOOL_WAPPALYZER,
+        )
         return HttpResponse(
-            json.dumps({"task_id": wap_task.id}), content_type="application/json"
+            json.dumps({"task_id": wap_task.id, "task_run_id": task_run.id}),
+            content_type="application/json",
         )
     else:
         return HttpResponse(
@@ -902,11 +1005,16 @@ def nuclei_scan_view(request, id):
     if request.method == "GET":
         severity = request.GET.get("severity", None)
         templates_dir = request.GET.get("templates_dir", None)
-        nuclei_task = nuclei_scan.delay(
-            id=id, templates_dir=templates_dir, severity=severity
+        nuclei_task, task_run = _enqueue_tracked_task(
+            request,
+            nuclei_scan,
+            task_kwargs={"id": id, "templates_dir": templates_dir, "severity": severity},
+            device_id=id,
+            tool=TaskRun.TOOL_NUCLEI,
         )
         return HttpResponse(
-            json.dumps({"task_id": nuclei_task.id}), content_type="application/json"
+            json.dumps({"task_id": nuclei_task.id, "task_run_id": task_run.id}),
+            content_type="application/json",
         )
     else:
         return HttpResponse(
@@ -943,9 +1051,15 @@ def shodan_scan(request, id):
                 content_type="application/json",
             )
 
-        shodan_scan_task2 = shodan_scan_task.delay(id=id)
+        shodan_scan_task2, task_run = _enqueue_tracked_task(
+            request,
+            shodan_scan_task,
+            task_kwargs={"id": id},
+            device_id=id,
+            tool=TaskRun.TOOL_SHODAN_SCAN,
+        )
         return HttpResponse(
-            json.dumps({"task_id": shodan_scan_task2.id}),
+            json.dumps({"task_id": shodan_scan_task2.id, "task_run_id": task_run.id}),
             content_type="application/json",
         )
     else:
@@ -969,6 +1083,7 @@ def get_task_info(request):
     try:
         if task_id is not None:
             task = AsyncResult(task_id)
+            sync_task_run_by_task_id(task_id)
             result = task.result
             # Ensure the result is JSON-serializable (Exceptions are not)
             if isinstance(result, Exception):
@@ -1028,9 +1143,17 @@ def scan_dev(request, id):
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
         nse_script = request.GET.get("nse_script", None)
-        task = nmap_device_scan.delay(int(id), nse_script=nse_script)
+        task, task_run = _enqueue_tracked_task(
+            request,
+            nmap_device_scan,
+            task_args=[int(id)],
+            task_kwargs={"nse_script": nse_script},
+            device_id=id,
+            tool=TaskRun.TOOL_NMAP,
+        )
         return HttpResponse(
-            json.dumps({"task_id": task.id}), content_type="application/json"
+            json.dumps({"task_id": task.id, "task_run_id": task_run.id}),
+            content_type="application/json",
         )
     else:
         return HttpResponse(
@@ -1050,9 +1173,17 @@ def manual_nmap_view(request, id):
                 json.dumps({"error": "No flags provided"}),
                 content_type="application/json",
             )
-        task = nmap_manual_scan.delay(int(id), flags=flags)
+        task, task_run = _enqueue_tracked_task(
+            request,
+            nmap_manual_scan,
+            task_args=[int(id)],
+            task_kwargs={"flags": flags},
+            device_id=id,
+            tool=TaskRun.TOOL_NMAP,
+        )
         return HttpResponse(
-            json.dumps({"task_id": task.id}), content_type="application/json"
+            json.dumps({"task_id": task.id, "task_run_id": task_run.id}),
+            content_type="application/json",
         )
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
 
@@ -1093,9 +1224,16 @@ def exploit_cve_view(request, device_id, cve_id):
                 content_type="application/json",
                 status=400,
             )
-        task = run_cve_exploit.delay(int(device_id), cve_id.strip())
+        task, task_run = _enqueue_tracked_task(
+            request,
+            run_cve_exploit,
+            task_args=[int(device_id), cve_id.strip()],
+            device_id=device_id,
+            tool=TaskRun.TOOL_OTHER,
+        )
         return HttpResponse(
-            json.dumps({"task_id": task.id}), content_type="application/json"
+            json.dumps({"task_id": task.id, "task_run_id": task_run.id}),
+            content_type="application/json",
         )
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
 
@@ -1182,9 +1320,16 @@ def port_scan_view(request, id):
         request.method == "GET"
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
-        scan_task = port_scan_task.delay(int(id))
+        scan_task, task_run = _enqueue_tracked_task(
+            request,
+            port_scan_task,
+            task_args=[int(id)],
+            device_id=id,
+            tool=TaskRun.TOOL_PORT_SCAN,
+        )
         return HttpResponse(
-            json.dumps({"task_id": scan_task.id}), content_type="application/json"
+            json.dumps({"task_id": scan_task.id, "task_run_id": task_run.id}),
+            content_type="application/json",
         )
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
 
@@ -1241,11 +1386,19 @@ def port_scan_ip_view(request, target_ip):
                 screenshot="",
             )
             device.save()
-        scan_task = port_scan_task.delay(device.id)
+        scan_task, task_run = _enqueue_tracked_task(
+            request,
+            port_scan_task,
+            task_args=[device.id],
+            device_id=device.id,
+            search_id=device.search_id,
+            tool=TaskRun.TOOL_PORT_SCAN,
+        )
         return HttpResponse(
             json.dumps(
                 {
                     "task_id": scan_task.id,
+                    "task_run_id": task_run.id,
                     "device_id": device.id,
                     "search_id": device.search_id,
                 }
@@ -1257,18 +1410,58 @@ def port_scan_ip_view(request, target_ip):
 
 def export_csv(request, id):
     """Export search results as CSV for FOSS geospatial tools (QGIS, Kepler.gl, the built-in globe)."""
+    import csv
+    import io
     import tempfile
 
     fd, output_path = tempfile.mkstemp(suffix=".csv")
     os.close(fd)
     shodan_csv_export(id, output_path)
     try:
-        with open(output_path, "r") as f:
-            response = HttpResponse(f.read(), content_type="text/csv")
-            response["Content-Disposition"] = (
-                'attachment; filename="shodan_export_{}.csv"'.format(id)
+        try:
+            with open(output_path, "r", encoding="utf-8", errors="strict") as f:
+                content = f.read()
+        except UnicodeDecodeError:
+            with open(output_path, "r", encoding="latin-1", errors="strict") as f:
+                content = f.read()
+        lines = [line for line in content.splitlines() if line.strip()]
+        if len(lines) <= 1 and Device.objects.filter(search_id=id).exists():
+            out = io.StringIO()
+            writer = csv.DictWriter(
+                out,
+                fieldnames=[
+                    "ip_str",
+                    "port",
+                    "org",
+                    "product",
+                    "city",
+                    "latitude",
+                    "longitude",
+                    "country_code",
+                    "type",
+                ],
             )
-            return response
+            writer.writeheader()
+            for device in Device.objects.filter(search_id=id):
+                writer.writerow(
+                    {
+                        "ip_str": device.ip or "",
+                        "port": device.port or "",
+                        "org": device.org or "",
+                        "product": device.product or "",
+                        "city": device.city or "",
+                        "latitude": _coord_for_csv(device.lat),
+                        "longitude": _coord_for_csv(device.lon),
+                        "country_code": device.country_code or "",
+                        "type": device.type or "",
+                    }
+                )
+            content = out.getvalue()
+        response = HttpResponse(content, content_type="text/csv")
+        response["Content-Disposition"] = (
+            'attachment; filename="shodan_export_{}.csv"'.format(id)
+        )
+        return response
     finally:
         if os.path.exists(output_path):
             os.remove(output_path)
@@ -1276,20 +1469,49 @@ def export_csv(request, id):
 
 def export_kml(request, id):
     """Export search results as KML for FOSS geospatial tools (QGIS, Leaflet, uMap)."""
+    from xml.sax.saxutils import escape
     import tempfile
 
     fd, output_path = tempfile.mkstemp(suffix=".kml")
     os.close(fd)
     shodan_kml_export(id, output_path)
     try:
-        with open(output_path, "r") as f:
-            response = HttpResponse(
-                f.read(), content_type="application/vnd.google-earth.kml+xml"
-            )
-            response["Content-Disposition"] = (
-                'attachment; filename="shodan_export_{}.kml"'.format(id)
-            )
-            return response
+        try:
+            with open(output_path, "r", encoding="utf-8", errors="strict") as f:
+                content = f.read()
+        except UnicodeDecodeError:
+            with open(output_path, "r", encoding="latin-1", errors="strict") as f:
+                content = f.read()
+        if "<Placemark" not in content and Device.objects.filter(search_id=id).exists():
+            placemarks = []
+            for device in Device.objects.filter(search_id=id):
+                lat = _safe_coord(device.lat)
+                lon = _safe_coord(device.lon)
+                if lat is None or lon is None:
+                    continue
+                placemarks.append(
+                    "<Placemark>"
+                    "<name>{}</name>"
+                    "<description>{}</description>"
+                    "<Point><coordinates>{},{},0</coordinates></Point>"
+                    "</Placemark>".format(
+                        escape(device.ip or ""),
+                        escape(device.product or device.type or ""),
+                        lon,
+                        lat,
+                    )
+                )
+            content = (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<kml xmlns="http://www.opengis.net/kml/2.2"><Document>{}</Document></kml>'
+            ).format("".join(placemarks))
+        response = HttpResponse(
+            content, content_type="application/vnd.google-earth.kml+xml"
+        )
+        response["Content-Disposition"] = (
+            'attachment; filename="shodan_export_{}.kml"'.format(id)
+        )
+        return response
     finally:
         if os.path.exists(output_path):
             os.remove(output_path)
@@ -1369,9 +1591,16 @@ def export_geojson_enhanced(request, id):
 def rtsp_scan_view(request, id):
     """Trigger RTSP enumeration scan for a device."""
     if request.method == "GET":
-        rtsp_task = nmap_rtsp_scan.delay(id=id)
+        rtsp_task, task_run = _enqueue_tracked_task(
+            request,
+            nmap_rtsp_scan,
+            task_kwargs={"id": id},
+            device_id=id,
+            tool=TaskRun.TOOL_RTSP,
+        )
         return HttpResponse(
-            json.dumps({"task_id": rtsp_task.id}), content_type="application/json"
+            json.dumps({"task_id": rtsp_task.id, "task_run_id": task_run.id}),
+            content_type="application/json",
         )
     else:
         return HttpResponse(
@@ -1385,9 +1614,16 @@ def screenshot_view(request, id):
         request.method == "GET"
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
-        task = capture_screenshot.delay(int(id))
+        task, task_run = _enqueue_tracked_task(
+            request,
+            capture_screenshot,
+            task_args=[int(id)],
+            device_id=id,
+            tool=TaskRun.TOOL_SCREENSHOT,
+        )
         return HttpResponse(
-            json.dumps({"task_id": task.id}), content_type="application/json"
+            json.dumps({"task_id": task.id, "task_run_id": task_run.id}),
+            content_type="application/json",
         )
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
 
@@ -1398,9 +1634,16 @@ def exploitdb_search_view(request, id):
         request.method == "GET"
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
-        task = exploitdb_search.delay(int(id))
+        task, task_run = _enqueue_tracked_task(
+            request,
+            exploitdb_search,
+            task_args=[int(id)],
+            device_id=id,
+            tool=TaskRun.TOOL_EXPLOITDB,
+        )
         return HttpResponse(
-            json.dumps({"task_id": task.id}), content_type="application/json"
+            json.dumps({"task_id": task.id, "task_run_id": task_run.id}),
+            content_type="application/json",
         )
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
 
@@ -1427,10 +1670,17 @@ def send_to_field_agent(request, id, notes):
         host.notes = notes
         host.save()
 
-        af_task = send_to_field_agent_task.delay(id, notes)
+        af_task, task_run = _enqueue_tracked_task(
+            request,
+            send_to_field_agent_task,
+            task_args=[id, notes],
+            device_id=id,
+            tool=TaskRun.TOOL_OTHER,
+        )
 
         return HttpResponse(
-            json.dumps({"Status": "OK"}), content_type="application/json"
+            json.dumps({"Status": "OK", "task_id": af_task.id, "task_run_id": task_run.id}),
+            content_type="application/json",
         )
     else:
         return HttpResponse(
@@ -1453,10 +1703,17 @@ def whois(request, id):
                 content_type="application/json",
             )
 
-        wh_task = whoisxml.delay(id=id)
+        wh_task, task_run = _enqueue_tracked_task(
+            request,
+            whoisxml,
+            task_kwargs={"id": id},
+            device_id=id,
+            tool=TaskRun.TOOL_WHOIS,
+        )
 
         return HttpResponse(
-            json.dumps({"task_id": wh_task.id}), content_type="application/json"
+            json.dumps({"task_id": wh_task.id, "task_run_id": task_run.id}),
+            content_type="application/json",
         )
     else:
         return HttpResponse(
@@ -1556,9 +1813,16 @@ def deep_scan_view(request, id):
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
         protocol = request.GET.get("protocol", None)
-        task = deep_protocol_scan.delay(device_id=id, protocol=protocol)
+        task, task_run = _enqueue_tracked_task(
+            request,
+            deep_protocol_scan,
+            task_kwargs={"device_id": id, "protocol": protocol},
+            device_id=id,
+            tool=TaskRun.TOOL_DEEP_SCAN,
+        )
         return HttpResponse(
-            json.dumps({"task_id": task.id}), content_type="application/json"
+            json.dumps({"task_id": task.id, "task_run_id": task_run.id}),
+            content_type="application/json",
         )
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
 
@@ -1607,9 +1871,16 @@ def nvd_scan_view(request, id):
         request.method == "GET"
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
-        task = nvd_lookup.delay(device_id=id)
+        task, task_run = _enqueue_tracked_task(
+            request,
+            nvd_lookup,
+            task_kwargs={"device_id": id},
+            device_id=id,
+            tool=TaskRun.TOOL_NVD,
+        )
         return HttpResponse(
-            json.dumps({"task_id": task.id}), content_type="application/json"
+            json.dumps({"task_id": task.id, "task_run_id": task_run.id}),
+            content_type="application/json",
         )
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
 
@@ -1620,9 +1891,16 @@ def nrich_scan_view(request, id):
         request.method == "GET"
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
-        task = nrich_lookup.delay(device_id=id)
+        task, task_run = _enqueue_tracked_task(
+            request,
+            nrich_lookup,
+            task_kwargs={"device_id": id},
+            device_id=id,
+            tool=TaskRun.TOOL_NRICH,
+        )
         return HttpResponse(
-            json.dumps({"task_id": task.id}), content_type="application/json"
+            json.dumps({"task_id": task.id, "task_run_id": task_run.id}),
+            content_type="application/json",
         )
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
 
@@ -1633,9 +1911,16 @@ def cvedb_enrich_view(request, id):
         request.method == "GET"
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
-        task = cvedb_enrich.delay(device_id=id)
+        task, task_run = _enqueue_tracked_task(
+            request,
+            cvedb_enrich,
+            task_kwargs={"device_id": id},
+            device_id=id,
+            tool=TaskRun.TOOL_CVEDB,
+        )
         return HttpResponse(
-            json.dumps({"task_id": task.id}), content_type="application/json"
+            json.dumps({"task_id": task.id, "task_run_id": task_run.id}),
+            content_type="application/json",
         )
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
 
@@ -1646,9 +1931,16 @@ def shodan_intel_view(request, id):
         request.method == "GET"
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
-        task = shodan_intel_scan.delay(device_id=id)
+        task, task_run = _enqueue_tracked_task(
+            request,
+            shodan_intel_scan,
+            task_kwargs={"device_id": id},
+            device_id=id,
+            tool=TaskRun.TOOL_INTEL,
+        )
         return HttpResponse(
-            json.dumps({"task_id": task.id}), content_type="application/json"
+            json.dumps({"task_id": task.id, "task_run_id": task_run.id}),
+            content_type="application/json",
         )
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
 
@@ -1692,9 +1984,16 @@ def honeypot_scan_view(request, id):
         request.method == "GET"
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
-        task = honeypot_check.delay(device_id=id)
+        task, task_run = _enqueue_tracked_task(
+            request,
+            honeypot_check,
+            task_kwargs={"device_id": id},
+            device_id=id,
+            tool=TaskRun.TOOL_HONEYPOT,
+        )
         return HttpResponse(
-            json.dumps({"task_id": task.id}), content_type="application/json"
+            json.dumps({"task_id": task.id, "task_run_id": task_run.id}),
+            content_type="application/json",
         )
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
 
@@ -1710,9 +2009,16 @@ def sbom_scan_view(request, id):
         request.method == "GET"
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
-        task = sbom_lookup.delay(device_id=id)
+        task, task_run = _enqueue_tracked_task(
+            request,
+            sbom_lookup,
+            task_kwargs={"device_id": id},
+            device_id=id,
+            tool=TaskRun.TOOL_SBOM,
+        )
         return HttpResponse(
-            json.dumps({"task_id": task.id}), content_type="application/json"
+            json.dumps({"task_id": task.id, "task_run_id": task_run.id}),
+            content_type="application/json",
         )
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
 
@@ -1801,9 +2107,16 @@ def gfw_check_view(request, id):
         request.method == "GET"
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
-        task = gfw_check.delay(device_id=id)
+        task, task_run = _enqueue_tracked_task(
+            request,
+            gfw_check,
+            task_kwargs={"device_id": id},
+            device_id=id,
+            tool=TaskRun.TOOL_GFW,
+        )
         return HttpResponse(
-            json.dumps({"task_id": task.id}), content_type="application/json"
+            json.dumps({"task_id": task.id, "task_run_id": task_run.id}),
+            content_type="application/json",
         )
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
 
@@ -2215,8 +2528,17 @@ def recon_ng_script_view(request, id):
 def shodan_trends_view(request, id):
     """Dispatch the shodan_trends_task Celery task."""
     if request.method == "GET" and request.headers.get("X-Requested-With") == "XMLHttpRequest":
-        task = shodan_trends_task.delay(device_id=id)
-        return HttpResponse(json.dumps({"task_id": task.id}), content_type="application/json")
+        task, task_run = _enqueue_tracked_task(
+            request,
+            shodan_trends_task,
+            task_kwargs={"device_id": id},
+            device_id=id,
+            tool=TaskRun.TOOL_INTEL,
+        )
+        return HttpResponse(
+            json.dumps({"task_id": task.id, "task_run_id": task_run.id}),
+            content_type="application/json",
+        )
     return HttpResponse(json.dumps({"task_id": None}), content_type="application/json")
 
 
@@ -2237,3 +2559,240 @@ def shodan_credits_view(request):
     except Exception as exc:
         _views_logger.warning("shodan_credits_view error: %s", exc)
         return HttpResponse(json.dumps({"error": "Shodan API error"}), content_type="application/json")
+
+
+@login_required
+def tasks_list(request):
+    qs = TaskRun.objects.select_related("device", "search", "triggered_by").all()
+    tool = request.GET.get("tool", "").strip()
+    status = request.GET.get("status", "").strip()
+    username = request.GET.get("user", "").strip()
+    if tool:
+        qs = qs.filter(tool=tool)
+    if status:
+        qs = qs.filter(status=status)
+    if username:
+        qs = qs.filter(triggered_by__username__icontains=username)
+
+    paginator = Paginator(qs, 50)
+    page_obj = paginator.get_page(request.GET.get("page", 1))
+    runs = [sync_task_run(run) for run in page_obj.object_list]
+    return render(
+        request,
+        "tasks.html",
+        {
+            "runs": runs,
+            "page_obj": page_obj,
+            "selected_tool": tool,
+            "selected_status": status,
+            "selected_user": username,
+            "tool_choices": TaskRun.TOOL_CHOICES,
+            "status_choices": TaskRun.STATUS_CHOICES,
+        },
+    )
+
+
+@login_required
+def task_detail(request, pk):
+    run = get_object_or_404(
+        TaskRun.objects.select_related("device", "search", "triggered_by"), pk=pk
+    )
+    run = sync_task_run(run)
+    return render(request, "task_detail.html", {"run": run})
+
+
+def _parse_device_ids(values):
+    ids = []
+    for value in values:
+        try:
+            ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    return sorted(set(ids))
+
+
+@require_POST
+def bulk_run(request):
+    if request.content_type and "application/json" in request.content_type:
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON payload"}, status=400)
+        tool = payload.get("tool", "")
+        device_ids = _parse_device_ids(payload.get("device_ids", []))
+    else:
+        tool = request.POST.get("tool", "")
+        device_ids = _parse_device_ids(request.POST.getlist("device_ids"))
+
+    task_map = {
+        TaskRun.TOOL_SCREENSHOT: (capture_screenshot, "args"),
+        TaskRun.TOOL_NUCLEI: (nuclei_scan, "kwargs_id"),
+        TaskRun.TOOL_NMAP: (nmap_device_scan, "args"),
+        TaskRun.TOOL_PORT_SCAN: (port_scan_task, "args"),
+    }
+    if tool not in task_map:
+        return JsonResponse({"error": "Invalid tool selection"}, status=400)
+    if not device_ids:
+        return JsonResponse({"error": "No devices selected"}, status=400)
+
+    task_callable, call_mode = task_map[tool]
+    runs = []
+    for device in Device.objects.filter(id__in=device_ids):
+        if call_mode == "kwargs_id":
+            async_result, task_run = _enqueue_tracked_task(
+                request,
+                task_callable,
+                task_kwargs={"id": device.id},
+                device_id=device.id,
+                search_id=device.search_id,
+                tool=tool,
+            )
+        else:
+            async_result, task_run = _enqueue_tracked_task(
+                request,
+                task_callable,
+                task_args=[device.id],
+                device_id=device.id,
+                search_id=device.search_id,
+                tool=tool,
+            )
+        runs.append(
+            {
+                "device_id": device.id,
+                "device_ip": device.ip,
+                "task_id": async_result.id,
+                "task_run_id": task_run.id,
+            }
+        )
+    return JsonResponse({"runs": runs})
+
+
+_STAFF_REQUIRED = user_passes_test(lambda u: u.is_active and u.is_staff)
+
+
+@_STAFF_REQUIRED
+def worker_status_view(request):
+    _CACHE_KEY = "worker_status_response"
+    _CACHE_TTL = 15  # seconds
+    cached = cache.get(_CACHE_KEY)
+    if cached is not None:
+        return JsonResponse(cached)
+
+    from kamerka.celery import app as celery_app
+
+    inspect = celery_app.control.inspect(timeout=1.0)
+    active = inspect.active() or {}
+    reserved = inspect.reserved() or {}
+    active_count = sum(len(items) for items in active.values())
+    reserved_count = sum(len(items) for items in reserved.values())
+
+    queue_depth = None
+    try:
+        from redis import Redis
+
+        client = Redis.from_url(settings.REDIS_URL)
+        queue_depth = client.llen("celery")
+    except Exception:
+        queue_depth = None
+
+    payload = {
+        "active_tasks": active_count,
+        "reserved_tasks": reserved_count,
+        "queue_depth": queue_depth,
+        "workers": sorted(set(list(active.keys()) + list(reserved.keys()))),
+    }
+    cache.set(_CACHE_KEY, payload, timeout=_CACHE_TTL)
+    return JsonResponse(payload)
+
+
+@_STAFF_REQUIRED
+def setup_check_view(request):
+    def _check_binary(name):
+        path = shutil.which(name)
+        if not path:
+            return {"name": name, "ok": False, "detail": "Not found in PATH"}
+        if os.path.basename(path) != name or not os.path.isfile(path):
+            return {"name": name, "ok": False, "detail": "Resolved binary path is invalid"}
+        try:
+            result = subprocess.run(
+                [path, "-version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            detail = (result.stdout or result.stderr or "").strip().splitlines()
+            version = detail[0][:200] if detail else "Installed"
+        except Exception:
+            version = "Installed"
+        return {"name": name, "ok": True, "detail": version}
+
+    checks = []
+    checks.extend(
+        [
+            _check_binary("nmap"),
+            _check_binary("nuclei"),
+            _check_binary("naabu"),
+            _check_binary("wappalyzer"),
+        ]
+    )
+    checks.append(
+        {
+            "name": "SHODAN_API_KEY",
+            "ok": bool(getattr(settings, "SHODAN_API_KEY", "")),
+            "detail": "Configured" if getattr(settings, "SHODAN_API_KEY", "") else "Missing",
+        }
+    )
+    checks.append(
+        {
+            "name": "NVD_API_KEY",
+            "ok": bool(os.environ.get("NVD_API_KEY", "")),
+            "detail": "Configured" if os.environ.get("NVD_API_KEY", "") else "Missing",
+        }
+    )
+
+    try:
+        connection.ensure_connection()
+        checks.append({"name": "Database", "ok": True, "detail": "Connected"})
+    except Exception as exc:
+        checks.append({"name": "Database", "ok": False, "detail": str(exc)[:200]})
+
+    try:
+        cache.set("setup_check", "ok", timeout=5)
+        ok = cache.get("setup_check") == "ok"
+        checks.append(
+            {"name": "Redis cache", "ok": ok, "detail": "Connected" if ok else "Unavailable"}
+        )
+    except Exception as exc:
+        checks.append({"name": "Redis cache", "ok": False, "detail": str(exc)[:200]})
+
+    try:
+        from kamerka.celery import app as celery_app
+
+        pings = celery_app.control.inspect(timeout=1.0).ping() or {}
+        checks.append(
+            {
+                "name": "Celery worker",
+                "ok": bool(pings),
+                "detail": "Workers online" if pings else "No worker responses",
+            }
+        )
+    except Exception as exc:
+        checks.append({"name": "Celery worker", "ok": False, "detail": str(exc)[:200]})
+
+    return render(request, "setup_checks.html", {"checks": checks})
+
+
+def error_400(request, exception):
+    return render(request, "400.html", status=400)
+
+
+def error_403(request, exception):
+    return render(request, "403.html", status=403)
+
+
+def error_404(request, exception):
+    return render(request, "404.html", status=404)
+
+
+def error_500(request):
+    return render(request, "500.html", status=500)

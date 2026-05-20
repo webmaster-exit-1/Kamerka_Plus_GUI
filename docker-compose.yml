@@ -1,0 +1,97 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379
+      CELERY_BROKER_URL: redis://redis:6379
+      CELERY_RESULT_BACKEND: redis://redis:6379
+      DB_HOST: postgres
+    ports:
+      - "8000:8000"
+    volumes:
+      - media_data:/app/scans
+      - downloads_data:/app/downloads
+    command: >
+      sh -c "python manage.py migrate --run-syncdb
+      && python manage.py collectstatic --noinput
+      && gunicorn kamerka.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --timeout 120"
+    depends_on:
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+        required: false
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379
+      CELERY_BROKER_URL: redis://redis:6379
+      CELERY_RESULT_BACKEND: redis://redis:6379
+      DB_HOST: postgres
+    volumes:
+      - media_data:/app/scans
+      - downloads_data:/app/downloads
+    command: celery --app kamerka worker --loglevel=info --concurrency=${CELERY_WORKER_CONCURRENCY:-4}
+    depends_on:
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+        required: false
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379
+      CELERY_BROKER_URL: redis://redis:6379
+      CELERY_RESULT_BACKEND: redis://redis:6379
+      DB_HOST: postgres
+    volumes:
+      - media_data:/app/scans
+      - downloads_data:/app/downloads
+    command: celery --app kamerka beat --loglevel=info
+    depends_on:
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+        required: false
+
+  postgres:
+    image: postgres:16
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_DB: ${DB_NAME:-kamerka}
+      POSTGRES_USER: ${DB_USER:-kamerka}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-kamerka}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-kamerka} -d ${DB_NAME:-kamerka}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  media_data:
+  downloads_data:

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block page_title %}First run checks - ꓘamerka{% endblock %}
+
+{% block content %}
+<div class="page-content-wrap">
+  <div class="row">
+    <div class="col-md-12">
+      <div class="panel panel-default">
+        <div class="panel-heading"><h3 class="panel-title">First Run Sanity Checks</h3></div>
+        <div class="panel-body">
+          <table class="table table-striped">
+            <thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead>
+            <tbody>
+            {% for check in checks %}
+            <tr>
+              <td>{{ check.name }}</td>
+              <td>{% if check.ok %}<span class="label label-success">OK</span>{% else %}<span class="label label-danger">FAIL</span>{% endif %}</td>
+              <td>{{ check.detail }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
