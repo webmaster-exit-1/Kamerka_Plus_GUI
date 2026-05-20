@@ -1,21 +1,10 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "base.html" %}
 {% load static %}
-{% block page_content %}
-    <head>
-        <!-- META SECTION -->
-        <title>Globe - ꓘamerka</title>
-        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <!-- END META SECTION -->
 
-        <!-- CSS INCLUDE -->
-        <link rel="stylesheet" type="text/css" id="theme" href="{% static 'css/theme-default.css' %}"/>
-        <link rel="stylesheet" type="text/css" href="{% static 'css/cyberpunk.css' %}"/>
-        <!-- EOF CSS INCLUDE -->
+{% block page_title %}Globe - ꓘamerka{% endblock %}
 
-        <style>
+{% block extra_css %}
+<style>
             #globe-wrap {
                 position: relative;
                 width: 100%;
@@ -243,40 +232,11 @@
             .leg-org-name { color: var(--cp-dim); overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
             .leg-org-count { color: var(--cp-cyan); flex-shrink: 0; }
         </style>
-    </head>
-    <body>
-        <div class="page-container">
+{% endblock %}
 
-            <!-- START PAGE SIDEBAR -->
-            <div class="page-sidebar">
-                <ul class="x-navigation">
-                    <li class="xn-logo">
-                        <a href="/">ꓘamerka</a>
-                        <a href="#" class="x-navigation-control"></a>
-                    </li>
-                    <li class="xn-profile">
-                        <div class="profile">
-                            <div class="profile-image"></div>
-                            <div class="profile-data">
-                                <img width=200px height=200px src="{% static 'images/OffensiveOsint-logo-RGB-2.svg' %}">
-                            </div>
-                        </div>
-                    </li>
-                    <li class="xn-title">Navigation</li>
-                    <li class=""><a href="/index"><span class="fa fa-desktop"></span> <span class="xn-text">Dashboard</span></a></li>
-                    <li class=""><a href="/history"><span class="fa fa-files-o"></span> <span class="xn-text">History</span></a></li>
-                    <li class=""><a href="/map"><span class="fa fa-map-marker"></span> <span class="xn-text">Map</span></a></li>
-                    <li class="xn-active"><a href="/globe"><span class="fa fa-globe"></span> <span class="xn-text">Globe</span></a></li>
-                    <li class=""><a href="/devices"><span class="fa fa-search"></span> <span class="xn-text">Search</span></a></li>
-                    <li class=""><a href="/gallery"><span class="fa fa-camera"></span> <span class="xn-text">Screenshots</span></a></li>
-                    <li class="xn-title">Components</li>
-                    <li><a href="/sources"><span class="fa fa-book"></span> <span class="xn-text">Useful links</span></a></li>
-                </ul>
-            </div>
-            <!-- END PAGE SIDEBAR -->
+{% block page_content_style %}style="padding:0; overflow:hidden;"{% endblock %}
 
-            <!-- PAGE CONTENT -->
-            <div class="page-content" style="padding:0; overflow:hidden;">
+{% block content %}
 
                 <!-- Globe container fills remaining space -->
                 <div id="globe-wrap">
@@ -393,17 +353,11 @@
                     </div>
                 </div>
             </div>
-            <!-- END PAGE CONTENT -->
+{% endblock %}
 
-        </div><!-- end page-container -->
-
-        <!-- Three.js (served locally to avoid CDN dependency) -->
-        <script src="{% static 'js/three.min.js' %}"></script>
-        <script type="text/javascript" src="{% static 'js/plugins/jquery/jquery.min.js' %}"></script>
-        <script type="text/javascript" src="{% static 'js/plugins/jquery/jquery-ui.min.js' %}"></script>
-        <script type="text/javascript" src="{% static 'js/plugins/bootstrap/bootstrap.min.js' %}"></script>
-        <script type="text/javascript" src="{% static 'js/plugins.js' %}"></script>
-        <script type="text/javascript" src="{% static 'js/actions.js' %}"></script>
+{% block extra_js %}
+    <!-- Three.js served locally — no CDN dependency -->
+    <script src="{% static 'js/three.min.js' %}"></script>
 
         <script>
         // ─────────────────────────────────────────────────────────────
@@ -1456,6 +1410,4 @@
         initDataLayers();
         initLayerLiveUpdates();
         </script>
-    </body>
 {% endblock %}
-</html>

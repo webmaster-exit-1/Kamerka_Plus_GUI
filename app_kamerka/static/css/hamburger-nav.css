@@ -63,3 +63,10 @@
     color: #fff;
     text-decoration: none;
 }
+
+@media (max-width: 767px) {
+    .kamerka-hamburger-btn,
+    .kamerka-hamburger-overlay {
+        display: none !important;
+    }
+}
