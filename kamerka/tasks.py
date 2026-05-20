@@ -1059,14 +1059,16 @@ class RateLimiter:
         }
 
     def _check_counter(self, cache, key, limit, window_seconds):
-        count = cache.get(key, 0)
-        if count >= limit:
-            return False
-        if count == 0:
+        # Use atomic Redis INCR: raises ValueError when key is absent (first call
+        # in this window), at which point we create the key with the TTL.
+        # This eliminates the read-before-write race in the original get/set pattern.
+        try:
+            count = cache.incr(key)
+        except ValueError:
+            # Key did not exist; initialise with TTL for this window
             cache.set(key, 1, timeout=window_seconds)
-        else:
-            cache.incr(key)
-        return True
+            count = 1
+        return count <= limit
 
     def allow(self, ip, *, tool="scan", window_seconds=None, ip_max_scans=10):
         from django.core.cache import cache

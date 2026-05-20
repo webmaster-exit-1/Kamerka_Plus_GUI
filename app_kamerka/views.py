@@ -25,6 +25,7 @@ from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
+from django.contrib.auth.decorators import login_required, user_passes_test
 from app_kamerka import forms
 from app_kamerka.models import (
     Search,
@@ -142,6 +143,16 @@ def _safe_coord(value):
         return None
 
 
+def _coord_for_csv(value):
+    """Return *value* for CSV output, or "" when the coordinate is None.
+
+    Unlike ``value or ""``, this preserves valid falsy coordinates such as 0.0
+    (equator / prime meridian) that would otherwise be replaced with an empty
+    string.
+    """
+    return "" if value is None else value
+
+
 def _enqueue_tracked_task(
     request,
     task_callable,
@@ -164,6 +175,18 @@ def _enqueue_tracked_task(
         device_id=device_id,
         search_id=search_id,
     )
+    if task_run is None:
+        # Celery returned a result with no id; create a placeholder record so
+        # callers can always rely on task_run.id without AttributeError.
+        import uuid
+        from app_kamerka.task_utils import infer_tool as _infer_tool
+        user = getattr(request, "user", None)
+        task_run = TaskRun.objects.create(
+            task_id=task_id or str(uuid.uuid4()),
+            tool=_infer_tool(str(getattr(task_callable, "name", "") or ""), tool),
+            celery_task_name=str(getattr(task_callable, "name", "") or ""),
+            triggered_by=user if getattr(user, "is_authenticated", False) else None,
+        )
     return async_result, task_run
 
 
@@ -1427,8 +1450,8 @@ def export_csv(request, id):
                         "org": device.org or "",
                         "product": device.product or "",
                         "city": device.city or "",
-                        "latitude": device.lat or "",
-                        "longitude": device.lon or "",
+                        "latitude": _coord_for_csv(device.lat),
+                        "longitude": _coord_for_csv(device.lon),
                         "country_code": device.country_code or "",
                         "type": device.type or "",
                     }
@@ -2538,6 +2561,7 @@ def shodan_credits_view(request):
         return HttpResponse(json.dumps({"error": "Shodan API error"}), content_type="application/json")
 
 
+@login_required
 def tasks_list(request):
     qs = TaskRun.objects.select_related("device", "search", "triggered_by").all()
     tool = request.GET.get("tool", "").strip()
@@ -2568,6 +2592,7 @@ def tasks_list(request):
     )
 
 
+@login_required
 def task_detail(request, pk):
     run = get_object_or_404(
         TaskRun.objects.select_related("device", "search", "triggered_by"), pk=pk
@@ -2589,7 +2614,10 @@ def _parse_device_ids(values):
 @require_POST
 def bulk_run(request):
     if request.content_type and "application/json" in request.content_type:
-        payload = json.loads(request.body.decode("utf-8") or "{}")
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON payload"}, status=400)
         tool = payload.get("tool", "")
         device_ids = _parse_device_ids(payload.get("device_ids", []))
     else:
@@ -2639,7 +2667,17 @@ def bulk_run(request):
     return JsonResponse({"runs": runs})
 
 
+_STAFF_REQUIRED = user_passes_test(lambda u: u.is_active and u.is_staff)
+
+
+@_STAFF_REQUIRED
 def worker_status_view(request):
+    _CACHE_KEY = "worker_status_response"
+    _CACHE_TTL = 15  # seconds
+    cached = cache.get(_CACHE_KEY)
+    if cached is not None:
+        return JsonResponse(cached)
+
     from kamerka.celery import app as celery_app
 
     inspect = celery_app.control.inspect(timeout=1.0)
@@ -2657,16 +2695,17 @@ def worker_status_view(request):
     except Exception:
         queue_depth = None
 
-    return JsonResponse(
-        {
-            "active_tasks": active_count,
-            "reserved_tasks": reserved_count,
-            "queue_depth": queue_depth,
-            "workers": sorted(set(list(active.keys()) + list(reserved.keys()))),
-        }
-    )
+    payload = {
+        "active_tasks": active_count,
+        "reserved_tasks": reserved_count,
+        "queue_depth": queue_depth,
+        "workers": sorted(set(list(active.keys()) + list(reserved.keys()))),
+    }
+    cache.set(_CACHE_KEY, payload, timeout=_CACHE_TTL)
+    return JsonResponse(payload)
 
 
+@_STAFF_REQUIRED
 def setup_check_view(request):
     def _check_binary(name):
         path = shutil.which(name)

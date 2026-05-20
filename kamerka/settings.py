@@ -15,8 +15,12 @@ from django.core.management.utils import get_random_secret_key
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_LOG_DIR = os.path.join(BASE_DIR, "logs")
+_LOG_FILE = os.path.join(_LOG_DIR, "kamerka.log")
+_log_file_available = False
 try:
-    os.makedirs(os.path.join(BASE_DIR, "logs"), exist_ok=True)
+    os.makedirs(_LOG_DIR, exist_ok=True)
+    _log_file_available = os.access(_LOG_DIR, os.W_OK)
 except OSError:
     pass
 
@@ -284,6 +288,24 @@ KAMERKA_PORTSCAN_RATE = int(os.environ.get("KAMERKA_PORTSCAN_RATE", "20"))
 # Logging
 # ---------------------------------------------------------------------------
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "WARNING").upper()
+_log_handlers = {
+    "console": {
+        "class": "logging.StreamHandler",
+        "formatter": "default",
+        "level": LOG_LEVEL,
+    },
+}
+_root_handler_names = ["console"]
+if _log_file_available:
+    _log_handlers["file"] = {
+        "class": "logging.handlers.RotatingFileHandler",
+        "filename": _LOG_FILE,
+        "maxBytes": 5 * 1024 * 1024,
+        "backupCount": 3,
+        "formatter": "default",
+        "level": LOG_LEVEL,
+    }
+    _root_handler_names.append("file")
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -292,22 +314,8 @@ LOGGING = {
             "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
         }
     },
-    "handlers": {
-        "console": {
-            "class": "logging.StreamHandler",
-            "formatter": "default",
-            "level": LOG_LEVEL,
-        },
-        "file": {
-            "class": "logging.handlers.RotatingFileHandler",
-            "filename": os.path.join(BASE_DIR, "logs", "kamerka.log"),
-            "maxBytes": 5 * 1024 * 1024,
-            "backupCount": 3,
-            "formatter": "default",
-            "level": LOG_LEVEL,
-        },
-    },
-    "root": {"handlers": ["console", "file"], "level": LOG_LEVEL},
+    "handlers": _log_handlers,
+    "root": {"handlers": _root_handler_names, "level": LOG_LEVEL},
 }
 
 # ---------------------------------------------------------------------------

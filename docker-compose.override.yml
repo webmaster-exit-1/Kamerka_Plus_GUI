@@ -1,5 +1,6 @@
 services:
   web:
+    profiles: ["dev"]
     environment:
       DEBUG: "True"
       DB_NAME: ""
@@ -14,6 +15,7 @@ services:
     command: python manage.py runserver 0.0.0.0:8000
 
   celery:
+    profiles: ["dev"]
     environment:
       DEBUG: "True"
       DB_NAME: ""
@@ -26,6 +28,7 @@ services:
       - downloads_data:/app/downloads
 
   celery-beat:
+    profiles: ["dev"]
     environment:
       DEBUG: "True"
       DB_NAME: ""
