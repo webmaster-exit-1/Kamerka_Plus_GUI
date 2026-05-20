@@ -44,6 +44,7 @@
             overlay.classList.toggle('open', isOpen);
             overlay.hidden = !isOpen;
             button.setAttribute('aria-expanded', String(isOpen));
+            button.setAttribute('aria-label', isOpen ? 'Close navigation menu' : 'Open navigation menu');
             button.innerHTML = isOpen ? '&times;' : '&#9776;';
         }
 
@@ -71,7 +72,7 @@
             document.addEventListener('click', function (e) {
                 if (!overlay.hidden &&
                     !overlay.contains(e.target) &&
-                    e.target !== button) {
+                    !button.contains(e.target)) {
                     setMenuState(button, overlay, false);
                 }
             });
@@ -133,7 +134,8 @@
                         <div class="profile-image"></div>
                         <div class="profile-data">
                             <img width="200px" height="200px"
-                                 src="{% static 'images/OffensiveOsint-logo-RGB-2.svg' %}">
+                                 src="{% static 'images/OffensiveOsint-logo-RGB-2.svg' %}"
+                                 alt="Offensive OSINT logo">
                         </div>
                     </div>
                 </li>
