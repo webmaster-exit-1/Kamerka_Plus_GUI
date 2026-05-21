@@ -714,7 +714,7 @@ def camera_wall_search(request, id):
         {
             "devices": page_obj.object_list,
             "page_obj": page_obj,
-            "scope_label": "Search #{}".format(id),
+            "scope_label": f"Search #{id}",
             "scope_search_id": id,
         },
     )

@@ -767,8 +767,16 @@ def _normalize_signal_values(value):
     except Exception:
         pass
     text = text.strip("[]")
-    parts = [p.strip().strip("'\"") for p in re.split(r"[,\s]+", text) if p.strip()]
-    return parts or [str(value).strip()]
+    parts = []
+    for comma_part in text.split(","):
+        comma_part = comma_part.strip()
+        if not comma_part:
+            continue
+        for token in comma_part.split():
+            cleaned = token.strip().strip("'\"")
+            if cleaned:
+                parts.append(cleaned)
+    return parts
 
 
 def _camera_candidate_score(ports=None, tags=None, products=None, banners=None):
@@ -809,6 +817,10 @@ def _camera_candidate_score(ports=None, tags=None, products=None, banners=None):
     return score, reasons
 
 
+def _is_camera_candidate(score):
+    return score >= CAMERA_CANDIDATE_THRESHOLD
+
+
 def _apply_camera_candidate_classification(
     device, *, ports=None, tags=None, products=None, banners=None
 ):
@@ -820,7 +832,7 @@ def _apply_camera_candidate_classification(
     )
     device.camera_score = score
     device.camera_reasons = reasons
-    device.is_camera_candidate = score >= CAMERA_CANDIDATE_THRESHOLD
+    device.is_camera_candidate = _is_camera_candidate(score)
     device.save(update_fields=["camera_score", "camera_reasons", "is_camera_candidate"])
     return score, reasons
 
@@ -1107,7 +1119,7 @@ def shodan_search_worker(
                     "cpe": cpe,
                     "camera_score": camera_score,
                     "camera_reasons": camera_reasons,
-                    "is_camera_candidate": camera_score >= CAMERA_CANDIDATE_THRESHOLD,
+                    "is_camera_candidate": _is_camera_candidate(camera_score),
                 },
             )
 
@@ -2969,6 +2981,7 @@ def nmap_rtsp_scan(id, ports=None, timing=None):
     device_type = device1.type
 
     scan_ports = ports or NMAP_RTSP_PORTS
+    scan_port_values = [p.strip() for p in str(scan_ports).split(",") if p.strip()]
     scan_timing = timing or NMAP_RTSP_TIMING
 
     options = "-sV -p {} {} --script=rtsp-url-brute".format(scan_ports, scan_timing)
@@ -3012,7 +3025,7 @@ def nmap_rtsp_scan(id, ports=None, timing=None):
             rtsp_banners.append(" ".join(payload.get("scripts", {}).values()))
         _apply_camera_candidate_classification(
             device1,
-            ports=rtsp_ports or [scan_ports],
+            ports=rtsp_ports or scan_port_values,
             tags=[],
             products=[device1.product, device1.type],
             banners=[device1.data, *rtsp_banners],

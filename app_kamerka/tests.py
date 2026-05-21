@@ -248,8 +248,8 @@ class ShodanSearchWorkerTest(TestCase):
         device = Device.objects.get(search=self.search, ip="1.2.3.4")
         self.assertTrue(device.is_camera_candidate)
         self.assertGreater(device.camera_score, 0)
-        self.assertTrue(any("ports:" in reason for reason in (device.camera_reasons or [])))
-        self.assertTrue(any("product:" in reason for reason in (device.camera_reasons or [])))
+        self.assertTrue(any("ports:" in reason for reason in device.camera_reasons))
+        self.assertTrue(any("product:" in reason for reason in device.camera_reasons))
 
     def test_banner_written_to_download_file(self):
         """Every banner must be persisted to the .json.gz download file
