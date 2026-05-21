@@ -670,6 +670,56 @@ def gallery(request):
     return render(request, "gallery.html", context=context)
 
 
+def _camera_wall_page(search_id=None, page_number=1, per_page=60):
+    queryset = (
+        Device.objects.filter(is_camera_candidate=True)
+        .only(
+            "id",
+            "search_id",
+            "ip",
+            "product",
+            "type",
+            "port",
+            "screenshot",
+            "camera_score",
+            "camera_reasons",
+        )
+        .order_by("-camera_score", "-id")
+    )
+    if search_id is not None:
+        queryset = queryset.filter(search_id=search_id)
+    paginator = Paginator(queryset, per_page)
+    return paginator.get_page(page_number)
+
+
+def camera_wall(request):
+    page_obj = _camera_wall_page(page_number=request.GET.get("page", 1))
+    return render(
+        request,
+        "camera_wall.html",
+        {
+            "devices": page_obj.object_list,
+            "page_obj": page_obj,
+            "scope_label": "Global",
+            "scope_search_id": None,
+        },
+    )
+
+
+def camera_wall_search(request, id):
+    page_obj = _camera_wall_page(search_id=id, page_number=request.GET.get("page", 1))
+    return render(
+        request,
+        "camera_wall.html",
+        {
+            "devices": page_obj.object_list,
+            "page_obj": page_obj,
+            "scope_label": "Search #{}".format(id),
+            "scope_search_id": id,
+        },
+    )
+
+
 def results(request, id):
     all_devices = Device.objects.filter(search_id=id)
     ports = (
