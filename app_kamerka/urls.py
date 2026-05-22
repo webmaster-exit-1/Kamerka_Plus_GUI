@@ -123,4 +123,12 @@ urlpatterns = [
     path("shodan/credits",       views.shodan_credits_view,  name="shodan_credits"),
     # Enhanced GeoJSON export (Phase 7)
     path("api/export/geojson/<id>", views.export_geojson_enhanced, name="export_geojson_enhanced"),
+    # Tool Plugin Registry API
+    path("api/tools/", views.api_tools_list, name="api_tools_list"),
+    path("api/tools/applicable/<int:device_id>/", views.api_tools_applicable, name="api_tools_applicable"),
+    # Playbook CRUD + execution
+    path("playbooks/", views.playbooks_list, name="playbooks_list"),
+    path("playbooks/<int:pk>/", views.playbook_detail, name="playbook_detail"),
+    path("api/playbooks/create/", views.playbook_create, name="playbook_create"),
+    path("api/playbooks/<int:pk>/run/", views.playbook_run_view, name="playbook_run"),
 ]

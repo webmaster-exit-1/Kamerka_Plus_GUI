@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block page_title %}{{ playbook.name }} - ꓘamerka{% endblock %}
+
+{% block content %}
+<div class="page-content-wrap">
+  <div class="row">
+    <div class="col-md-12">
+      <div class="panel panel-default">
+        <div class="panel-heading">
+          <h3 class="panel-title">
+            Playbook: {{ playbook.name }}
+            <a href="{% url 'playbooks_list' %}" class="btn btn-xs btn-default" style="float:right;">← Back</a>
+          </h3>
+        </div>
+        <div class="panel-body">
+          {% if playbook.description %}
+          <p style="color:#aaa;">{{ playbook.description }}</p>
+          {% endif %}
+
+          <h4>Steps</h4>
+          <ol>
+          {% for step in playbook.steps %}
+            <li><span class="label label-info">{{ step.tool }}</span>
+              <span style="color:#888;font-size:0.9em;">
+                — order {{ step.order }}{% if step.exec_type %}, {{ step.exec_type }}{% endif %}
+              </span>
+            </li>
+          {% empty %}
+            <li style="color:#888;">No steps defined.</li>
+          {% endfor %}
+          </ol>
+
+          <hr>
+          <h4>Run Playbook</h4>
+          <div style="max-width:500px;">
+            <div class="form-group">
+              <label>Device IDs (comma-separated)</label>
+              <input type="text" id="pb-run-device-ids" class="form-control" placeholder="1,2,3">
+            </div>
+            <button type="button" id="pb-run-btn" class="btn btn-primary">Run Now</button>
+            <span id="pb-run-status" style="margin-left:12px;color:#00e1ff;"></span>
+          </div>
+
+          {% if runs %}
+          <hr>
+          <h4>Recent Runs</h4>
+          <table class="table table-striped">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Status</th>
+                <th>Devices</th>
+                <th>Tasks Dispatched</th>
+                <th>Started</th>
+                <th>Errors</th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for run in runs %}
+            <tr>
+              <td>{{ run.pk }}</td>
+              <td>
+                {% if run.status == "success" %}<span class="label label-success">success</span>
+                {% elif run.status == "failure" %}<span class="label label-danger">failure</span>
+                {% elif run.status == "running" %}<span class="label label-info">running</span>
+                {% else %}<span class="label label-default">{{ run.status }}</span>
+                {% endif %}
+              </td>
+              <td>{{ run.device_ids|length }} device(s)</td>
+              <td>{{ run.task_runs|length }} task(s)</td>
+              <td>{{ run.started_at|date:"Y-m-d H:i" }}</td>
+              <td style="color:#e74c3c;font-size:0.85em;">{{ run.error|default:"—" }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+  function getCookie(name){
+    var value = '; ' + document.cookie;
+    var parts = value.split('; ' + name + '=');
+    if (parts.length === 2) return parts.pop().split(';').shift();
+  }
+  var runBtn = document.getElementById('pb-run-btn');
+  if (!runBtn) return;
+  runBtn.addEventListener('click', function(){
+    var rawIds = document.getElementById('pb-run-device-ids').value.trim();
+    if (!rawIds) { document.getElementById('pb-run-status').textContent = 'Enter device IDs.'; return; }
+    var deviceIds = rawIds.split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+    var statusEl = document.getElementById('pb-run-status');
+    statusEl.textContent = 'Dispatching…';
+    fetch('/api/playbooks/{{ playbook.pk }}/run/', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') || ''},
+      body: JSON.stringify({device_ids: deviceIds})
+    })
+    .then(function(r){ return r.json().then(function(d){ return {ok: r.ok, data: d}; }); })
+    .then(function(res){
+      if (res.ok) {
+        statusEl.textContent = 'Dispatched ' + (res.data.runs || []).length + ' task(s).';
+        if (res.data.errors && res.data.errors.length) {
+          statusEl.textContent += ' Warnings: ' + res.data.errors.join('; ');
+        }
+        setTimeout(function(){ location.reload(); }, 1500);
+      } else {
+        statusEl.textContent = res.data.error || 'Error';
+      }
+    })
+    .catch(function(){ statusEl.textContent = 'Network error'; });
+  });
+})();
+</script>
+{% endblock %}

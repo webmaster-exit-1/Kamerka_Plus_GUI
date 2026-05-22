@@ -17,10 +17,7 @@
                                     <div class="form-inline" style="margin-bottom:12px;">
                                         <label for="bulk-tool-select">Run on selected:</label>
                                         <select id="bulk-tool-select" class="form-control">
-                                            <option value="screenshot">Screenshot</option>
-                                            <option value="nuclei">Nuclei</option>
-                                            <option value="nmap">Nmap</option>
-                                            <option value="port_scan">Port scan</option>
+                                            <option value="" disabled>Loading tools…</option>
                                         </select>
                                         <button type="button" id="bulk-run-btn" class="btn btn-primary">Go</button>
                                         <span id="bulk-progress" style="margin-left:12px;color:#00e1ff;"></span>
@@ -96,6 +93,30 @@
           document.querySelectorAll('.device-select').forEach(function(cb){ cb.checked = selectAll.checked; });
         });
       }
+
+      // Populate bulk-tool-select from the registry API
+      var toolSelect = document.getElementById('bulk-tool-select');
+      fetch('/api/tools/', {credentials: 'same-origin'})
+        .then(function(r){ return r.json(); })
+        .then(function(tools){
+          toolSelect.innerHTML = '';
+          var bulkTools = tools.filter(function(t){ return t.bulk_supported && t.enabled; });
+          if (!bulkTools.length) {
+            var opt = document.createElement('option');
+            opt.value = ''; opt.textContent = 'No bulk tools available'; opt.disabled = true;
+            toolSelect.appendChild(opt);
+            return;
+          }
+          bulkTools.forEach(function(t){
+            var opt = document.createElement('option');
+            opt.value = t.name;
+            opt.textContent = t.label;
+            opt.title = t.description;
+            toolSelect.appendChild(opt);
+          });
+        })
+        .catch(function(){ toolSelect.innerHTML = '<option value="">Error loading tools</option>'; });
+
       var runBtn = document.getElementById('bulk-run-btn');
       if (!runBtn) { return; }
       runBtn.addEventListener('click', function(){

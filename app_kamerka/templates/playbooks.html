@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block page_title %}Playbooks - ꓘamerka{% endblock %}
+
+{% block content %}
+<div class="page-content-wrap">
+  <div class="row">
+    <div class="col-md-12">
+      <div class="panel panel-default">
+        <div class="panel-heading">
+          <h3 class="panel-title">Playbooks</h3>
+        </div>
+        <div class="panel-body">
+          <p style="color:#aaa;margin-bottom:18px;">
+            Create a playbook below, then run it from the
+            <strong>playbook detail page</strong>
+            by selecting target devices.
+          </p>
+
+          {% if playbooks %}
+          <table class="table table-striped">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Steps</th>
+                <th>Description</th>
+                <th>Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for pb in playbooks %}
+            <tr>
+              <td><a href="{% url 'playbook_detail' pk=pb.pk %}">{{ pb.name }}</a></td>
+              <td>
+                {% for step in pb.steps %}
+                  <span class="label label-default">{{ step.tool }}</span>
+                {% endfor %}
+              </td>
+              <td>{{ pb.description|default:"—" }}</td>
+              <td>{{ pb.created_at|date:"Y-m-d H:i" }}</td>
+              <td>
+                <a href="{% url 'playbook_detail' pk=pb.pk %}" class="btn btn-xs btn-info">View</a>
+              </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <p style="color:#888;">No playbooks created yet.</p>
+          {% endif %}
+
+          <hr>
+          <h4>Create Playbook</h4>
+          <div id="playbook-create-form" style="max-width:600px;">
+            <div class="form-group">
+              <label>Name</label>
+              <input type="text" id="pb-name" class="form-control" placeholder="Full Recon">
+            </div>
+            <div class="form-group">
+              <label>Description</label>
+              <input type="text" id="pb-desc" class="form-control" placeholder="Optional description">
+            </div>
+            <div class="form-group">
+              <label>Steps (add in order)</label>
+              <div id="pb-steps-list" style="margin-bottom:8px;"></div>
+              <select id="pb-step-tool" class="form-control" style="display:inline-block;width:auto;">
+                <option value="" disabled selected>Loading tools…</option>
+              </select>
+              <button type="button" id="pb-add-step-btn" class="btn btn-sm btn-default" style="margin-left:8px;">
+                + Add Step
+              </button>
+            </div>
+            <button type="button" id="pb-create-btn" class="btn btn-primary">Create Playbook</button>
+            <span id="pb-create-status" style="margin-left:12px;color:#00e1ff;"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+  var steps = [];
+  var stepToolSelect = document.getElementById('pb-step-tool');
+  var stepsList = document.getElementById('pb-steps-list');
+
+  // Load tools from registry API
+  fetch('/api/tools/', {credentials: 'same-origin'})
+    .then(function(r){ return r.json(); })
+    .then(function(tools){
+      stepToolSelect.innerHTML = '';
+      tools.filter(function(t){ return t.enabled; }).forEach(function(t){
+        var opt = document.createElement('option');
+        opt.value = t.name;
+        opt.textContent = t.label;
+        opt.title = t.description;
+        stepToolSelect.appendChild(opt);
+      });
+    });
+
+  document.getElementById('pb-add-step-btn').addEventListener('click', function(){
+    var toolName = stepToolSelect.value;
+    var toolLabel = stepToolSelect.options[stepToolSelect.selectedIndex].textContent;
+    if (!toolName) return;
+    steps.push({tool: toolName, order: steps.length + 1, exec_type: 'chain'});
+    var badge = document.createElement('span');
+    badge.className = 'label label-info';
+    badge.style.marginRight = '6px';
+    badge.textContent = steps.length + '. ' + toolLabel;
+    stepsList.appendChild(badge);
+  });
+
+  function getCookie(name){
+    var value = '; ' + document.cookie;
+    var parts = value.split('; ' + name + '=');
+    if (parts.length === 2) return parts.pop().split(';').shift();
+  }
+
+  document.getElementById('pb-create-btn').addEventListener('click', function(){
+    var name = document.getElementById('pb-name').value.trim();
+    var desc = document.getElementById('pb-desc').value.trim();
+    var statusEl = document.getElementById('pb-create-status');
+    if (!name) { statusEl.textContent = 'Name is required.'; return; }
+    if (!steps.length) { statusEl.textContent = 'Add at least one step.'; return; }
+    statusEl.textContent = 'Creating…';
+    fetch('/api/playbooks/create/', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') || ''},
+      body: JSON.stringify({name: name, description: desc, steps: steps})
+    })
+    .then(function(r){ return r.json().then(function(d){ return {ok: r.ok, data: d}; }); })
+    .then(function(res){
+      if (res.ok) {
+        statusEl.textContent = 'Created!';
+        setTimeout(function(){ location.reload(); }, 800);
+      } else {
+        statusEl.textContent = res.data.error || 'Error';
+      }
+    })
+    .catch(function(){ statusEl.textContent = 'Network error'; });
+  });
+})();
+</script>
+{% endblock %}

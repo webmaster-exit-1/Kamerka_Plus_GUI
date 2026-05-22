@@ -324,3 +324,72 @@ class TaskRun(models.Model):
 
     def __str__(self):
         return f"{self.tool}:{self.task_id}:{self.status}"
+
+
+class Playbook(models.Model):
+    """A named, ordered sequence of tool plugins to run against one or more devices.
+
+    Steps are stored as a JSON list of dicts::
+
+        [
+          {"tool": "screenshot", "order": 1, "exec_type": "chain"},
+          {"tool": "nuclei",     "order": 2, "exec_type": "chain"},
+        ]
+
+    ``exec_type`` is reserved for future chain/group semantics (currently
+    all steps run sequentially / independently per device).
+    """
+
+    name = models.CharField(max_length=120, unique=True)
+    description = models.TextField(default="", blank=True)
+    steps = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "Ordered list of step dicts: "
+            '[{"tool": "screenshot", "order": 1, "exec_type": "chain"}]'
+        ),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+
+class PlaybookRun(models.Model):
+    """Records a single execution of a Playbook against a set of devices."""
+
+    STATUS_PENDING = "pending"
+    STATUS_RUNNING = "running"
+    STATUS_SUCCESS = "success"
+    STATUS_FAILURE = "failure"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_RUNNING, "Running"),
+        (STATUS_SUCCESS, "Success"),
+        (STATUS_FAILURE, "Failure"),
+    ]
+
+    playbook = models.ForeignKey(
+        Playbook, on_delete=models.CASCADE, related_name="runs"
+    )
+    device_ids = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Primary keys of the Device records targeted by this run.",
+    )
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING
+    )
+    # List of dicts: [{device_id, tool, task_id, task_run_id}, ...]
+    task_runs = models.JSONField(default=list, blank=True)
+    error = models.TextField(default="", blank=True)
+    started_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-started_at"]
+
+    def __str__(self):
+        return "PlaybookRun #{} ({}) — {}".format(self.pk, self.playbook.name, self.status)
