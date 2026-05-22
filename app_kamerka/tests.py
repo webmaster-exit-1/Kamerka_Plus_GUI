@@ -243,6 +243,14 @@ class ShodanSearchWorkerTest(TestCase):
                          search_type="hikvision")
         self.assertEqual(Device.objects.filter(search=self.search).count(), 2)
 
+    def test_camera_candidate_fields_populated_from_hikvision_banner(self):
+        self._run_worker([SHODAN_BANNER], search_type="hikvision")
+        device = Device.objects.get(search=self.search, ip="1.2.3.4")
+        self.assertTrue(device.is_camera_candidate)
+        self.assertGreater(device.camera_score, 0)
+        self.assertTrue(any("ports:" in reason for reason in device.camera_reasons))
+        self.assertTrue(any("product:" in reason for reason in device.camera_reasons))
+
     def test_banner_written_to_download_file(self):
         """Every banner must be persisted to the .json.gz download file
         so that shodan convert can later produce CSV/KML exports."""
@@ -799,6 +807,71 @@ class ResultsPageTest(TestCase):
         body = response.content.decode()
         # Device 10.0.0.2 has no vulns — its cell must show the empty-state marker
         self.assertIn("—", body)
+
+
+class CameraWallViewTest(TestCase):
+    def setUp(self):
+        self.search_a = _make_search()
+        self.search_b = Search.objects.create(
+            coordinates="0,0",
+            country="DE",
+            ics="['axis']",
+            coordinates_search="['0,0']",
+        )
+        self.global_candidate = Device.objects.create(
+            search=self.search_a,
+            ip="20.20.20.20",
+            product="Axis Camera",
+            port="80",
+            type="axis",
+            lat="50.0",
+            lon="8.0",
+            country_code="DE",
+            is_camera_candidate=True,
+            camera_score=85,
+            camera_reasons=["product:axis", "ports:80"],
+        )
+        self.search_candidate = Device.objects.create(
+            search=self.search_b,
+            ip="30.30.30.30",
+            product="Hikvision NVR",
+            port="554",
+            type="hikvision",
+            lat="39.9",
+            lon="116.4",
+            country_code="CN",
+            is_camera_candidate=True,
+            camera_score=90,
+            camera_reasons=["product:hikvision", "ports:554"],
+        )
+        Device.objects.create(
+            search=self.search_a,
+            ip="40.40.40.40",
+            product="Generic PLC",
+            port="502",
+            type="modbus",
+            lat="40.7",
+            lon="-74.0",
+            country_code="US",
+            is_camera_candidate=False,
+            camera_score=0,
+            camera_reasons=[],
+        )
+
+    def test_global_camera_wall_lists_only_candidates(self):
+        response = self.client.get("/camera-wall")
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn("20.20.20.20", body)
+        self.assertIn("30.30.30.30", body)
+        self.assertNotIn("40.40.40.40", body)
+
+    def test_search_camera_wall_filters_by_search_id(self):
+        response = self.client.get(f"/search/{self.search_b.id}/camera-wall")
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn("30.30.30.30", body)
+        self.assertNotIn("20.20.20.20", body)
 
 
 # ---------------------------------------------------------------------------

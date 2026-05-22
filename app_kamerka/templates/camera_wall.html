@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block page_title %}Camera Wall - ꓘamerka{% endblock %}
+
+{% block extra_css %}
+<style>
+.screenshot { max-width: 100%; max-height: 100%; display: block; }
+.camera-card-meta { font-size: 12px; color: #7f8c8d; margin-top: 8px; }
+.camera-score { font-weight: 700; color: #2ecc71; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-content-wrap">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="panel panel-default tabs">
+                <div class="panel-body tab-content">
+                    <div class="panel panel-default">
+                        <div class="panel-heading">
+                            <h3 class="panel-title">Camera Wall ({{ scope_label }})</h3>
+                        </div>
+                        <div class="panel-body">
+                            {% for device in devices %}
+                            <div class="col-md-4">
+                                <div class="panel panel-default">
+                                    <div class="panel-heading">
+                                        <div class="panel-title-box">
+                                            <h3>
+                                                <a href="{% url 'device' id=device.search_id ip=device.ip device_id=device.id %}">{{ device.ip }}</a>
+                                            </h3>
+                                        </div>
+                                    </div>
+                                    <div class="panel-body padding-0" style="background-color:#0a141d">
+                                        <a href="{% url 'device' id=device.search_id ip=device.ip device_id=device.id %}">
+                                            {% if device.screenshot %}
+                                            <img src="data:image/jpeg;base64,{{ device.screenshot }}" class="screenshot">
+                                            {% else %}
+                                            <div style="height:220px; display:flex; align-items:center; justify-content:center; color:#95a5a6;">
+                                                No screenshot
+                                            </div>
+                                            {% endif %}
+                                        </a>
+                                    </div>
+                                    <div class="panel-body">
+                                        <div class="camera-score">Score: {{ device.camera_score }}</div>
+                                        {% if device.camera_reasons %}
+                                        <div class="camera-card-meta">{{ device.camera_reasons|join:", " }}</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                            {% empty %}
+                            <div class="col-md-12">
+                                <p>No camera candidates found.</p>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% if page_obj.has_other_pages %}
+                        <div class="panel-footer">
+                            <ul class="pagination pagination-sm" style="margin:0;">
+                                {% if page_obj.has_previous %}
+                                <li><a href="?page={{ page_obj.previous_page_number }}">Previous</a></li>
+                                {% else %}
+                                <li class="disabled"><span>Previous</span></li>
+                                {% endif %}
+                                <li class="active"><span>{{ page_obj.number }}</span></li>
+                                {% if page_obj.has_next %}
+                                <li><a href="?page={{ page_obj.next_page_number }}">Next</a></li>
+                                {% else %}
+                                <li class="disabled"><span>Next</span></li>
+                                {% endif %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+    <script src="{% static 'js/plugins/datatables/jquery.dataTables.min.js' %}"></script>
+    <script src="{% static 'js/plugins/owl/owl.carousel.min.js' %}"></script>
+{% endblock %}

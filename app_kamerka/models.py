@@ -98,6 +98,27 @@ class Device(models.Model):
             "kev_listed, likely_honeypot."
         ),
     )
+    is_camera_candidate = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text=(
+            "True when camera classification heuristics identify this asset as "
+            "a likely camera/NVR endpoint."
+        ),
+    )
+    camera_score = models.IntegerField(
+        default=0,
+        db_index=True,
+        help_text=(
+            "Heuristic camera confidence score (0–100) derived from ports, "
+            "tags, product strings, and RTSP hints."
+        ),
+    )
+    camera_reasons = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="List of rule hits that contributed to camera_score.",
+    )
 
     def port_scan_label(self):
         """Short label used in the Port Scan Task dropdown (ID · IP · product or type)."""

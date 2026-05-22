@@ -710,6 +710,134 @@ def _upsert_device(search, defaults):
     return existing
 
 
+CAMERA_CANDIDATE_PORTS = {"80", "443", "554", "8080", "8554"}
+CAMERA_VENDOR_HINTS = (
+    "hikvision",
+    "dahua",
+    "axis",
+    "amcrest",
+    "vivotek",
+    "mobotix",
+    "uniview",
+    "tvt",
+    "tiandy",
+    "hanwha",
+    "arecont",
+    "grandstream",
+    "netcam",
+    "webcam",
+    "ip camera",
+    "network camera",
+    "surveillance",
+    "nvr",
+    "dvr",
+)
+CAMERA_SHODAN_TAG_HINTS = (
+    "camera",
+    "webcam",
+    "surveillance",
+    "cctv",
+    "rtsp",
+    "ipcam",
+    "nvr",
+    "dvr",
+)
+CAMERA_RTSP_HINTS = (
+    "rtsp",
+    "rtsp/1.",
+    "rtsp-url-brute",
+    "describe rtsp://",
+    "server: ip camera",
+)
+CAMERA_CANDIDATE_THRESHOLD = 40
+
+
+def _normalize_signal_values(value):
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        return [str(v).strip() for v in value if str(v).strip()]
+    text = str(value).strip()
+    if not text:
+        return []
+    if text.startswith("["):
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                return [str(v).strip() for v in parsed if str(v).strip()]
+        except json.JSONDecodeError:
+            pass
+    text = text.strip("[]")
+    parts = []
+    for comma_part in text.split(","):
+        comma_part = comma_part.strip()
+        if not comma_part:
+            continue
+        for token in comma_part.split():
+            cleaned = token.strip().strip("'\"")
+            if cleaned:
+                parts.append(cleaned)
+    return parts
+
+
+def _camera_candidate_score(ports=None, tags=None, products=None, banners=None):
+    reasons = []
+    score = 0
+
+    normalized_ports = {p for p in _normalize_signal_values(ports) if p}
+    matched_ports = sorted(normalized_ports.intersection(CAMERA_CANDIDATE_PORTS))
+    if matched_ports:
+        score += min(30, 15 * len(matched_ports))
+        reasons.append("ports:" + ",".join(matched_ports))
+
+    tag_blob = " ".join(_normalize_signal_values(tags)).lower()
+    matched_tags = sorted(
+        {hint for hint in CAMERA_SHODAN_TAG_HINTS if hint in tag_blob}
+    )
+    if matched_tags:
+        score += 25
+        reasons.append("shodan_tags:" + ",".join(matched_tags))
+
+    product_blob = " ".join(_normalize_signal_values(products)).lower()
+    matched_products = sorted(
+        {hint for hint in CAMERA_VENDOR_HINTS if hint in product_blob}
+    )
+    if matched_products:
+        score += 40
+        reasons.append("product:" + ",".join(matched_products))
+
+    banner_blob = " ".join(_normalize_signal_values(banners)).lower()
+    matched_banner_hints = sorted(
+        {hint for hint in CAMERA_RTSP_HINTS if hint in banner_blob}
+    )
+    if matched_banner_hints:
+        score += 25
+        reasons.append("rtsp_banner:" + ",".join(matched_banner_hints))
+
+    score = min(100, score)
+    return score, reasons
+
+
+def _is_camera_candidate(score):
+    return score >= CAMERA_CANDIDATE_THRESHOLD
+
+
+def _apply_camera_candidate_classification(
+    device, *, ports=None, tags=None, products=None, banners=None
+):
+    score, reasons = _camera_candidate_score(
+        ports=ports,
+        tags=tags,
+        products=products,
+        banners=banners,
+    )
+    device.camera_score = score
+    device.camera_reasons = reasons
+    device.is_camera_candidate = _is_camera_candidate(score)
+    device.save(update_fields=["camera_score", "camera_reasons", "is_camera_candidate"])
+    return score, reasons
+
+
 def shodan_search_worker(
     fk, query, search_type, category, country=None, coordinates=None, all_results=False
 ):
@@ -958,6 +1086,17 @@ def shodan_search_worker(
                         exc,
                     )
 
+            camera_score, camera_reasons = _camera_candidate_score(
+                ports=[result.get("port", "")],
+                tags=result.get("tags", []),
+                products=[product, search_type],
+                banners=[
+                    result.get("data", ""),
+                    result.get("http", {}).get("title", ""),
+                    result.get("http", {}).get("server", ""),
+                ],
+            )
+
             _upsert_device(
                 search,
                 {
@@ -979,6 +1118,9 @@ def shodan_search_worker(
                     "screenshot": screenshot,
                     "isp": isp,
                     "cpe": cpe,
+                    "camera_score": camera_score,
+                    "camera_reasons": camera_reasons,
+                    "is_camera_candidate": _is_camera_candidate(camera_score),
                 },
             )
 
@@ -1833,6 +1975,13 @@ def shodan_scan_task(id):
             device=device, products=product, ports=ports, tags=tags, vulns=vulns
         )
         device1.save()
+        _apply_camera_candidate_classification(
+            device,
+            ports=ports,
+            tags=tags,
+            products=[device.product, device.type, *product],
+            banners=[device.data],
+        )
         print(results["ports"])
 
         return {"current": total, "total": total, "percent": 100}
@@ -2833,6 +2982,7 @@ def nmap_rtsp_scan(id, ports=None, timing=None):
     device_type = device1.type
 
     scan_ports = ports or NMAP_RTSP_PORTS
+    scan_port_values = [p.strip() for p in str(scan_ports).split(",") if p.strip()]
     scan_timing = timing or NMAP_RTSP_TIMING
 
     options = "-sV -p {} {} --script=rtsp-url-brute".format(scan_ports, scan_timing)
@@ -2866,6 +3016,21 @@ def nmap_rtsp_scan(id, ports=None, timing=None):
         device1.scan = json.dumps(return_dict)
         device1.exploited_scanned = True
         device1.save()
+        rtsp_banners = []
+        rtsp_ports = []
+        for port_name, payload in return_dict.items():
+            if not port_name.startswith("port_"):
+                continue
+            rtsp_ports.append(port_name.split("_", 1)[1])
+            rtsp_banners.append(payload.get("banner", ""))
+            rtsp_banners.append(" ".join(payload.get("scripts", {}).values()))
+        _apply_camera_candidate_classification(
+            device1,
+            ports=rtsp_ports or scan_port_values,
+            tags=[],
+            products=[device1.product, device1.type],
+            banners=[device1.data, *rtsp_banners],
+        )
     except Exception as e:
         return_dict["error"] = str(e)
 
