@@ -107,7 +107,9 @@ class ToolRegistryLoadTest(TestCase):
                     self.fail("to_dict() for {!r} is not JSON-serialisable: {}".format(plugin.name, exc))
 
     def test_register_duplicate_name_raises(self):
-        from app_kamerka.tool_registry import ToolPlugin, register
+        from app_kamerka.tool_registry import ToolPlugin, get_tool, register
+
+        original = get_tool("screenshot")
 
         with self.assertRaises(ValueError):
             register(
@@ -119,6 +121,7 @@ class ToolRegistryLoadTest(TestCase):
                     call_mode="args",
                 )
             )
+        self.assertIs(get_tool("screenshot"), original)
 
 
 class ToolPluginEnabledTest(TestCase):
@@ -460,6 +463,15 @@ class PlaybookCreateAPITest(TestCase):
         data = json.loads(response.content)
         self.assertEqual(data["error"], "Each step must be an object")
 
+    def test_step_missing_tool_returns_400(self):
+        response = self._post({
+            "name": "Missing Tool Field PB",
+            "steps": [{"order": 1, "exec_type": "chain"}],
+        })
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.content)
+        self.assertIn("Unknown tool in steps", data["error"])
+
     def test_duplicate_name_returns_400(self):
         from app_kamerka.models import Playbook
         Playbook.objects.create(name="Duplicate PB", steps=[])
@@ -552,7 +564,7 @@ class PlaybookRunAPITest(TestCase):
         pb_run = PlaybookRun.objects.get(pk=data["playbook_run_id"])
         self.assertEqual(len(pb_run.task_runs), 4)
 
-    def test_run_skips_non_object_steps_without_500(self):
+    def test_run_rejects_malformed_steps(self):
         from app_kamerka.models import Playbook
 
         bad_steps_playbook = Playbook.objects.create(
@@ -567,4 +579,4 @@ class PlaybookRunAPITest(TestCase):
         self.assertEqual(response.status_code, 400)
         data = json.loads(response.content)
         self.assertEqual(data["runs"], [])
-        self.assertIn("Skipped invalid step: must be an object", data["errors"])
+        self.assertIn("Skipped invalid step at position 1: expected dict, got str", data["errors"])

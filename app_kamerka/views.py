@@ -3126,9 +3126,13 @@ def playbook_run_view(request, pk):
         key=lambda s: s.get("order", 0) if isinstance(s, dict) else 0,
     )
 
-    for step in sorted_steps:
+    for idx, step in enumerate(sorted_steps, start=1):
         if not isinstance(step, dict):
-            errors.append("Skipped invalid step: must be an object")
+            errors.append(
+                "Skipped invalid step at position {}: expected dict, got {}".format(
+                    idx, type(step).__name__
+                )
+            )
             continue
         tool_name = step.get("tool", "")
         plugin = _tool_registry.get_tool(tool_name)

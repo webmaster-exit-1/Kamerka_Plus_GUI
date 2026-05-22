@@ -96,19 +96,16 @@ def dispatch_tool(
     task_callable = _resolve_celery_task(plugin.celery_task_name)
 
     # Build positional / keyword arguments from the call_mode
-    device_id = int(device_id) if device_id is not None else None
+    device_id = int(device_id)
     task_args: list = []
     task_kwargs: dict = dict(extra_kwargs or {})
 
     if plugin.call_mode == "args":
-        if device_id is not None:
-            task_args = [device_id]
+        task_args = [device_id]
     elif plugin.call_mode == "kwargs_id":
-        if device_id is not None:
-            task_kwargs["id"] = device_id
+        task_kwargs["id"] = device_id
     elif plugin.call_mode == "kwargs_device_id":
-        if device_id is not None:
-            task_kwargs["device_id"] = device_id
+        task_kwargs["device_id"] = device_id
     else:
         raise ValueError("Unsupported call_mode {!r} for tool {!r}".format(plugin.call_mode, tool_name))
 
@@ -131,7 +128,7 @@ def _resolve_celery_task(dotted_name: str):
     parts = dotted_name.rsplit(".", 1)
     if len(parts) != 2:
         raise ToolNotFoundError(
-            "Invalid celery_task_name {!r}: expected 'module.function'".format(dotted_name)
+            "Invalid celery_task_name {!r}: expected format 'module[.submodule].function'".format(dotted_name)
         )
     module_path, func_name = parts
     import importlib
