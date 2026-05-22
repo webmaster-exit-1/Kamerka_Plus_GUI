@@ -25,5 +25,30 @@
       </div>
     </div>
   </div>
+
+  {% if tool_checks %}
+  <div class="row">
+    <div class="col-md-12">
+      <div class="panel panel-default">
+        <div class="panel-heading"><h3 class="panel-title">Tool Plugin Status</h3></div>
+        <div class="panel-body">
+          <table class="table table-striped">
+            <thead><tr><th>Tool</th><th>Enabled</th><th>Status</th><th>Detail</th></tr></thead>
+            <tbody>
+            {% for tc in tool_checks %}
+            <tr>
+              <td>{{ tc.name }}</td>
+              <td>{% if tc.enabled %}<span class="label label-success">Yes</span>{% else %}<span class="label label-warning">Disabled</span>{% endif %}</td>
+              <td>{% if tc.ok %}<span class="label label-success">Ready</span>{% else %}<span class="label label-warning">Warning</span>{% endif %}</td>
+              <td>{{ tc.detail }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

@@ -44,8 +44,12 @@ from app_kamerka.models import (
     GFWStatus,
     TaskRun,
     Watchlist,
+    Playbook,
+    PlaybookRun,
 )
 from app_kamerka.task_utils import record_task_run, sync_task_run, sync_task_run_by_task_id
+import app_kamerka.tool_registry as _tool_registry
+from app_kamerka.dispatcher import ToolNotFoundError, ToolDisabledError
 from .forms import WatchlistForm
 from app_feeds.models import FeedEntry
 from kamerka.tasks import (
@@ -2751,38 +2755,27 @@ def bulk_run(request):
         tool = request.POST.get("tool", "")
         device_ids = _parse_device_ids(request.POST.getlist("device_ids"))
 
-    task_map = {
-        TaskRun.TOOL_SCREENSHOT: (capture_screenshot, "args"),
-        TaskRun.TOOL_NUCLEI: (nuclei_scan, "kwargs_id"),
-        TaskRun.TOOL_NMAP: (nmap_device_scan, "args"),
-        TaskRun.TOOL_PORT_SCAN: (port_scan_task, "args"),
-    }
-    if tool not in task_map:
+    # Registry-driven: validate tool and check bulk_supported flag
+    plugin = _tool_registry.get_tool(tool)
+    if plugin is None:
         return JsonResponse({"error": "Invalid tool selection"}, status=400)
+    if not plugin.enabled:
+        return JsonResponse({"error": "Tool '{}' is currently disabled".format(tool)}, status=400)
+    if not plugin.bulk_supported:
+        return JsonResponse({"error": "Tool '{}' does not support bulk execution".format(tool)}, status=400)
     if not device_ids:
         return JsonResponse({"error": "No devices selected"}, status=400)
 
-    task_callable, call_mode = task_map[tool]
+    from app_kamerka.dispatcher import dispatch_tool
+
     runs = []
     for device in Device.objects.filter(id__in=device_ids):
-        if call_mode == "kwargs_id":
-            async_result, task_run = _enqueue_tracked_task(
-                request,
-                task_callable,
-                task_kwargs={"id": device.id},
-                device_id=device.id,
-                search_id=device.search_id,
-                tool=tool,
+        try:
+            async_result, task_run = dispatch_tool(
+                request, tool, device_id=device.id, search_id=device.search_id
             )
-        else:
-            async_result, task_run = _enqueue_tracked_task(
-                request,
-                task_callable,
-                task_args=[device.id],
-                device_id=device.id,
-                search_id=device.search_id,
-                tool=tool,
-            )
+        except (ToolNotFoundError, ToolDisabledError) as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
         runs.append(
             {
                 "device_id": device.id,
@@ -2906,7 +2899,51 @@ def setup_check_view(request):
     except Exception as exc:
         checks.append({"name": "Celery worker", "ok": False, "detail": str(exc)[:200]})
 
-    return render(request, "setup_checks.html", {"checks": checks})
+    # ── Per-tool registry checks ──────────────────────────────────────────────
+    # Build one entry per registered tool summarising binary availability,
+    # required secrets, and enabled/disabled state.
+    tool_checks = []
+    seen_binaries: set = set()
+    seen_secrets: set = set()
+    for plugin in _tool_registry.all_tools():
+        missing_bins = []
+        for binary in plugin.required_binaries:
+            if binary in seen_binaries:
+                continue
+            seen_binaries.add(binary)
+            if not shutil.which(binary):
+                missing_bins.append(binary)
+
+        missing_secrets = []
+        for secret in plugin.required_secrets:
+            if secret in seen_secrets:
+                continue
+            seen_secrets.add(secret)
+            if not os.environ.get(secret, ""):
+                missing_secrets.append(secret)
+
+        problems = []
+        if missing_bins:
+            problems.append("missing binaries: {}".format(", ".join(missing_bins)))
+        if missing_secrets:
+            problems.append("missing secrets: {}".format(", ".join(missing_secrets)))
+        if not plugin.enabled:
+            problems.append("disabled via KAMERKA_TOOL_{}_ENABLED".format(plugin.name.upper()))
+
+        tool_checks.append(
+            {
+                "name": plugin.label,
+                "ok": not problems,
+                "detail": "; ".join(problems) if problems else "Ready",
+                "enabled": plugin.enabled,
+            }
+        )
+
+    return render(
+        request,
+        "setup_checks.html",
+        {"checks": checks, "tool_checks": tool_checks},
+    )
 
 
 def error_400(request, exception):
@@ -2923,3 +2960,206 @@ def error_404(request, exception):
 
 def error_500(request):
     return render(request, "500.html", status=500)
+
+
+# ---------------------------------------------------------------------------
+# Tool Registry Discovery API
+# ---------------------------------------------------------------------------
+
+
+def api_tools_list(request):
+    """Return JSON describing all registered tool plugins.
+
+    GET /api/tools/
+
+    Response::
+
+        [
+          {
+            "name": "screenshot",
+            "label": "Screenshot",
+            "description": "...",
+            "required_binaries": ["chromium"],
+            "required_secrets": [],
+            "bulk_supported": true,
+            "enabled": true
+          },
+          ...
+        ]
+    """
+    tools = [p.to_dict() for p in _tool_registry.all_tools()]
+    return JsonResponse(tools, safe=False)
+
+
+def api_tools_applicable(request, device_id):
+    """Return tools applicable to a specific device.
+
+    GET /api/tools/applicable/<device_id>/
+
+    Currently returns all enabled tools (applicability filtering is a future
+    extension point — device_type-based filtering can be added here without
+    changing the API shape).
+    """
+    device = get_object_or_404(Device, pk=device_id)
+    # All enabled tools are applicable for now; this is the extension point for
+    # per-type applicability rules without breaking callers.
+    tools = [p.to_dict() for p in _tool_registry.enabled_tools()]
+    return JsonResponse({"device_id": device.pk, "tools": tools})
+
+
+# ---------------------------------------------------------------------------
+# Playbook CRUD + execution views
+# ---------------------------------------------------------------------------
+
+
+@login_required
+def playbooks_list(request):
+    """List all playbooks and allow creating new ones."""
+    playbooks = Playbook.objects.order_by("name")
+    return render(request, "playbooks.html", {"playbooks": playbooks})
+
+
+@login_required
+def playbook_detail(request, pk):
+    """Display a playbook and its run history."""
+    playbook = get_object_or_404(Playbook, pk=pk)
+    runs = playbook.runs.all()[:20]
+    return render(request, "playbook_detail.html", {"playbook": playbook, "runs": runs})
+
+
+@require_POST
+@login_required
+def playbook_create(request):
+    """Create a new Playbook from a JSON request body.
+
+    POST /api/playbooks/create/
+    Body::
+
+        {
+          "name": "Full Recon",
+          "description": "Screenshot + Nuclei + SBOM",
+          "steps": [
+            {"tool": "screenshot", "order": 1, "exec_type": "chain"},
+            {"tool": "nuclei",     "order": 2, "exec_type": "chain"},
+            {"tool": "sbom",       "order": 3, "exec_type": "chain"}
+          ]
+        }
+    """
+    try:
+        data = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    name = str(data.get("name", "")).strip()
+    if not name:
+        return JsonResponse({"error": "name is required"}, status=400)
+
+    steps = data.get("steps", [])
+    if not isinstance(steps, list):
+        return JsonResponse({"error": "steps must be a list"}, status=400)
+
+    # Validate step tool names against registry
+    for step in steps:
+        tool_name = step.get("tool", "")
+        if not _tool_registry.get_tool(tool_name):
+            return JsonResponse(
+                {"error": "Unknown tool in steps: {!r}".format(tool_name)}, status=400
+            )
+
+    if Playbook.objects.filter(name=name).exists():
+        return JsonResponse({"error": "A playbook named {!r} already exists".format(name)}, status=400)
+
+    playbook = Playbook.objects.create(
+        name=name,
+        description=str(data.get("description", "")),
+        steps=steps,
+    )
+    return JsonResponse(
+        {"id": playbook.pk, "name": playbook.name, "steps": playbook.steps}, status=201
+    )
+
+
+@require_POST
+@login_required
+def playbook_run_view(request, pk):
+    """Execute a Playbook against one or more devices.
+
+    POST /api/playbooks/<pk>/run/
+    Body::
+
+        {"device_ids": [1, 2, 3]}
+
+    Each enabled step is dispatched as a separate Celery task.  A
+    ``PlaybookRun`` record is created to track the overall execution.
+
+    Response::
+
+        {
+          "playbook_run_id": 42,
+          "runs": [
+            {"device_id": 1, "tool": "screenshot", "task_id": "...", "task_run_id": 7},
+            ...
+          ]
+        }
+    """
+    playbook = get_object_or_404(Playbook, pk=pk)
+    try:
+        data = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    device_ids = _parse_device_ids(data.get("device_ids", []))
+    if not device_ids:
+        return JsonResponse({"error": "No device_ids provided"}, status=400)
+
+    from app_kamerka.dispatcher import dispatch_tool
+
+    all_runs = []
+    errors = []
+
+    pb_run = PlaybookRun.objects.create(
+        playbook=playbook,
+        device_ids=device_ids,
+        status=PlaybookRun.STATUS_RUNNING,
+    )
+
+    devices = {d.pk: d for d in Device.objects.filter(id__in=device_ids)}
+
+    # Sort steps by order field so they are dispatched in declared order
+    sorted_steps = sorted(playbook.steps, key=lambda s: s.get("order", 0))
+
+    for step in sorted_steps:
+        tool_name = step.get("tool", "")
+        plugin = _tool_registry.get_tool(tool_name)
+        if plugin is None or not plugin.enabled:
+            errors.append("Skipped disabled/unknown tool: {!r}".format(tool_name))
+            continue
+        for device_id, device in devices.items():
+            try:
+                async_result, task_run = dispatch_tool(
+                    request, tool_name, device_id=device_id, search_id=device.search_id
+                )
+                all_runs.append(
+                    {
+                        "device_id": device_id,
+                        "tool": tool_name,
+                        "task_id": async_result.id,
+                        "task_run_id": task_run.id,
+                    }
+                )
+            except (ToolNotFoundError, ToolDisabledError) as exc:
+                errors.append(str(exc))
+
+    pb_run.task_runs = all_runs
+    pb_run.error = "; ".join(errors) if errors else ""
+    pb_run.status = PlaybookRun.STATUS_RUNNING if all_runs else PlaybookRun.STATUS_FAILURE
+    pb_run.save()
+
+    return JsonResponse(
+        {
+            "playbook_run_id": pb_run.pk,
+            "runs": all_runs,
+            "errors": errors,
+        },
+        status=200 if all_runs else 400,
+    )
