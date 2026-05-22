@@ -108,6 +108,7 @@ class Device(models.Model):
     )
     camera_score = models.IntegerField(
         default=0,
+        db_index=True,
         help_text=(
             "Heuristic camera confidence score (0–100) derived from ports, "
             "tags, product strings, and RTSP hints."

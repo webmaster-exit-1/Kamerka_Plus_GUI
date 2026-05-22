@@ -24,6 +24,7 @@ class Migration(migrations.Migration):
             model_name="device",
             name="camera_score",
             field=models.IntegerField(
+                db_index=True,
                 default=0,
                 help_text=(
                     "Heuristic camera confidence score (0–100) derived from ports, "

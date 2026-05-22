@@ -760,12 +760,13 @@ def _normalize_signal_values(value):
     text = str(value).strip()
     if not text:
         return []
-    try:
-        parsed = json.loads(text)
-        if isinstance(parsed, list):
-            return [str(v).strip() for v in parsed if str(v).strip()]
-    except Exception:
-        pass
+    if text.startswith("["):
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                return [str(v).strip() for v in parsed if str(v).strip()]
+        except json.JSONDecodeError:
+            pass
     text = text.strip("[]")
     parts = []
     for comma_part in text.split(","):
