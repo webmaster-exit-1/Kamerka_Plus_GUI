@@ -97,6 +97,8 @@ _REGISTRY: dict[str, ToolPlugin] = {}
 
 def register(plugin: ToolPlugin) -> ToolPlugin:
     """Add *plugin* to the global registry and return it."""
+    if plugin.name in _REGISTRY:
+        raise ValueError("Tool {!r} is already registered".format(plugin.name))
     _REGISTRY[plugin.name] = plugin
     return plugin
 

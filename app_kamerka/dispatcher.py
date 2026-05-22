@@ -89,6 +89,8 @@ def dispatch_tool(
         raise ToolNotFoundError("Unknown tool: {!r}".format(tool_name))
     if not plugin.enabled:
         raise ToolDisabledError("Tool {!r} is disabled".format(tool_name))
+    if device_id is None:
+        raise ValueError("device_id is required")
 
     # Resolve the Celery callable from the dotted task name
     task_callable = _resolve_celery_task(plugin.celery_task_name)
@@ -107,6 +109,8 @@ def dispatch_tool(
     elif plugin.call_mode == "kwargs_device_id":
         if device_id is not None:
             task_kwargs["device_id"] = device_id
+    else:
+        raise ValueError("Unsupported call_mode {!r} for tool {!r}".format(plugin.call_mode, tool_name))
 
     return _enqueue_tracked_task(
         request,

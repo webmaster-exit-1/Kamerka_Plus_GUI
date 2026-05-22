@@ -2904,22 +2904,14 @@ def setup_check_view(request):
     # Build one entry per registered tool summarising binary availability,
     # required secrets, and enabled/disabled state.
     tool_checks = []
-    seen_binaries: set = set()
-    seen_secrets: set = set()
     for plugin in _tool_registry.all_tools():
         missing_bins = []
         for binary in plugin.required_binaries:
-            if binary in seen_binaries:
-                continue
-            seen_binaries.add(binary)
             if not shutil.which(binary):
                 missing_bins.append(binary)
 
         missing_secrets = []
         for secret in plugin.required_secrets:
-            if secret in seen_secrets:
-                continue
-            seen_secrets.add(secret)
             if not os.environ.get(secret, ""):
                 missing_secrets.append(secret)
 
@@ -3061,6 +3053,8 @@ def playbook_create(request):
 
     # Validate step tool names against registry
     for step in steps:
+        if not isinstance(step, dict):
+            return JsonResponse({"error": "Each step must be an object"}, status=400)
         tool_name = step.get("tool", "")
         if not _tool_registry.get_tool(tool_name):
             return JsonResponse(
@@ -3127,9 +3121,15 @@ def playbook_run_view(request, pk):
     devices = {d.pk: d for d in Device.objects.filter(id__in=device_ids)}
 
     # Sort steps by order field so they are dispatched in declared order
-    sorted_steps = sorted(playbook.steps, key=lambda s: s.get("order", 0))
+    sorted_steps = sorted(
+        playbook.steps if isinstance(playbook.steps, list) else [],
+        key=lambda s: s.get("order", 0) if isinstance(s, dict) else 0,
+    )
 
     for step in sorted_steps:
+        if not isinstance(step, dict):
+            errors.append("Skipped invalid step: must be an object")
+            continue
         tool_name = step.get("tool", "")
         plugin = _tool_registry.get_tool(tool_name)
         if plugin is None or not plugin.enabled:

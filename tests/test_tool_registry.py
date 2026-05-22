@@ -106,6 +106,20 @@ class ToolRegistryLoadTest(TestCase):
                 except (TypeError, ValueError) as exc:
                     self.fail("to_dict() for {!r} is not JSON-serialisable: {}".format(plugin.name, exc))
 
+    def test_register_duplicate_name_raises(self):
+        from app_kamerka.tool_registry import ToolPlugin, register
+
+        with self.assertRaises(ValueError):
+            register(
+                ToolPlugin(
+                    name="screenshot",
+                    label="Duplicate Screenshot",
+                    description="Duplicate entry for test",
+                    celery_task_name="kamerka.tasks.capture_screenshot",
+                    call_mode="args",
+                )
+            )
+
 
 class ToolPluginEnabledTest(TestCase):
     """Plugin.enabled must respect the KAMERKA_TOOL_<NAME>_ENABLED env var."""
@@ -193,6 +207,42 @@ class DispatcherTest(TestCase):
         with patch.dict(os.environ, {"KAMERKA_TOOL_SCREENSHOT_ENABLED": "false"}):
             with self.assertRaises(ToolDisabledError):
                 dispatch_tool(request, "screenshot", device_id=self.device.id)
+
+    def test_dispatch_requires_device_id(self):
+        from app_kamerka.dispatcher import dispatch_tool
+        from django.test import RequestFactory
+        from django.contrib.auth.models import AnonymousUser
+
+        rf = RequestFactory()
+        request = rf.get("/")
+        request.user = AnonymousUser()
+
+        with self.assertRaises(ValueError):
+            dispatch_tool(request, "screenshot", device_id=None)
+
+    def test_dispatch_rejects_unsupported_call_mode(self):
+        from app_kamerka.dispatcher import dispatch_tool
+        from app_kamerka.tool_registry import ToolPlugin
+        from django.test import RequestFactory
+        from django.contrib.auth.models import AnonymousUser
+
+        rf = RequestFactory()
+        request = rf.get("/")
+        request.user = AnonymousUser()
+
+        bad_plugin = ToolPlugin(
+            name="bad-tool",
+            label="Bad Tool",
+            description="bad call mode",
+            celery_task_name="kamerka.tasks.capture_screenshot",
+            call_mode="invalid_mode",
+        )
+        with patch("app_kamerka.dispatcher.get_tool", return_value=bad_plugin):
+            with patch("kamerka.tasks.capture_screenshot") as mock_task:
+                mock_task.delay.return_value = MagicMock(id="bad-mode-task")
+                mock_task.name = "kamerka.tasks.capture_screenshot"
+                with self.assertRaises(ValueError):
+                    dispatch_tool(request, "bad-tool", device_id=self.device.id)
 
 
 # ---------------------------------------------------------------------------
@@ -401,6 +451,15 @@ class PlaybookCreateAPITest(TestCase):
         data = json.loads(response.content)
         self.assertIn("error", data)
 
+    def test_non_object_step_returns_400(self):
+        response = self._post({
+            "name": "Malformed Steps PB",
+            "steps": ["not-a-dict"],
+        })
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.content)
+        self.assertEqual(data["error"], "Each step must be an object")
+
     def test_duplicate_name_returns_400(self):
         from app_kamerka.models import Playbook
         Playbook.objects.create(name="Duplicate PB", steps=[])
@@ -492,3 +551,20 @@ class PlaybookRunAPITest(TestCase):
         self.assertEqual(len(data["runs"]), 4)
         pb_run = PlaybookRun.objects.get(pk=data["playbook_run_id"])
         self.assertEqual(len(pb_run.task_runs), 4)
+
+    def test_run_skips_non_object_steps_without_500(self):
+        from app_kamerka.models import Playbook
+
+        bad_steps_playbook = Playbook.objects.create(
+            name="Bad Steps Run",
+            steps=["not-a-dict"],
+        )
+        response = self.client.post(
+            "/api/playbooks/{}/run/".format(bad_steps_playbook.pk),
+            data=json.dumps({"device_ids": [self.device.id]}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.content)
+        self.assertEqual(data["runs"], [])
+        self.assertIn("Skipped invalid step: must be an object", data["errors"])
