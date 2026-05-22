@@ -131,7 +131,7 @@ register(ToolPlugin(
     description="Capture a screenshot of the device web interface via headless Chrome.",
     celery_task_name="kamerka.tasks.capture_screenshot",
     call_mode="args",
-    required_binaries=["google-chrome", "chromium", "chromedriver"],
+    required_binaries=["chromium"],  # chromedriver also needed; google-chrome is an alternative name
     bulk_supported=True,
 ))
 

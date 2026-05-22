@@ -2775,7 +2775,8 @@ def bulk_run(request):
                 request, tool, device_id=device.id, search_id=device.search_id
             )
         except (ToolNotFoundError, ToolDisabledError) as exc:
-            return JsonResponse({"error": str(exc)}, status=400)
+            _views_logger.warning("bulk_run dispatch error for tool %r: %s", tool, exc)
+            return JsonResponse({"error": "Tool could not be dispatched"}, status=400)
         runs.append(
             {
                 "device_id": device.id,
@@ -3148,7 +3149,8 @@ def playbook_run_view(request, pk):
                     }
                 )
             except (ToolNotFoundError, ToolDisabledError) as exc:
-                errors.append(str(exc))
+                _views_logger.warning("playbook_run dispatch skipped tool %r: %s", tool_name, exc)
+                errors.append("Step skipped: tool {!r} could not be dispatched".format(tool_name))
 
     pb_run.task_runs = all_runs
     pb_run.error = "; ".join(errors) if errors else ""
