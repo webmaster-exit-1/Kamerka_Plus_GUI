@@ -13,6 +13,12 @@ import warnings
 from pathlib import Path
 from django.core.management.utils import get_random_secret_key
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _LOG_DIR = os.path.join(BASE_DIR, "logs")
