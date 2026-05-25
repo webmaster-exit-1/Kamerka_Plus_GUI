@@ -28,4 +28,5 @@ feedparser>=6.0
 # WorldMonitor integration — proximity scoring for device enrichment
 geopy>=2.3
 gunicorn>=22.0.0,<23.0
+python-dotenv>=1.0.0
 whitenoise>=6.7.0,<7.0

@@ -233,10 +233,18 @@ docker run -d --name kamerka-pg \
   -e POSTGRES_PASSWORD=CHANGE_ME \
   -p 5432:5432 postgres:16
 
-# Or install natively (Debian/Ubuntu)
+# Or install natively on Debian/Ubuntu/Kali (not for Termux — see below)
 sudo apt install postgresql postgresql-contrib
 sudo -u postgres createuser --createdb kamerka
 sudo -u postgres createdb -O kamerka kamerka
+
+# Termux (Android) — no sudo; postgres runs as your user
+pkg install postgresql
+mkdir -p $PREFIX/var/lib/postgresql
+initdb $PREFIX/var/lib/postgresql
+pg_ctl -D $PREFIX/var/lib/postgresql start
+createuser --createdb kamerka
+createdb -O kamerka kamerka
 ```
 
 2. Ensure Python dependencies are installed (includes PostgreSQL adapter):
@@ -415,6 +423,18 @@ pip install -r requirements.txt
 ```
 export SHODAN_API_KEY=your_key_here
 export DJANGO_SECRET_KEY=your_secret_key_here
+```
+
+SQLite is used by default — no database setup needed for a basic install.
+To use PostgreSQL instead, set up the database first (see the PostgreSQL section
+above for the `pkg install postgresql` / no-sudo steps) then also export:
+
+```
+export DB_NAME=kamerka
+export DB_USER=kamerka
+export DB_PASSWORD=CHANGE_ME
+export DB_HOST=localhost
+export DB_PORT=5432
 ```
 
 ### Run
