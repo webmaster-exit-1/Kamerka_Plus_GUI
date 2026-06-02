@@ -1,0 +1,36 @@
+{% include "includes/breadcrumbs.html" %}
+{% if search_id %}
+<div class="km-breadcrumb-bar" style="margin-top: -1px; border-top: none; padding-top: 0;">
+  <span class="km-breadcrumb-current" style="margin-right: auto;">
+    {% if device_count is not None %}{{ device_count }} device{{ device_count|pluralize }}{% endif %}
+  </span>
+  <div class="km-case-actions">
+    <button type="button" class="km-btn-ghost" data-km-export-toggle aria-expanded="false">Export</button>
+    {% if show_globe_link %}
+    <a href="/map3d?search={{ search_id }}" class="km-btn-ghost">3D Map</a>
+    {% endif %}
+    {% if device_id %}
+    <a href="/report/device/{{ device_id }}" class="km-btn-ghost">Report</a>
+    <a href="/hexsploit/?target={{ device_ip|urlencode }}" class="km-btn-ghost km-btn-accent">HexSploit</a>
+    {% if not analyst_mode %}
+    <a href="?analyst=1" class="km-btn-ghost" title="Hide exploit controls">Analyst view</a>
+    {% else %}
+    <a href="?" class="km-btn-ghost">Operator view</a>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+<div class="km-export-drawer" id="km-export-drawer" hidden>
+  <div class="km-export-grid">
+    <a href="/export/csv/{{ search_id }}" class="km-btn-ghost">CSV</a>
+    <a href="/export/kml/{{ search_id }}" class="km-btn-ghost">KML</a>
+    <a href="/export/json/{{ search_id }}" class="km-btn-ghost">GeoJSON</a>
+    <a href="/api/export/geojson/{{ search_id }}" class="km-btn-ghost" target="_blank" rel="noopener">GeoJSON API</a>
+    {% if device_id %}
+    <a href="/report/device/{{ device_id }}" class="km-btn-ghost">PDF report</a>
+    <a href="/{{ device_id }}/msf/resource" class="km-btn-ghost" target="_blank" rel="noopener">MSF resource</a>
+    <a href="/{{ device_id }}/recon-ng/script" class="km-btn-ghost" target="_blank" rel="noopener">recon-ng</a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

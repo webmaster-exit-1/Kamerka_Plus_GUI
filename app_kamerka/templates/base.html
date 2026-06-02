@@ -24,6 +24,8 @@
           href="{% static 'css/cyberpunk.css' %}"/>
     <link rel="stylesheet" type="text/css"
           href="{% static 'css/hamburger-nav.css' %}"/>
+    <link rel="stylesheet" type="text/css"
+          href="{% static 'css/kamerka-shell.css' %}"/>
 
     <!-- PAGE-SPECIFIC CSS (and any pre-body <script> tags a page needs) -->
     {% block extra_css %}{% endblock %}
@@ -99,122 +101,12 @@
 <body>
     <div class="page-container">
 
-        <!-- ── HAMBURGER BUTTON (fixed, top-right, every page) ──────── -->
-        <button id="kamerka-hamburger-btn"
-                class="kamerka-hamburger-btn"
-                type="button"
-                aria-label="Open navigation menu"
-                aria-expanded="false"
-                aria-controls="kamerka-hamburger-overlay">&#9776;</button>
-
-        <!-- ── HAMBURGER OVERLAY ────────────────────────────────────── -->
-        <nav id="kamerka-hamburger-overlay"
-             class="kamerka-hamburger-overlay"
-             hidden
-             aria-label="Navigation menu">
-            <a href="/"        class="kamerka-nav-link">&#x1F3E0; Home</a>
-            <a href="/index"   class="kamerka-nav-link">&#x1F4CA; Dashboard</a>
-            <a href="/history" class="kamerka-nav-link">&#x1F4C2; History</a>
-            <a href="/watchlists" class="kamerka-nav-link">&#x1F4DD; Watchlists</a>
-            <a href="/playbooks/" class="kamerka-nav-link">&#x1F4CB; Playbooks</a>
-            <a href="/map"     class="kamerka-nav-link">&#x1F4CD; Map</a>
-            <a href="/globe"   class="kamerka-nav-link">&#x1F30D; Globe</a>
-            <a href="/tasks"   class="kamerka-nav-link">&#x23F1; Tasks</a>
-            <a href="/gallery" class="kamerka-nav-link">&#x1F4F7; Screenshots</a>
-            <a href="/devices" class="kamerka-nav-link">&#x1F50D; Search</a>
-            <a href="/healthz/setup/" class="kamerka-nav-link">&#x2705; First Run Checks</a>
-            <a href="/sources" class="kamerka-nav-link">&#x1F4D6; Useful Links</a>
-        </nav>
+        {% include "includes/hamburger_nav.html" %}
 
         <!-- ── LEFT SIDEBAR (visible on wide screens) ───────────────── -->
         <div class="page-sidebar">
             <ul class="x-navigation">
-                <li class="xn-logo">
-                    <a href="/">ꓘamerka</a>
-                    <a href="#" class="x-navigation-control"></a>
-                </li>
-                <li class="xn-profile">
-                    <div class="profile">
-                        <div class="profile-image"></div>
-                        <div class="profile-data">
-                            <img width="200px" height="200px"
-                                 src="{% static 'images/OffensiveOsint-logo-RGB-2.svg' %}"
-                                 alt="Offensive OSINT logo">
-                        </div>
-                    </div>
-                </li>
-                <li class="xn-title">Navigation</li>
-                <li class="">
-                    <a href="/index">
-                        <span class="fa fa-desktop"></span>
-                        <span class="xn-text">Dashboard</span>
-                    </a>
-                </li>
-                <li class="">
-                    <a href="/history">
-                        <span class="fa fa-files-o"></span>
-                        <span class="xn-text">History</span>
-                    </a>
-                </li>
-                <li class="">
-                    <a href="/watchlists">
-                        <span class="fa fa-list"></span>
-                        <span class="xn-text">Watchlists</span>
-                    </a>
-                </li>
-                <li class="">
-                    <a href="/map">
-                        <span class="fa fa-map-marker"></span>
-                        <span class="xn-text">Map</span>
-                    </a>
-                </li>
-                <li class="">
-                    <a href="/devices">
-                        <span class="fa fa-search"></span>
-                        <span class="xn-text">Search</span>
-                    </a>
-                </li>
-                <li class="">
-                    <a href="/tasks">
-                        <span class="fa fa-tasks"></span>
-                        <span class="xn-text">Tasks</span>
-                    </a>
-                </li>
-                <li class="">
-                    <a href="/gallery">
-                        <span class="fa fa-camera"></span>
-                        <span class="xn-text">Screenshots</span>
-                    </a>
-                </li>
-                <li class="">
-                    <a href="/globe">
-                        <span class="fa fa-globe"></span>
-                        <span class="xn-text">Globe</span>
-                    </a>
-                </li>
-                <li class="xn-title">Components</li>
-                <li>
-                    <a href="/healthz/setup/">
-                        <span class="fa fa-check-circle"></span>
-                        <span class="xn-text">First run checks</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="/sources">
-                        <span class="fa fa-book"></span>
-                        <span class="xn-text">Useful links</span>
-                    </a>
-                </li>
-                <li class="xn-title">Worker Status</li>
-                <li style="padding:10px 15px;color:#9fb4d6;font-family:monospace;">
-                    <div>Active: <span id="worker-active">-</span></div>
-                    <div>Reserved: <span id="worker-reserved">-</span></div>
-                    <div>Queue: <span id="worker-queue">-</span></div>
-                </li>
-                <!--
-                    Child templates that need extra sidebar sections
-                    (e.g. device.html adds "Scan Tools") override this block.
-                -->
+                {% include "includes/sidebar_nav.html" %}
                 {% block sidebar_extra %}{% endblock %}
             </ul>
         </div>
@@ -223,6 +115,7 @@
         <!-- ── MAIN CONTENT ─────────────────────────────────────────── -->
         <div class="page-content{% block page_content_class %}{% endblock %}"
              {% block page_content_style %}{% endblock %}>
+            {% block case_chrome %}{% endblock %}
             {% block content %}{% endblock %}
         </div>
         <!-- ── END MAIN CONTENT ─────────────────────────────────────── -->
@@ -263,6 +156,7 @@
         Each child template drops its own script tags here
         (datatables, leaflet, morris, owl carousel, etc.)
     -->
+    <script src="{% static 'js/kamerka-shell.js' %}"></script>
     {% block extra_js %}{% endblock %}
 
 </body>

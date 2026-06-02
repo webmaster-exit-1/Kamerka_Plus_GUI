@@ -1,0 +1,285 @@
+/* Kamerka case-centric shell: breadcrumbs, export drawer, target header, tool dock */
+
+.km-breadcrumb-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: rgba(16, 21, 30, 0.92);
+  border: 1px solid var(--cp-border, #0064d7);
+  border-radius: 4px;
+  font-family: var(--cp-font);
+  font-size: 0.9em;
+}
+
+.km-breadcrumb-bar a {
+  color: var(--cp-cyan, #00e1ff);
+  text-decoration: none;
+}
+
+.km-breadcrumb-bar a:hover {
+  text-shadow: 0 0 8px var(--cp-cyan);
+}
+
+.km-breadcrumb-sep {
+  color: var(--cp-dim, #3a4555);
+}
+
+.km-breadcrumb-current {
+  color: var(--cp-fg, #c8d6e5);
+}
+
+.km-case-actions {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.km-btn-ghost {
+  background: transparent;
+  border: 1px solid var(--cp-border);
+  color: var(--cp-cyan);
+  padding: 4px 10px;
+  font-size: 0.82em;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: var(--cp-font);
+  text-decoration: none;
+  display: inline-block;
+}
+
+.km-btn-ghost:hover {
+  background: rgba(0, 225, 255, 0.08);
+  color: #fff;
+  text-decoration: none;
+}
+
+.km-btn-accent {
+  border-color: var(--cp-magenta, #ff00cd);
+  color: var(--cp-magenta);
+}
+
+.km-export-drawer {
+  display: none;
+  padding: 12px 14px;
+  margin: -4px 0 12px;
+  background: rgba(0, 20, 40, 0.85);
+  border: 1px solid var(--cp-border);
+  border-radius: 4px;
+}
+
+.km-export-drawer.open {
+  display: block;
+}
+
+.km-export-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.km-export-grid a {
+  min-width: 100px;
+  text-align: center;
+}
+
+.km-target-header {
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  background: linear-gradient(90deg, rgba(0, 100, 215, 0.15), rgba(255, 0, 205, 0.08));
+  border: 1px solid var(--cp-border);
+  border-left: 4px solid var(--cp-cyan);
+  border-radius: 4px;
+}
+
+.km-target-header h2 {
+  margin: 0 0 6px;
+  font-family: var(--cp-display);
+  font-size: 1.35em;
+  color: var(--cp-cyan);
+  letter-spacing: 0.06em;
+}
+
+.km-target-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  font-size: 0.88em;
+  color: var(--cp-dim);
+}
+
+.km-target-meta strong {
+  color: var(--cp-fg);
+}
+
+.km-risk-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 0.8em;
+  border: 1px solid;
+}
+
+.km-risk-low { border-color: var(--cp-green); color: var(--cp-green); }
+.km-risk-med { border-color: var(--cp-yellow); color: var(--cp-yellow); }
+.km-risk-high { border-color: var(--cp-red); color: var(--cp-red); }
+
+.km-tool-dock {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 10px;
+  background: rgba(8, 12, 20, 0.9);
+  border: 1px solid rgba(0, 100, 215, 0.35);
+  border-radius: 4px;
+}
+
+.km-tool-dock button,
+.km-tool-dock a.km-dock-btn {
+  flex: 1 1 auto;
+  min-width: 88px;
+  padding: 8px 10px;
+  background: rgba(0, 100, 215, 0.12);
+  border: 1px solid var(--cp-border);
+  color: var(--cp-cyan);
+  font-family: var(--cp-font);
+  font-size: 0.8em;
+  cursor: pointer;
+  border-radius: 3px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.km-tool-dock button:hover,
+.km-tool-dock a.km-dock-btn:hover {
+  background: rgba(0, 225, 255, 0.15);
+  color: #fff;
+}
+
+.km-tool-dock .km-dock-exploit {
+  border-color: var(--cp-red);
+  color: var(--cp-yellow);
+}
+
+.km-tool-dock .km-dock-hex {
+  border-color: var(--cp-magenta);
+  color: var(--cp-magenta);
+}
+
+.km-output-pane {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  max-height: 160px;
+  overflow-y: auto;
+  background: #0a1428;
+  border: 1px solid rgba(0, 100, 215, 0.4);
+  font-family: var(--cp-font);
+  font-size: 0.82em;
+  color: #9fb4d6;
+  border-radius: 4px;
+}
+
+.km-output-pane:empty::before {
+  content: "Tool output and task status appear here…";
+  color: var(--cp-dim);
+  font-style: italic;
+}
+
+.km-launch-wrap {
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.km-launch-card {
+  background: rgba(16, 21, 30, 0.95);
+  border: 1px solid var(--cp-border);
+  border-radius: 6px;
+  padding: 20px 24px 28px;
+  box-shadow: 0 0 24px rgba(0, 100, 215, 0.15);
+}
+
+.km-launch-card .tab-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 18px;
+  padding: 0;
+  list-style: none;
+}
+
+.km-launch-card .tab-list__item a {
+  display: block;
+  padding: 8px 14px;
+  border: 1px solid var(--cp-border);
+  color: var(--cp-cyan);
+  font-family: var(--cp-font);
+  font-size: 0.85em;
+  text-decoration: none;
+}
+
+.km-launch-card .tab-list__item.active a {
+  background: rgba(255, 0, 205, 0.12);
+  border-color: var(--cp-magenta);
+  color: #fff;
+}
+
+.km-launch-card h3 center,
+.km-launch-card center h3 {
+  color: var(--cp-cyan) !important;
+  font-family: var(--cp-display);
+  letter-spacing: 0.12em;
+}
+
+.km-launch-card .btn-submit {
+  background: var(--cp-cyan);
+  color: #000;
+  border: none;
+  padding: 10px 28px;
+  font-weight: bold;
+  font-family: var(--cp-font);
+  cursor: pointer;
+}
+
+.km-launch-card .selectr-selected,
+.km-launch-card .dropdown-toggle.btn-default {
+  width: 100% !important;
+  max-width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--cp-border) !important;
+  background: #0a1428 !important;
+  color: var(--cp-fg) !important;
+}
+
+.km-launch-card .image-upload-wrap {
+  border-color: var(--cp-magenta) !important;
+}
+
+.km-nav-section {
+  font-size: 0.72em !important;
+  letter-spacing: 0.14em !important;
+  color: var(--cp-dim) !important;
+  padding-top: 12px !important;
+}
+
+.km-nav-disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.x-navigation li.km-nav-active > a {
+  color: var(--cp-cyan) !important;
+  border-left: 3px solid var(--cp-magenta);
+  background: rgba(0, 225, 255, 0.06) !important;
+}
+
+@media (max-width: 768px) {
+  .km-case-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+}

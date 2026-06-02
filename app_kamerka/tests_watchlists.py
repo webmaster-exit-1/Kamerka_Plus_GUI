@@ -4,6 +4,10 @@ from unittest.mock import MagicMock, patch
 from django.test import TestCase
 from django.utils import timezone
 
+from app_kamerka.test_compat import apply_py314_django_test_patches
+
+apply_py314_django_test_patches()
+
 from app_kamerka.models import Device, Search, Watchlist
 from kamerka.tasks import _upsert_device, run_watchlist_refresh, schedule_enabled_watchlists
 

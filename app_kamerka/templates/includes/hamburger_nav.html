@@ -6,14 +6,26 @@
     aria-expanded="false"
     type="button"
 >&#9776;</button>
-<nav class="kamerka-hamburger-overlay" id="kamerka-hamburger-overlay" hidden>
-    <a href="/" class="kamerka-nav-link">&#x1f3e0; Home</a>
-    <a href="/index" class="kamerka-nav-link">&#x1f4ca; Dashboard</a>
-    <a href="/history" class="kamerka-nav-link">&#x1f4c2; History</a>
-    <a href="/watchlists" class="kamerka-nav-link">&#x1f4dd; Watchlists</a>
-    <a href="/map" class="kamerka-nav-link">&#x1f4cd; Map</a>
-    <a href="/globe" class="kamerka-nav-link">&#x1f30d; Globe</a>
-    <a href="/gallery" class="kamerka-nav-link">&#x1f4f7; Screenshots</a>
-    <a href="/devices" class="kamerka-nav-link">&#x1f50d; Search</a>
-    <a href="/sources" class="kamerka-nav-link">&#x1f4d6; Useful Links</a>
+<nav class="kamerka-hamburger-overlay" id="kamerka-hamburger-overlay" hidden aria-label="Navigation menu">
+    <span class="kamerka-nav-section-label">Command</span>
+    <a href="/" class="kamerka-nav-link">Launch</a>
+    <a href="/index" class="kamerka-nav-link">Overview</a>
+    <a href="/history" class="kamerka-nav-link">Cases</a>
+    {% if active_case_id %}
+    <a href="/results/{{ active_case_id }}" class="kamerka-nav-link">Case #{{ active_case_id }}</a>
+    {% endif %}
+    <span class="kamerka-nav-section-label">Operations</span>
+    <a href="/tasks" class="kamerka-nav-link">Tasks</a>
+    <a href="/playbooks/" class="kamerka-nav-link">Playbooks</a>
+    <a href="/watchlists" class="kamerka-nav-link">Watchlists</a>
+    <a href="/hexsploit/" class="kamerka-nav-link">HexSploit</a>
+    <span class="kamerka-nav-section-label">Picture</span>
+    <a href="/map" class="kamerka-nav-link">Map</a>
+    <a href="/map3d" class="kamerka-nav-link">3D Map</a>
+    <a href="/camera-wall" class="kamerka-nav-link">Camera wall</a>
+    <a href="/gallery" class="kamerka-nav-link">Screenshots</a>
+    <a href="/devices" class="kamerka-nav-link">All devices</a>
+    <span class="kamerka-nav-section-label">System</span>
+    <a href="/healthz/setup/" class="kamerka-nav-link">First run checks</a>
+    <a href="/sources" class="kamerka-nav-link">Intel sources</a>
 </nav>

@@ -24,6 +24,12 @@ class FeedSource(models.Model):
     url = models.URLField(max_length=500, unique=True)
     name = models.CharField(max_length=200)
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default="other")
+    folder = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        help_text="OPML folder/group label from the reader export",
+    )
     active = models.BooleanField(default=True)
     last_fetched = models.DateTimeField(null=True, blank=True)
     error_count = models.IntegerField(default=0)

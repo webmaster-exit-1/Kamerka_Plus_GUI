@@ -64,9 +64,21 @@
     text-decoration: none;
 }
 
+.kamerka-nav-section-label {
+    display: block;
+    color: #3a4555;
+    font-size: 0.7em;
+    letter-spacing: 0.14em;
+    padding: 16px 28px 4px;
+    text-transform: uppercase;
+    font-family: 'Share Tech Mono', monospace;
+}
+
 @media (max-width: 767px) {
-    .kamerka-hamburger-btn,
-    .kamerka-hamburger-overlay {
+    .page-sidebar {
         display: none !important;
+    }
+    .page-content {
+        margin-left: 0 !important;
     }
 }

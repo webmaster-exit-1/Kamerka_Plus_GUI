@@ -10,15 +10,19 @@
     <script src="{% static 'js/d3.wordcloud.js' %}" charset="UTF-8"></script>
 {% endblock %}
 
+{% block case_chrome %}
+{% include "includes/breadcrumbs.html" %}
+{% endblock %}
+
 {% block content %}
                 <!-- PAGE HEADER -->
                 <div class="cp-page-header" style="text-align:center; padding:14px 0 6px;">
                   <h1 class="cp-page-title" style="text-align:center; padding:6px 0 4px;">
                     {# data-text must match element text — both are required by the CSS glitch ::before/::after pseudo-elements #}
-                    <span class="cp-glitch" data-text="ICS &amp; IoT Reconnaissance">ICS &amp; IoT Reconnaissance</span>
+                    <span class="cp-glitch" data-text="Operations Overview">Operations Overview</span>
                   </h1>
                   <div style="font-family:var(--cp-font);font-size:0.95em;letter-spacing:0.18em;color:var(--cp-dim);padding-bottom:6px;">
-                    INDUSTRIAL CONTROL SYSTEMS · INTERNET OF THINGS · OSINT
+                    GLOBAL STATS · INTEL FEEDS · RECENT ACTIVITY
                   </div>
                 </div>
                 <!-- END PAGE HEADER -->
@@ -364,7 +368,7 @@
                                     <div id="cp-intel-brief-status" style="font-family:var(--cp-font,monospace);font-size:0.85em;color:#3a4555;margin-bottom:8px;">
                                         Select a region to load an intelligence brief.
                                     </div>
-                                    <pre id="cp-intel-brief-content" style="white-space:pre-wrap;word-break:break-word;max-height:240px;overflow-y:auto;background:#050b12;border:1px solid #153046;color:#c9d6e3;padding:8px;font-size:0.86em;">No brief loaded.</pre>
+                                    <div id="cp-intel-brief-content" style="white-space:pre-wrap;word-break:break-word;max-height:240px;overflow-y:auto;background:#050b12;border:1px solid #153046;color:#c9d6e3;padding:8px;font-size:0.86em;font-family:var(--cp-font,monospace);">No brief loaded.</div>
                                 </div>
                             </div>
                         </div>
@@ -498,6 +502,9 @@ $(document).ready(function(){
     var feedStatusEl = document.getElementById('cp-intel-feed-status');
     var briefStatusEl = document.getElementById('cp-intel-brief-status');
     var briefContentEl = document.getElementById('cp-intel-brief-content');
+    var briefPollTimer = null;
+    var BRIEF_POLL_MS = 2500;
+    var BRIEF_POLL_MAX = 40;
 
     if (!regionSelect || !feedListEl || !feedStatusEl || !briefStatusEl || !briefContentEl) {
         return;
@@ -577,14 +584,36 @@ $(document).ready(function(){
         }
     }
 
+    function stopBriefPoll() {
+        if (briefPollTimer) {
+            clearTimeout(briefPollTimer);
+            briefPollTimer = null;
+        }
+    }
+
+    function scheduleBriefPoll(attempt) {
+        stopBriefPoll();
+        if (attempt >= BRIEF_POLL_MAX) {
+            briefStatusEl.textContent = 'Brief generation timed out for ' + selectedRegion();
+            briefContentEl.textContent = 'The worker may be offline or feeds are still ingesting. Try again in a minute.';
+            return;
+        }
+        briefPollTimer = setTimeout(function() {
+            loadBrief(attempt + 1);
+        }, BRIEF_POLL_MS);
+    }
+
     async function loadBrief(attempt) {
+        attempt = attempt || 0;
         var region = selectedRegion();
         if (!region) {
+            stopBriefPoll();
             briefStatusEl.textContent = 'Select a region to request a brief.';
             briefContentEl.textContent = 'No brief loaded.';
             return;
         }
         if (!isIso2Region(region)) {
+            stopBriefPoll();
             briefStatusEl.textContent = 'Invalid region code.';
             briefContentEl.textContent = 'Select a 2-letter ISO country code.';
             return;
@@ -594,13 +623,16 @@ $(document).ready(function(){
             var response = await fetch('/api/feeds/brief/' + encodeURIComponent(region) + '/');
             var payload = await response.json();
             if (response.status === 202 || payload.method === 'pending') {
-                briefStatusEl.textContent = 'Generating brief for ' + region + '…';
-                briefContentEl.textContent = (payload.content || 'Generating brief…') + ' Refresh later to check status.';
+                briefStatusEl.textContent = 'Generating brief for ' + region + '… (' + (attempt + 1) + ')';
+                briefContentEl.textContent = payload.content || 'Generating brief…';
+                scheduleBriefPoll(attempt);
                 return;
             }
+            stopBriefPoll();
             briefStatusEl.textContent = 'Latest brief [' + (payload.method || 'unknown') + '] for ' + region;
             briefContentEl.textContent = payload.content || 'No brief available for this region.';
         } catch (err) {
+            stopBriefPoll();
             briefStatusEl.textContent = 'Brief unavailable for ' + region;
             briefContentEl.textContent = 'Failed to load region brief.';
         }
@@ -611,7 +643,10 @@ $(document).ready(function(){
         loadBrief(0);
     }
 
-    regionSelect.addEventListener('change', refreshIntelWidgets);
+    regionSelect.addEventListener('change', function() {
+        stopBriefPoll();
+        refreshIntelWidgets();
+    });
 
     if (window.EventSource) {
         try {

@@ -3,6 +3,10 @@
 
 {% block page_title %}{{ device.ip }} - ꓘamerka{% endblock %}
 
+{% block case_chrome %}
+{% include "includes/case_toolbar.html" %}
+{% endblock %}
+
 {% block extra_css %}
         <link rel="stylesheet" type="text/css" href="{% static 'css/leaflet.css' %}"/>
         <link rel="stylesheet" href="{% static 'css/pretty-print-json.dark-mode.css' %}">
@@ -83,6 +87,11 @@
             -webkit-overflow-scrolling: touch;
         }
 
+        .km-tab-exploit-hidden #tab11,
+        .km-tab-exploit-hidden a[href="#tab11"] {
+            display: none !important;
+        }
+
         @media (max-width: 992px) {
             .device-action-bar input[type="text"] {
                 max-width: 100%;
@@ -122,20 +131,35 @@
 
 {% block content %}
 
-                <!-- START BREADCRUMB -->
-<ul class="breadcrumb">
+                <div class="page-content-wrap{% if analyst_mode %} km-tab-exploit-hidden{% endif %}">
 
+                    <div class="km-target-header">
+                        <h2>{{ device.ip }}</h2>
+                        <div class="km-target-meta">
+                            <span><strong>Type</strong> {{ device.type|default:"—" }}</span>
+                            <span><strong>Port</strong> {{ device.port }}</span>
+                            <span><strong>Org</strong> {{ device.org|default:"—" }}</span>
+                            <span class="km-risk-pill {{ risk_class }}">EPSS {{ max_epss_percent|floatformat:1 }}%</span>
+                            {% if has_kev %}<span class="km-risk-pill km-risk-high">KEV</span>{% endif %}
+                        </div>
+                    </div>
 
-                </ul>
-                <!-- END BREADCRUMB -->
+                    <div class="km-tool-dock" role="toolbar" aria-label="Target tools">
+                        <button type="button" data-km-dock-tab="#tab8">Locate</button>
+                        <button type="button" data-km-dock-tab="#tab9">Intel</button>
+                        <button type="button" data-km-dock-tab="#tab10">Nmap</button>
+                        {% if not analyst_mode %}
+                        <button type="button" class="km-dock-exploit" data-km-dock-tab="#tab11">Exploit</button>
+                        <a href="/hexsploit/?target={{ device.ip|urlencode }}" class="km-dock-btn km-dock-hex">HexSploit</a>
+                        {% endif %}
+                        <button type="button" data-km-dock-tab="#tab_hw">Hardware</button>
+                        <button type="button" data-km-dock-tab="#tab_risk">Risk</button>
+                        <button type="button" data-km-dock-tab="#tab_supply">Supply</button>
+                    </div>
+                    <div id="km-tool-output" class="km-output-pane" aria-live="polite"></div>
 
-                <!-- PAGE CONTENT WRAPPER -->
-                <div class="page-content-wrap">
-
-                    <!-- START WIDGETS -->
                  <div class="row">
                         <div class="col-md-12">
-                            <!-- START JUSTIFIED TABS -->
                             <div class="panel panel-default tabs">
                                 <ul class="nav nav-tabs nav-justified">
                                        {% if device.located %}
@@ -145,7 +169,7 @@
                                         {% endif %}
                                     <li><a href="#tab9" data-toggle="tab">Intel</a></li>
                                     <li><a href="#tab10" data-toggle="tab" style="color:#ff2050;font-weight:bold;">&#9889; NMAP</a></li>
-                                    <li><a href="#tab11" data-toggle="tab" style="color:#ffe600;font-weight:bold;">&#128027; Exploit</a></li>
+                                    {% if not analyst_mode %}<li><a href="#tab11" data-toggle="tab" style="color:#ffe600;font-weight:bold;">&#128027; Exploit</a></li>{% endif %}
                                     <li><a href="#tab_hw" data-toggle="tab" style="color:#00e1ff;font-weight:bold;">&#128268; Hardware</a></li>
                                     <li><a href="#tab_risk" data-toggle="tab" style="color:#ff2050;font-weight:bold;">&#9888; Risk</a></li>
                                     <li><a href="#tab_supply" data-toggle="tab" style="color:#00ff88;font-weight:bold;">&#128230; Supply Chain</a></li>
@@ -172,9 +196,6 @@
 
         <input type="text" id="update_location" placeholder="Update location" />
         <input type="button" id="btn_update_location" class="btn btn-primary active" value="Update location" />
-
-        <input type="text" id="notes" value=""  placeholder="Notes for field agent" />
-        <input type="button" id="btn_send_all"  class="btn btn-primary active" value="Send" />
     </div>                            <!-- END WORLD MAP-->
                                     </form>
 
@@ -392,11 +413,9 @@
                         </div>
                         </div>
 
+</div><!-- end tab9 -->
 
-
-
-                                    </div>
-                                        <div class="tab-pane" id="tab10">
+<div class="tab-pane" id="tab10">
 
 
 
@@ -466,9 +485,9 @@
         </div>
     </div>
 </div>
-                                        </div>
+</div><!-- end tab10 -->
 
-                                        <div class="tab-pane" id="tab11">
+<div class="tab-pane" id="tab11">
 
 
 
@@ -495,6 +514,7 @@
                                             {% endfor %}
                                         </select>
                                         <button type="button" id="exploit" class="btn btn-primary active" style="background:#ffe600;border-color:#ffe600;color:#000;font-weight:bold;"> Exploit </button>
+                                        <a href="{% url 'hexsploit' %}?device_id={{ device.id }}" class="btn btn-danger" style="margin-left:8px;font-weight:bold;" title="Open HexStrike orchestration for this target">HexSploit C2</a>
                                     </div>
                                     <!-- Exploit info panel — populated on dropdown change -->
                                     <div id="exploit_info_panel" style="display:none;margin-bottom:12px;border:1px solid rgba(0,225,255,0.25);border-radius:6px;padding:12px;background:rgba(0,100,215,0.07);"></div>
@@ -1446,32 +1466,6 @@ $('#exploit_select').on('change', function() {
         }
     });
 });
-
-$('#btn_send_all').on('click', function(){
-    var bla = $('#notes').val();
-
-       $.ajax({
-        type: "GET",
-        url: "/send_to_field_agent/{{device.id}}/"+bla,
-        success: function (data) {
-        noty({text: "Updated" , layout: 'topRight', type: 'success', timeout: 1000});
-                if (data.task_id != null) {
-<!--                    get_task_info(data.task_id,pgrbar6);-->
-                    noty({text: "Updated" , layout: 'topRight', type: 'success', timeout: 1000});
-
-                }
-                else if (data.Error){
-                noty({text: "Error" , layout: 'topRight', type: 'error', timeout: 1000});
-                }
-            },
-            error: function (data) {
-                console.log("Something went wrong!");
-                noty({text: "Error" , layout: 'topRight', type: 'error', timeout: 1000});
-            }
-        });
-        return false;
-    });
-
 
 $('#whois_show').on('click', function(){
 var x = document.getElementById("whois_results");

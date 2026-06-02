@@ -1,15 +1,24 @@
+from pathlib import Path
 from unittest.mock import patch
 from datetime import timedelta
 
+from django.core.cache import cache
+from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from app_feeds.models import Brief, FeedEntry, FeedSource
+from app_feeds.opml import parse_opml, folder_to_category
+from app_feeds.tasks import generate_brief
+from app_feeds.text_utils import html_to_plain
+
+BUNDLED_OPML = Path(__file__).resolve().parent / "data" / "feeder-export.opml"
 
 
 class FeedViewsTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.source = FeedSource.objects.create(
             name="Test Source",
             url="https://example.com/rss",
@@ -75,6 +84,16 @@ class FeedViewsTests(TestCase):
         self.assertEqual(payload["method"], "pending")
         mock_delay.assert_called_once_with("US")
 
+    @patch("app_feeds.tasks.generate_brief.delay")
+    def test_brief_view_does_not_requeue_while_pending(self, mock_delay):
+        from app_feeds.tasks import mark_brief_pending
+
+        mark_brief_pending("US")
+        response = self.client.get(reverse("brief_view", args=["US"]))
+
+        self.assertEqual(response.status_code, 202)
+        mock_delay.assert_not_called()
+
     def test_brief_view_returns_latest_existing_brief(self):
         Brief.objects.create(region="US", content="Ready brief", method="extractive")
 
@@ -103,6 +122,85 @@ class FeedViewsTests(TestCase):
         content = response.content.decode("utf-8")
         self.assertIn('<option value="FR">FR</option>', content)
         self.assertIn('<option value="DE">DE</option>', content)
+
+
+class HtmlToPlainTests(TestCase):
+    def test_strips_tags_and_block_elements(self):
+        raw = "<div><h3>Alert</h3><p>ICS incident in <b>China</b>.</p></div>"
+        plain = html_to_plain(raw)
+        self.assertNotIn("<", plain)
+        self.assertIn("Alert", plain)
+        self.assertIn("ICS incident", plain)
+        self.assertIn("China", plain)
+
+    def test_brief_view_returns_plain_text(self):
+        Brief.objects.create(
+            region="US",
+            content="<h3>Test</h3><p>Plain body</p>",
+            method="extractive",
+        )
+        response = self.client.get(reverse("brief_view", args=["US"]))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("<h3>", response.json()["content"])
+        self.assertIn("Plain body", response.json()["content"])
+
+
+class OpmlParserTests(TestCase):
+    def test_parse_bundled_opml_has_97_feeds(self):
+        feeds = parse_opml(BUNDLED_OPML)
+        self.assertEqual(len(feeds), 97)
+
+    def test_cve_exploits_folder_maps_to_cyber(self):
+        self.assertEqual(folder_to_category("CVE & Exploits"), "cyber")
+
+    def test_exploit_db_present(self):
+        feeds = parse_opml(BUNDLED_OPML)
+        urls = {f["url"] for f in feeds}
+        self.assertIn("https://www.exploit-db.com/rss.xml", urls)
+
+    def test_import_feeds_opml_command(self):
+        call_command("import_feeds_opml", verbosity=0)
+        self.assertEqual(FeedSource.objects.filter(active=True).count(), 97)
+        edb = FeedSource.objects.get(url="https://www.exploit-db.com/rss.xml")
+        self.assertEqual(edb.folder, "CVE & Exploits")
+        self.assertEqual(edb.category, "cyber")
+
+
+class GenerateBriefTaskTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.source = FeedSource.objects.create(
+            name="Brief Test Source",
+            url="https://example.com/rss-brief",
+            category="cyber",
+            active=True,
+        )
+
+    def test_generate_brief_creates_empty_brief_when_no_entries(self):
+        result = generate_brief("ZZ")
+
+        self.assertIn("empty brief", result)
+        brief = Brief.objects.get(region="ZZ")
+        self.assertEqual(brief.method, "empty")
+        self.assertIn("ZZ", brief.content)
+
+    def test_generate_brief_uses_geo_tagged_entries(self):
+        FeedEntry.objects.create(
+            source=self.source,
+            title="China ICS alert",
+            summary="Incident affecting operators in China.",
+            url="https://example.com/cn-1",
+            published=timezone.now(),
+            geo_countries="CN",
+            entry_id="entry-cn-brief",
+        )
+
+        result = generate_brief("CN")
+
+        self.assertIn("brief created", result)
+        brief = Brief.objects.filter(region="CN").order_by("-generated_at").first()
+        self.assertIsNotNone(brief)
+        self.assertIn("China", brief.content)
 
 
 class FeedTaskTests(TestCase):

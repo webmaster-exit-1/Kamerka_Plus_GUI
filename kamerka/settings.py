@@ -68,6 +68,10 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = os.environ.get('CELERY_TIMEZONE', 'UTC')
 CELERY_IMPORTS = ('kamerka.tasks', 'app_layers.tasks', 'app_feeds.tasks')
 CELERY_WORKER_CONCURRENCY = int(os.environ.get("CELERY_WORKER_CONCURRENCY", "4"))
+# TaskRun rows still "pending" after this many minutes with no Celery progress are
+# marked failed (orphaned queue entries / expired Redis results).
+TASK_RUN_STALE_MINUTES = int(os.environ.get("TASK_RUN_STALE_MINUTES", "90"))
+
 CELERY_TASK_ANNOTATIONS = {
     "kamerka.tasks.nmap_device_scan": {"rate_limit": os.environ.get("KAMERKA_NMAP_RATE_LIMIT", "20/m")},
     "kamerka.tasks.nuclei_scan": {"rate_limit": os.environ.get("KAMERKA_NUCLEI_RATE_LIMIT", "15/m")},
@@ -99,6 +103,10 @@ CELERY_BEAT_SCHEDULE = {
     "schedule-enabled-watchlists": {
         "task": "kamerka.tasks.schedule_enabled_watchlists",
         "schedule": 60,  # every minute
+    },
+    "reconcile-stale-task-runs": {
+        "task": "kamerka.tasks.reconcile_stale_task_runs",
+        "schedule": 900,  # every 15 minutes
     },
 }
 
@@ -159,6 +167,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'app_kamerka.context_processors.kamerka_shell',
             ],
         },
     },
@@ -341,6 +350,9 @@ from kamerka.tool_settings import (  # noqa: E402
     NAABU_DEFAULT_TIMEOUT,
     NAABU_DISCOVERY_PORTS,
     NAABU_DISCOVERY_TIMEOUT,
+    NAABU_TCP_QUICK_PORTS,
+    NAABU_UDP_PORTS,
+    NAABU_QUICK_TIMEOUT,
     NMAP_MAX_RUNTIME,
     NUCLEI_BIN,
     NUCLEI_DEFAULT_TIMEOUT,
@@ -360,6 +372,14 @@ from kamerka.tool_settings import (  # noqa: E402
 # unit file.  For Docker, use --env-file or -e SHODAN_API_KEY=...
 # ---------------------------------------------------------------------------
 SHODAN_API_KEY: str = os.environ.get("SHODAN_API_KEY", "")
+
+# Local HexStrike tools server (HTTP API used by hexstrike_mcp.py and HexSploit page).
+# Example: export HEXSTRIKE_SERVER_URL=http://127.0.0.1:8888
+HEXSTRIKE_SERVER_URL: str = os.environ.get("HEXSTRIKE_SERVER_URL", "http://127.0.0.1:8888")
+HEXSTRIKE_TIMEOUT: int = int(os.environ.get("HEXSTRIKE_TIMEOUT", "300"))
+
+# Optional Mapbox token — enhances /map3d building detail. Default basemap is OpenFreeMap (no key).
+MAPBOX_ACCESS_TOKEN: str = os.environ.get("MAPBOX_ACCESS_TOKEN", "")
 
 # ---------------------------------------------------------------------------
 # WorldMonitor integration settings

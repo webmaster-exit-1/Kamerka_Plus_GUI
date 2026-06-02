@@ -109,6 +109,7 @@ def run_naabu(
     ports: Optional[str] = None,
     timeout: Optional[int] = None,
     extra_args: Optional[List[str]] = None,
+    udp_probes: bool = False,
 ) -> List[Dict[str, Any]]:
     """Run Naabu against *ip* and return parsed scan results.
 
@@ -130,6 +131,9 @@ def run_naabu(
         ``settings.NAABU_DEFAULT_TIMEOUT``.
     extra_args : list of str, optional
         Additional CLI flags forwarded to Naabu verbatim.
+    udp_probes : bool, optional
+        When ``True``, or when *ports* contains Naabu UDP specs (``u:161``),
+        pass ``-udp-probes`` so protocol-specific payloads are sent.
 
     Returns
     -------
@@ -137,6 +141,7 @@ def run_naabu(
         Each element has at least:
         ``ip`` : str    Target IP.
         ``port`` : int  Open port number.
+        ``protocol`` : str  ``"tcp"`` or ``"udp"`` when reported by Naabu JSON.
 
         Returns ``[]`` when Naabu is not installed, the host is unreachable,
         or an error occurs.
@@ -158,6 +163,8 @@ def run_naabu(
     ]
     if extra_args:
         cmd.extend(extra_args)
+    if udp_probes or "u:" in effective_ports:
+        cmd.append("-udp-probes")
 
     try:
         result = subprocess.run(
@@ -198,6 +205,7 @@ def _parse_naabu_output(stdout: str) -> List[Dict[str, Any]]:
                 {
                     "ip": str(data.get("ip", "")),
                     "port": int(data.get("port", 0)),
+                    "protocol": str(data.get("protocol", "tcp")).lower(),
                     "raw": data,
                 }
             )
@@ -206,7 +214,14 @@ def _parse_naabu_output(stdout: str) -> List[Dict[str, Any]]:
             if ":" in line:
                 parts = line.rsplit(":", 1)
                 try:
-                    entries.append({"ip": parts[0], "port": int(parts[1]), "raw": {}})
+                    entries.append(
+                        {
+                            "ip": parts[0],
+                            "port": int(parts[1]),
+                            "protocol": "tcp",
+                            "raw": {},
+                        }
+                    )
                 except (ValueError, IndexError):
                     logger.debug("Skipping unparseable Naabu line: %s", line)
     return entries

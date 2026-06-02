@@ -3,6 +3,10 @@
 
 {% block page_title %}History - ꓘamerka{% endblock %}
 
+{% block case_chrome %}
+{% include "includes/breadcrumbs.html" %}
+{% endblock %}
+
 {% block content %}
                 <!-- PAGE CONTENT WRAPPER -->
                 <div class="page-content-wrap">
@@ -20,6 +24,7 @@
                                                     <tr>
                                                         <th>Country/Coordinates</th>
                                                         <th>Devices</th>
+                                                        <th>Export</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
@@ -27,6 +32,10 @@
                                                     <tr>
                                                         <td><a href="{% url 'results' id=search.id %}">{{ search.country }} {{ search.coordinates }}</a></td>
                                                         <td>{% for i in search.ics %} {{ i }} {% endfor %} {% for i in search.coordinates_search %} {{ i }} {% endfor %}</td>
+                                                        <td>
+                                                            <a href="/export/csv/{{ search.id }}" class="km-btn-ghost" style="padding:2px 6px;font-size:0.75em;">CSV</a>
+                                                            <a href="/export/json/{{ search.id }}" class="km-btn-ghost" style="padding:2px 6px;font-size:0.75em;">Geo</a>
+                                                        </td>
                                                     </tr>
                                                     {% endfor %}
                                                 </tbody>

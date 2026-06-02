@@ -64,6 +64,21 @@ NAABU_DISCOVERY_PORTS: str = os.environ.get("KAMERKA_NAABU_DISCOVERY_PORTS", "1-
 #: Timeout in seconds for a discovery scan (full range needs more time).
 NAABU_DISCOVERY_TIMEOUT: int = int(os.environ.get("KAMERKA_NAABU_DISCOVERY_TIMEOUT", "120"))
 
+#: TCP ports always probed during port_scan (merged with any stored ports).
+NAABU_TCP_QUICK_PORTS: str = os.environ.get(
+    "KAMERKA_NAABU_TCP_QUICK_PORTS",
+    "80,443,8080,8081,4443,8181,21116,8443",
+)
+
+#: UDP port spec for Naabu (-p u:PORT,...) with -udp-probes.
+NAABU_UDP_PORTS: str = os.environ.get(
+    "KAMERKA_NAABU_UDP_PORTS",
+    "u:123,u:161,u:1701,u:21116",
+)
+
+#: Timeout (seconds) for quick TCP / UDP probe scans.
+NAABU_QUICK_TIMEOUT: int = int(os.environ.get("KAMERKA_NAABU_QUICK_TIMEOUT", "90"))
+
 # ---------------------------------------------------------------------------
 # Nuclei
 # ---------------------------------------------------------------------------

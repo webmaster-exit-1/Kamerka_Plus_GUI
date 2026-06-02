@@ -80,7 +80,10 @@ def _extractive_brief(region: str, texts: List[str]) -> str:
     """
     # Tokenise all texts into sentences
     sentences = []
+    from app_feeds.text_utils import html_to_plain
+
     for text in texts:
+        text = html_to_plain(text)
         for sent in re.split(r"(?<=[.!?])\s+", text):
             sent = sent.strip()
             if sent:

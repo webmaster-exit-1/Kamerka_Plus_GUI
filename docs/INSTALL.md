@@ -8,7 +8,6 @@
 - Redis (4.0+)
 - Shodan paid account
 - [Nmap](https://nmap.org/) (Required for NMAP scans and RTSP probes)
-- Pastebin PRO (Optional — see [Pastebin API setup](#pastebin-api-setup) below)
 - [NVD API key](https://nvd.nist.gov/developers/request-an-api-key) (Optional — raises NVD rate limit from 5 to 50 req/30 s)
 - [Wappalyzer CLI](https://github.com/AliasIO/wappalyzer) (Optional, for tech detection — see [Wappalyzer install](#wappalyzer-cli-install) below)
 - [Nuclei](https://github.com/projectdiscovery/nuclei) (Optional, for vulnerability scanning)
@@ -16,6 +15,27 @@
 - **PyVista / PyQt6** (Optional, for the native 3D globe viewer — see below)
 
 > **Note:** Google Maps API is no longer required. Maps are rendered with Leaflet.js and OpenStreetMap tiles.
+
+## Interactive installer (recommended for new setups)
+
+From the project root, run the guided wizard. It creates or updates `.env` (file mode `600`), generates a `DJANGO_SECRET_KEY`, walks through API keys with verification hints, creates a Django superuser with password best practices, runs migrations, and optionally seeds map layers and bundled intel feeds.
+
+```bash
+chmod +x scripts/install_kamerka.py   # once
+./scripts/install_kamerka.py
+```
+
+| Flag | Purpose |
+|------|---------|
+| `--venv` | Create `.venv` and install dependencies into it |
+| `--yes` | Non-interactive (CI/lab automation): uses `SHODAN_API_KEY`, `DJANGO_SUPERUSER_*` from the environment |
+| `--no-seed` | Skip `seed_layers` and `import_feeds_opml` |
+
+**API keys:** enter Shodan (required for searches) when prompted; optional NVD key for higher CVE rate limits. Keys are stored only in `.env` — never commit that file. Use separate keys per environment and rotate if a key is pasted into chat or logs.
+
+**Admin account:** the wizard can generate a 20-character password (shown once) or accept your own (minimum 12 characters with mixed case and digits). Avoid the default `admin` / `admin` pair in production. For automation, set `DJANGO_SUPERUSER_USERNAME`, `DJANGO_SUPERUSER_EMAIL`, and `DJANGO_SUPERUSER_PASSWORD` before `--yes`.
+
+**After the wizard:** start Redis, then `source .env`, `manage.py runserver`, and `celery --app kamerka worker --beat`. Optional: HexStrike for the HexSploit page (`HEXSTRIKE_SERVER_URL` in `.env`).
 
 ## Environment Variables
 
@@ -30,11 +50,6 @@ export SHODAN_API_KEY=your_shodan_api_key_here
 # https://nvd.nist.gov/developers/request-an-api-key):
 # export NVD_API_KEY=your_nvd_api_key_here
 
-# Optional – Pastebin field-agent sync (see "Pastebin API setup" section below
-# and https://pastebin.com/doc_api for full details):
-# export PASTEBIN_API_DEV_KEY=your_unique_developer_api_key
-# export PASTEBIN_API_USER_NAME=your_pastebin_username
-# export PASTEBIN_API_USER_PASSWORD=your_pastebin_password
 ```
 
 **Making environment variables persistent (so you don't have to re-export in every new terminal)**
@@ -71,9 +86,6 @@ docker run -e SHODAN_API_KEY=your_key ...
 |---|---|---|
 | `SHODAN_API_KEY` | ✅ | Shodan paid-account API key |
 | `NVD_API_KEY` | optional | NIST NVD API key — raises rate limit from 5 to 50 req/30 s ([request one here](https://nvd.nist.gov/developers/request-an-api-key)) |
-| `PASTEBIN_API_DEV_KEY` | optional | Pastebin *Unique Developer API Key* — find it at <https://pastebin.com/doc_api#1> after signing up |
-| `PASTEBIN_API_USER_NAME` | optional | Pastebin account username (for field-agent sync) |
-| `PASTEBIN_API_USER_PASSWORD` | optional | Pastebin account password |
 | `DJANGO_SECRET_KEY` | optional | Override the auto-generated Django secret key |
 
 ### External Tool Paths
@@ -109,8 +121,14 @@ These are only needed if the tools are not on your `$PATH`.  See [docs/ARCHITECT
 >
 > On Android / Termux (where `setcap` is unavailable) scans automatically
 > fall back to TCP connect mode, which works without root but is slower.
-> Do **not** run the Celery worker as root solely to give Nmap these
-> permissions.
+
+### Exploit / scan tasks failing
+
+Kamerka does **not** invoke `sudo` from Python. Tasks run in whatever user starts the **Celery worker**:
+
+1. **Nmap / Naabu permission errors** — prefer `setcap` on the binaries (above) so the worker can stay unprivileged.
+2. **Device exploit checks still fail** (timeouts, permission denied, empty results) — restart the Celery worker under elevated privileges on **your** host (e.g. `sudo -E` with `venv` activated and `.env` loaded). That is an operator workaround, not something the repo automates.
+3. Keep **`manage.py runserver`** on your normal user; only the worker process needs elevation when (2) applies.
 
 ## Wappalyzer CLI Install
 
@@ -205,6 +223,8 @@ To also run periodic tasks (feed ingestion, layer refresh), start Celery with be
 celery --app kamerka worker --beat --loglevel=info
 ```
 
+> See [Exploit / scan tasks failing](#exploit--scan-tasks-failing) if tasks error out — you may need an elevated worker; the app never calls `sudo` itself.
+
 In a new window start Redis:
 
 ```bash
@@ -272,42 +292,6 @@ export DB_PORT=5432
 python3 manage.py migrate
 ```
 
-## Pastebin API Setup
-
-The Pastebin integration lets you sync device notes with a Pastebin PRO account
-(the "field-agent" feature).  The Pastebin API is documented at
-<https://pastebin.com/doc_api>.
-
-### 1. Get your Unique Developer API Key
-
-Sign up or log in at <https://pastebin.com>, then visit
-<https://pastebin.com/doc_api#1>.  Your **Unique Developer API Key** is displayed
-on that page.  Export it as:
-
-```bash
-export PASTEBIN_API_DEV_KEY=your_unique_developer_api_key
-```
-
-### 2. Set your Pastebin credentials
-
-```bash
-export PASTEBIN_API_USER_NAME=your_pastebin_username
-export PASTEBIN_API_USER_PASSWORD=your_pastebin_password
-```
-
-These are used at runtime to obtain a short-lived **`api_user_key`** via the
-Pastebin login endpoint (`api_login.php`).  The user key is never stored on disk.
-
-### 3. Verify (optional)
-
-You can verify your credentials work by running the interactive setup helper:
-
-```bash
-python3 scripts/pastebin_setup.py
-```
-
-The helper walks you through obtaining and testing your API keys step by step.
-
 ## Running Tests
 
 ```bash
@@ -328,7 +312,8 @@ python3 manage.py migrate
 python3 manage.py seed_layers
 
 # Seed ~50 curated RSS/news feed sources (CISA, Krebs, Dragos …)
-python3 manage.py seed_feeds
+python3 manage.py import_feeds_opml
+# or legacy curated list: python3 manage.py seed_feeds
 ```
 
 ### Optional: Ollama AI Briefs
@@ -354,6 +339,7 @@ celery --app kamerka worker --beat --loglevel=info
 # Or run beat as a separate process (recommended for production)
 celery --app kamerka beat --loglevel=info &
 celery --app kamerka worker --loglevel=info &
+celery --app kamerka beat --loglevel=info &
 ```
 
 ### Environment variables for integration features
@@ -396,7 +382,8 @@ To use this effectively:
 
 1. Seed feed sources:
    ```bash
-   python3 manage.py seed_feeds
+   python3 manage.py import_feeds_opml
+# or legacy curated list: python3 manage.py seed_feeds
    ```
 2. Run worker + beat so feeds are ingested periodically:
    ```bash

@@ -19,6 +19,7 @@ from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.http import require_GET, require_POST
 
 from app_feeds.models import Brief, FeedEntry
+from app_feeds.text_utils import html_to_plain
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +54,13 @@ def feed_entries(request):
     for e in qs[:limit]:
         entries.append({
             "id": e.pk,
-            "title": e.title,
-            "summary": e.summary[:300],
+            "title": html_to_plain(e.title, max_len=500) or "(untitled)",
+            "summary": html_to_plain(e.summary, max_len=300),
             "url": e.url,
             "published": e.published.isoformat() if e.published else None,
             "source": e.source.name,
             "category": e.source.category,
+            "folder": e.source.folder,
             "geo_countries": e.geo_countries,
             "geo_lat": e.geo_lat,
             "geo_lon": e.geo_lon,
@@ -126,11 +128,14 @@ def feed_sse(request):
 @require_GET
 def brief_view(request, region: str):
     """Return the latest brief for *region*, generating one if none exists."""
+    from app_feeds.tasks import generate_brief, is_brief_pending, mark_brief_pending
+
+    region = (region or "").strip().upper()
     brief = Brief.objects.filter(region=region).order_by("-generated_at").first()
     if not brief:
-        # Trigger async generation and return a placeholder
-        from app_feeds.tasks import generate_brief
-        generate_brief.delay(region)
+        if not is_brief_pending(region):
+            mark_brief_pending(region)
+            generate_brief.delay(region)
         return JsonResponse(
             {"region": region, "content": "Generating brief…", "method": "pending"},
             status=202,
@@ -138,7 +143,7 @@ def brief_view(request, region: str):
     return JsonResponse(
         {
             "region": brief.region,
-            "content": brief.content,
+            "content": html_to_plain(brief.content),
             "method": brief.method,
             "generated_at": brief.generated_at.isoformat(),
         }
@@ -152,7 +157,9 @@ def brief_generate(request, region: str):
     if permission_error:
         return permission_error
 
-    from app_feeds.tasks import generate_brief
+    from app_feeds.tasks import generate_brief, mark_brief_pending
 
+    region = (region or "").strip().upper()
+    mark_brief_pending(region)
     task = generate_brief.delay(region)
     return JsonResponse({"task_id": task.id, "region": region})

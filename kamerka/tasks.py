@@ -27,8 +27,6 @@ import xmltodict
 from libnmap.process import NmapProcess
 
 import urllib.parse
-import urllib.request
-import xml.etree.ElementTree as et
 
 from app_kamerka import exploits
 
@@ -159,6 +157,7 @@ ics_queries = {
     "niagara": "port:1911,4911 product:Niagara",
     "bacnet": '"Instance ID:" "Object Name:"',
     "modbus": "Unit ID: 0",
+    "s7": "s7",
     "siemens": "Original Siemens Equipment Basic Firmware:",
     "dnp3": "port:20000 source address",
     "ethernetip": '"Product name:" "Vendor ID:"',
@@ -487,6 +486,25 @@ def devices_nearby(lat, lon, id, query):
         logger.warning("%s", e)
 
 
+def _resolve_country_preset(preset_key, healthcare=False):
+    """Map a Launch-tab preset key to (shodan_query, category) for country searches."""
+    key = (preset_key or "").strip()
+    if not key:
+        return None, None
+    if healthcare and key in healthcare_queries:
+        return healthcare_queries[key], "healthcare"
+    if key in ics_queries:
+        return ics_queries[key], "ics"
+    if key in attackers_infra_queries:
+        return attackers_infra_queries[key], "infra"
+    # IoT / camera presets (e.g. hikvision) live in coordinates_queries but are
+    # valid for country-scoped Shodan searches from the ICS Launch tab.
+    if key in coordinates_queries:
+        return coordinates_queries[key], "ics"
+    logger.warning("Unknown country preset key (skipped): %s", key)
+    return None, None
+
+
 @shared_task(bind=True)
 def shodan_search(
     self,
@@ -502,61 +520,26 @@ def shodan_search(
     progress_recorder = ProgressRecorder(self)
     result = 0
     if country:
-        total = len(ics)
-        for c, i in enumerate(ics):
-            if healthcare:
-                if i in healthcare_queries:
-                    print(i)
-                    try:
-                        result += c
-                        shodan_search_worker(
-                            country=country,
-                            fk=fk,
-                            query=healthcare_queries[i],
-                            search_type=i,
-                            category="healthcare",
-                            all_results=all_results,
-                        )
-                        progress_recorder.set_progress(c + 1, total=total)
-                    except Exception as exc:
-                        logger.warning(
-                            "shodan_search_worker failed for healthcare query '%s': %s",
-                            i,
-                            exc,
-                        )
-            else:
-
-                if i in ics_queries:
-                    try:
-                        result += c
-                        shodan_search_worker(
-                            country=country,
-                            fk=fk,
-                            query=ics_queries[i],
-                            search_type=i,
-                            category="ics",
-                            all_results=all_results,
-                        )
-                        progress_recorder.set_progress(c + 1, total=total)
-                    except Exception as exc:
-                        logger.warning(
-                            "shodan_search_worker failed for ics query '%s': %s", i, exc
-                        )
-
-                if i in attackers_infra_queries:
-                    try:
-                        result += c
-                        shodan_search_worker(
-                            country=country,
-                            fk=fk,
-                            query=attackers_infra_queries[i],
-                            search_type=i,
-                            category="infra",
-                            all_results=all_results,
-                        )
-                        progress_recorder.set_progress(c + 1, total=total)
-                    except Exception as e:
-                        logger.warning("%s", e)
+        total = len(ics or [])
+        for c, i in enumerate(ics or []):
+            query, category = _resolve_country_preset(i, healthcare=bool(healthcare))
+            if not query:
+                continue
+            try:
+                result += 1
+                shodan_search_worker(
+                    country=country,
+                    fk=fk,
+                    query=query,
+                    search_type=i,
+                    category=category,
+                    all_results=all_results,
+                )
+                progress_recorder.set_progress(c + 1, total=total)
+            except Exception as exc:
+                logger.warning(
+                    "shodan_search_worker failed for preset '%s': %s", i, exc
+                )
 
     if coordinates:
         total = len(coordinates_search)
@@ -1368,42 +1351,69 @@ def _rate_limit_check(ip, window_seconds=60, max_scans=10, tool="scan"):
     return allowed
 
 
+def _parse_stored_ports(port_field):
+    """Parse ``device.port`` into sorted TCP and UDP port lists.
+
+    Accepts plain numbers (assumed TCP), ``8081/tcp``, and ``161/udp``.
+    """
+    tcp_ports = []
+    udp_ports = []
+    for part in re.split(r"[,;\s]+", str(port_field or "").strip()):
+        part = part.strip().lower()
+        if not part:
+            continue
+        match = re.match(r"^(\d+)(?:/(tcp|udp))?$", part)
+        if not match:
+            continue
+        port_num = int(match.group(1))
+        if not 1 <= port_num <= 65535:
+            continue
+        if match.group(2) == "udp":
+            udp_ports.append(port_num)
+        else:
+            tcp_ports.append(port_num)
+    return sorted(set(tcp_ports)), sorted(set(udp_ports))
+
+
+def _format_stored_ports(tcp_ports, udp_ports):
+    """Serialize open ports for ``Device.port`` (TCP first, then UDP)."""
+    parts = [f"{p}/tcp" for p in tcp_ports] + [f"{p}/udp" for p in udp_ports]
+    return ", ".join(parts)
+
+
+def _merge_naabu_results(tcp_set, udp_set, results):
+    """Merge Naabu scan lines into *tcp_set* / *udp_set*."""
+    for entry in results:
+        port_num = entry.get("port")
+        if not port_num:
+            continue
+        if entry.get("protocol") == "udp":
+            udp_set.add(int(port_num))
+        else:
+            tcp_set.add(int(port_num))
+
+
 def _resolve_open_ports(device):
-    """Return a sorted list of open TCP port numbers for *device*.
+    """Discover open ports for *device* and return TCP ports for follow-on scans.
 
-    Resolution order
-    ----------------
-    1. If ``device.port`` already contains port data (a single number or a
-       comma-separated list from an Nmap/Shodan scan), parse and return it.
-    2. Otherwise run a full Naabu port scan against ``device.ip``.
+    Always runs a quick Naabu TCP probe and a UDP probe (with ``-udp-probes``),
+    merging results with any ports already stored on the device.  Stored values
+    are no longer treated as authoritative — a single Shodan port like ``80``
+    will not skip discovery of ``8081``, ``4443``, etc.
 
-    **Side effect (case 2 only):** when port discovery succeeds the
-    discovered port list is persisted to ``device.port`` and saved to the
-    database via ``device.save(update_fields=['port'])``.
+    When no TCP ports are found after quick scans, falls back to
+    ``NAABU_DISCOVERY_PORTS`` full-range discovery.
+
+    Persists ``device.port`` as ``80/tcp, 8081/tcp, 161/udp, …``.
 
     Returns
     -------
     list[int]
-        Sorted open port numbers.  Empty list when the stored port field is
-        blank *and* Naabu finds no open ports (or is not installed).
+        Sorted open **TCP** port numbers (used by Nuclei / Wappalyzer chains).
     """
     from verification.naabu_scanner import run_naabu, _get_naabu_bin
     from django.conf import settings as _s
 
-    existing = str(device.port).strip() if device.port else ""
-    if existing:
-        ports = []
-        for part in re.split(r"[,\s]+", existing):
-            part = part.strip()
-            if part.isdigit():
-                p = int(part)
-                if 1 <= p <= 65535:
-                    ports.append(p)
-        if ports:
-            return sorted(set(ports))
-
-    # No usable port data — discover ports with a full Naabu scan.
-    # Distinguish "not installed" from "host has no open ports" for clearer logging.
     naabu_bin = _get_naabu_bin()
     if not os.path.isfile(naabu_bin) and naabu_bin != "naabu":
         logger.error(
@@ -1411,33 +1421,85 @@ def _resolve_open_ports(device):
             "Install: go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest",
             naabu_bin,
         )
-        return []
+        tcp_existing, udp_existing = _parse_stored_ports(device.port)
+        return tcp_existing
 
-    discovery_ports = getattr(_s, "NAABU_DISCOVERY_PORTS", "1-65535")
-    discovery_timeout = getattr(_s, "NAABU_DISCOVERY_TIMEOUT", 120)
-    logger.info(
-        "_resolve_open_ports: running Naabu discovery against %s (ports: %s)",
-        device.ip,
-        discovery_ports,
+    tcp_ports, udp_ports = _parse_stored_ports(device.port)
+    tcp_set = set(tcp_ports)
+    udp_set = set(udp_ports)
+
+    quick_timeout = int(getattr(_s, "NAABU_QUICK_TIMEOUT", 90))
+    tcp_quick = getattr(
+        _s,
+        "NAABU_TCP_QUICK_PORTS",
+        "80,443,8080,8081,4443,8181,21116,8443",
     )
-    results = run_naabu(device.ip, ports=discovery_ports, timeout=discovery_timeout)
-    if results:
-        open_ports = sorted(set(r["port"] for r in results if r.get("port")))
-        device.port = ", ".join(str(p) for p in open_ports)
+    udp_spec = getattr(
+        _s,
+        "NAABU_UDP_PORTS",
+        "u:123,u:161,u:1701,u:21116",
+    )
+
+    logger.info(
+        "_resolve_open_ports: quick TCP scan on %s (ports: %s)",
+        device.ip,
+        tcp_quick,
+    )
+    _merge_naabu_results(
+        tcp_set, udp_set, run_naabu(device.ip, ports=tcp_quick, timeout=quick_timeout)
+    )
+
+    logger.info(
+        "_resolve_open_ports: UDP probe scan on %s (ports: %s)",
+        device.ip,
+        udp_spec,
+    )
+    _merge_naabu_results(
+        tcp_set,
+        udp_set,
+        run_naabu(
+            device.ip,
+            ports=udp_spec,
+            timeout=quick_timeout,
+            udp_probes=True,
+        ),
+    )
+
+    if not tcp_set:
+        discovery_ports = getattr(_s, "NAABU_DISCOVERY_PORTS", "1-65535")
+        discovery_timeout = getattr(_s, "NAABU_DISCOVERY_TIMEOUT", 120)
+        logger.info(
+            "_resolve_open_ports: full discovery on %s (ports: %s)",
+            device.ip,
+            discovery_ports,
+        )
+        _merge_naabu_results(
+            tcp_set,
+            udp_set,
+            run_naabu(
+                device.ip, ports=discovery_ports, timeout=discovery_timeout
+            ),
+        )
+
+    tcp_sorted = sorted(tcp_set)
+    udp_sorted = sorted(udp_set)
+    formatted = _format_stored_ports(tcp_sorted, udp_sorted)
+    if formatted != (device.port or ""):
+        device.port = formatted
         device.save(update_fields=["port"])
         logger.info(
-            "_resolve_open_ports: discovered ports %s on %s",
+            "_resolve_open_ports: ports on %s → %s",
+            device.ip,
             device.port,
+        )
+
+    if not tcp_sorted and not udp_sorted:
+        logger.warning(
+            "_resolve_open_ports: no open ports found on %s",
             device.ip,
         )
-        return open_ports
 
-    logger.warning(
-        "_resolve_open_ports: no open ports found on %s "
-        "(host may be unreachable or all ports filtered)",
-        device.ip,
-    )
-    return []
+    return tcp_sorted
 
 
 @shared_task(bind=True)
@@ -1451,13 +1513,10 @@ def port_scan_task(self, device_id):
 
     Port resolution
     ---------------
-    * If ``device.port`` is already populated (set by Shodan or Nmap) those
-      ports are returned immediately — no Naabu call is made.  Shodan's port
-      data is the *primary* source; Naabu is only the *fallback* for devices
-      that arrive with an empty port field.
-    * When Naabu runs the discovered ports are persisted to ``device.port``
-      so subsequent tasks (nuclei_scan, wappalyzer_scan) can reuse them
-      without running Naabu again.
+    * Always runs Naabu quick TCP + UDP probes and merges with any ports
+      already on ``device.port`` (stored Shodan/Nmap data is a hint, not a
+      skip).  Full-range discovery runs only when no TCP ports are found.
+    * Persists merged ``port/proto`` values on ``device.port`` for the UI.
 
     Progress
     --------
@@ -1771,169 +1830,6 @@ def nuclei_scan(
     finally:
         if targets_file and os.path.exists(targets_file):
             os.unlink(targets_file)
-
-
-def paste_login(username, password, key):
-    login_url = "https://pastebin.com/api/api_login.php"
-    login_payload = {
-        "api_dev_key": key,
-        "api_user_name": username,
-        "api_user_password": password,
-    }
-
-    login = requests.post(login_url, data=login_payload)
-    user_key = login.text
-    return user_key
-
-
-def retrieve_pastes(key, user_key):
-    url = "http://pastebin.com/api/api_post.php"
-    paste_dict = {}
-
-    values_list = {"api_option": "list", "api_dev_key": key, "api_user_key": user_key}
-
-    data = urllib.parse.urlencode(values_list)
-    data = data.encode("utf-8")  # data should be bytes
-    req = urllib.request.Request(url, data)
-    with urllib.request.urlopen(req) as response:
-        the_page = response.read()
-
-    key_v = ""
-    title = ""
-
-    root = et.fromstring("<root>" + str(the_page) + "</root>")
-    for paste_root in root:
-        for paste_element in paste_root:
-            key = paste_element.tag.split("_", 1)[-1]
-            if key == "key":
-                key_v = paste_element.text
-            if key == "title":
-                title = paste_element.text
-
-        paste_dict[title] = key_v
-    return paste_dict
-
-
-def delete_paste(key, user_key, paste_code):
-    url = "http://pastebin.com/api/api_post.php"
-
-    values_list = {
-        "api_option": "delete",
-        "api_dev_key": key,
-        "api_user_key": user_key,
-        "api_paste_key": paste_code,
-    }
-
-    data = urllib.parse.urlencode(values_list)
-    data = data.encode("utf-8")  # data should be bytes
-    req = urllib.request.Request(url, data)
-    urllib.request.urlopen(req)
-
-
-def create_paste(key, user_key, filename, text):
-    url = "http://pastebin.com/api/api_post.php"
-
-    values = {
-        "api_option": "paste",
-        "api_dev_key": key,
-        "api_paste_code": text,
-        "api_paste_private": "2",
-        "api_paste_name": filename,
-        "api_user_key": user_key,
-    }
-
-    data = urllib.parse.urlencode(values)
-    data = data.encode("utf-8")  # data should be bytes
-    req = urllib.request.Request(url, data)
-    with urllib.request.urlopen(req) as response:
-        the_page = response.read()
-
-
-@shared_task(bind=False)
-def send_to_field_agent_task(id, notes):
-    cve = ""
-    indicator = ""
-
-    af = Device.objects.get(id=id)
-    ports = af.port
-    try:
-        af_details = ShodanScan.objects.get(device_id=id)
-        ports = af_details.ports[1:][:-1]
-        if af_details.vulns:
-            cve = af_details.vulns[1:][:-1]
-        if af.indicator:
-            indicator = af.indicator[2:][:-2]
-    except Exception:
-        logger.warning(
-            "send_to_field_agent_task: ShodanScan record not found for device %s — skipping enrichment",
-            id,
-        )
-
-    pb_username = _get_env_key("PASTEBIN_API_USER_NAME")
-    pb_password = _get_env_key("PASTEBIN_API_USER_PASSWORD")
-    pb_dev_key = _get_env_key("PASTEBIN_API_DEV_KEY")
-
-    if not pb_username or not pb_password or not pb_dev_key:
-        logger.error(
-            "send_to_field_agent_task: one or more Pastebin env vars are unset "
-            "(PASTEBIN_API_DEV_KEY, PASTEBIN_API_USER_NAME, PASTEBIN_API_USER_PASSWORD). "
-            "Aborting."
-        )
-        return
-
-    user_key = paste_login(pb_username, pb_password, pb_dev_key)
-
-    pastes = retrieve_pastes(pb_dev_key, user_key=user_key)
-
-    ip = af.ip
-    lat = af.lat
-    lon = af.lon
-    org = af.org
-    type = af.type
-
-    notes = af.notes
-
-    merge_string = (
-        "ꓘ;"
-        + lat
-        + ";"
-        + lon
-        + ";"
-        + ip
-        + ";"
-        + ports
-        + ";"
-        + org
-        + ";"
-        + type
-        + ";"
-        + cve
-        + ";"
-        + indicator
-        + ";"
-        + notes
-    )
-
-    print("\\xea\\x93\\x98amerka_" + af.ip)
-    if "\\xea\\x93\\x98amerka_" + af.ip in pastes.keys():
-        delete_paste(
-            _get_env_key("PASTEBIN_API_DEV_KEY"),
-            user_key,
-            pastes["\\xea\\x93\\x98amerka_" + af.ip],
-        )
-        create_paste(
-            _get_env_key("PASTEBIN_API_DEV_KEY"),
-            user_key,
-            "ꓘamerka_" + af.ip,
-            merge_string,
-        )
-    else:
-        create_paste(
-            _get_env_key("PASTEBIN_API_DEV_KEY"),
-            user_key,
-            "ꓘamerka_" + af.ip,
-            merge_string,
-        )
 
 
 @shared_task(bind=False)
@@ -4963,3 +4859,18 @@ def enrich_device_context(self, device_id: int) -> dict:
     except Exception as exc:
         logger.warning("enrich_device_context failed for device %s: %s", device_id, exc)
         return {"device_id": device_id, "error": str(exc)}
+
+
+@shared_task(name="kamerka.tasks.reconcile_stale_task_runs", bind=False)
+def reconcile_stale_task_runs() -> str:
+    """Mark orphaned TaskRun rows failed when Celery no longer has them."""
+    from app_kamerka.task_utils import reconcile_open_task_runs
+
+    stats = reconcile_open_task_runs()
+    return (
+        "reconcile_stale_task_runs: checked={checked} updated={updated} {detail}".format(
+            checked=stats["checked"],
+            updated=stats["updated"],
+            detail=stats.get("by_new_status") or {},
+        )
+    )

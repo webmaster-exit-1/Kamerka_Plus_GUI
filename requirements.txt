@@ -6,6 +6,8 @@ redis>=4.0.0,<8.0
 psycopg2-binary>=2.9,<3.0
 pycountry>=22.3.5
 shodan>=1.28.0
+# Shodan CLI still imports pkg_resources (removed in setuptools 81+)
+setuptools>=69.0.0,<81.0.0
 bs4
 pynmea2>=1.18.0
 maxminddb>=2.0.0

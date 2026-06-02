@@ -1,0 +1,12 @@
+{% if breadcrumbs %}
+<nav class="km-breadcrumb-bar" aria-label="Breadcrumb">
+  {% for crumb in breadcrumbs %}
+    {% if not forloop.first %}<span class="km-breadcrumb-sep">›</span>{% endif %}
+    {% if crumb.url %}
+      <a href="{{ crumb.url }}">{{ crumb.label }}</a>
+    {% else %}
+      <span class="km-breadcrumb-current">{{ crumb.label }}</span>
+    {% endif %}
+  {% endfor %}
+</nav>
+{% endif %}

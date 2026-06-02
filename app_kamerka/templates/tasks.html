@@ -9,6 +9,18 @@
       <div class="panel panel-default">
         <div class="panel-heading"><h3 class="panel-title">Task Runs</h3></div>
         <div class="panel-body">
+          <p style="font-family:var(--cp-font,monospace);font-size:0.88em;color:#6f8092;margin-bottom:12px;">
+            Open runs are synced with Celery on each page load. Tasks left
+            <strong>pending</strong> for more than ~90 minutes with no worker progress are marked
+            <span class="label label-danger">failure</span> (orphaned queue / expired Redis result).
+            {% if status_counts %}
+            —
+            {% if status_counts.success %}<span class="label label-success">{{ status_counts.success }} ok</span>{% endif %}
+            {% if status_counts.failure %}<span class="label label-danger">{{ status_counts.failure }} failed</span>{% endif %}
+            {% if status_counts.running %}<span class="label label-info">{{ status_counts.running }} running</span>{% endif %}
+            {% if status_counts.pending %}<span class="label label-default">{{ status_counts.pending }} pending</span>{% endif %}
+            {% endif %}
+          </p>
           <form method="get" class="form-inline" style="margin-bottom:15px;">
             <select name="tool" class="form-control">
               <option value="">All tools</option>

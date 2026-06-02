@@ -23,6 +23,10 @@ from unittest.mock import patch, MagicMock, call
 from django.test import TestCase, override_settings
 from django.test import Client
 
+from app_kamerka.test_compat import apply_py314_django_test_patches
+
+apply_py314_django_test_patches()
+
 from app_kamerka.models import Search, Device, NucleiResult, WappalyzerResult
 
 # Minimal Shodan banner — the format returned by api.search_cursor()
@@ -186,7 +190,7 @@ class ShodanSearchWorkerTest(TestCase):
         mock_fout = MagicMock()
 
         with patch("kamerka.tasks.Shodan", return_value=mock_api), \
-             patch("kamerka.tasks._get_env_key", return_value="fake-key"), \
+             patch("kamerka.tasks._get_env_key", return_value="test-shodan-key"), \
              patch("kamerka.tasks.shodan_helpers.open_file", return_value=mock_fout), \
              patch("kamerka.tasks.shodan_helpers.write_banner"):
             from kamerka.tasks import shodan_search_worker
@@ -260,7 +264,7 @@ class ShodanSearchWorkerTest(TestCase):
         write_banner_mock = MagicMock()
 
         with patch("kamerka.tasks.Shodan", return_value=mock_api), \
-             patch("kamerka.tasks._get_env_key", return_value="fake-key"), \
+             patch("kamerka.tasks._get_env_key", return_value="test-shodan-key"), \
              patch("kamerka.tasks.shodan_helpers.open_file", return_value=mock_fout), \
              patch("kamerka.tasks.shodan_helpers.write_banner", write_banner_mock):
             from kamerka.tasks import shodan_search_worker
@@ -312,20 +316,17 @@ class ShodanSearchMultiSelectionTaskTest(TestCase):
         )
 
     def test_multiple_ics_queries_create_devices_for_each_selection(self):
-        def fake_worker(**kwargs):
-            Device.objects.create(
-                search_id=kwargs["fk"],
-                ip="10.0.0.{}".format(Device.objects.count() + 1),
-                product="Created by {}".format(kwargs["search_type"]),
-                port="80",
-                type=kwargs["search_type"],
-                lat="40.7128",
-                lon="-74.0060",
-                country_code="US",
-                category=kwargs["category"],
-            )
+        mock_api = MagicMock()
+        mock_api.search_cursor.side_effect = [
+            iter([SHODAN_BANNER_NO_PRODUCT]),
+            iter([SHODAN_BANNER_S7]),
+        ]
+        mock_fout = MagicMock()
 
-        with patch("kamerka.tasks.shodan_search_worker", side_effect=fake_worker), \
+        with patch("kamerka.tasks.Shodan", return_value=mock_api), \
+             patch("kamerka.tasks._get_env_key", return_value="test-shodan-key"), \
+             patch("kamerka.tasks.shodan_helpers.open_file", return_value=mock_fout), \
+             patch("kamerka.tasks.shodan_helpers.write_banner"), \
              patch("kamerka.tasks.ProgressRecorder"):
             from kamerka.tasks import shodan_search
 
@@ -341,6 +342,7 @@ class ShodanSearchMultiSelectionTaskTest(TestCase):
             .values_list("type", flat=True)
         )
         self.assertEqual(created_types, ["modbus", "siemens"])
+        self.assertEqual(mock_api.search_cursor.call_count, 2)
 
 
 # ---------------------------------------------------------------------------
@@ -389,7 +391,7 @@ class ShodanFixtureFileTest(TestCase):
         mock_fout = MagicMock()
 
         with patch("kamerka.tasks.Shodan", return_value=mock_api), \
-             patch("kamerka.tasks._get_env_key", return_value="fake-key"), \
+             patch("kamerka.tasks._get_env_key", return_value="test-shodan-key"), \
              patch("kamerka.tasks.shodan_helpers.open_file", return_value=mock_fout), \
              patch("kamerka.tasks.shodan_helpers.write_banner"):
             from kamerka.tasks import shodan_search_worker
@@ -719,7 +721,8 @@ class ExportTest(TestCase):
         self.search = _make_search()
         _make_device(self.search, vulns="['CVE-2021-36260']")
 
-    def test_csv_export_contains_correct_headers(self):
+    @patch("kamerka.tasks.os.path.exists", return_value=False)
+    def test_csv_export_contains_correct_headers(self, _exists_mock):
         """CSV export writes Shodan-format columns; when no download file exists,
         a header-only CSV is the correct fallback (data comes from shodan download)."""
         response = self.client.get("/export/csv/{}".format(self.search.id))
@@ -729,7 +732,8 @@ class ExportTest(TestCase):
         # The export schema always starts with ip_str
         self.assertIn("ip_str", body, "CSV must contain the ip_str column header")
 
-    def test_kml_export_returns_valid_kml(self):
+    @patch("kamerka.tasks.os.path.exists", return_value=False)
+    def test_kml_export_returns_valid_kml(self, _exists_mock):
         """KML export always returns valid KML; when no download file exists,
         an empty-but-valid KML document is the correct fallback."""
         response = self.client.get("/export/kml/{}".format(self.search.id))
@@ -1393,7 +1397,7 @@ class SearchCostViewTest(TestCase):
         mock_api = MagicMock()
         mock_api.count.return_value = {"total": 500}
         with patch("kamerka.tasks.Shodan", return_value=mock_api), \
-             patch("kamerka.tasks._get_env_key", return_value="fake-key"):
+             patch("kamerka.tasks._get_env_key", return_value="test-shodan-key"):
             response = self.client.get(
                 "/search_cost?query=webcam",
                 HTTP_X_REQUESTED_WITH="XMLHttpRequest",
@@ -1408,21 +1412,21 @@ class SearchCostViewTest(TestCase):
         mock_api = MagicMock()
         mock_api.count.return_value = {"total": 125}
         with patch("kamerka.tasks.Shodan", return_value=mock_api), \
-             patch("kamerka.tasks._get_env_key", return_value="fake-key"):
+             patch("kamerka.tasks._get_env_key", return_value="test-shodan-key"):
             response = self.client.get(
                 "/search_cost?query=webcam&country=US",
                 HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
         data = json.loads(response.content)
         self.assertEqual(data["credits_cost"], 1)
-        self.assertEqual(data["query"], "webcam country:US")
-        mock_api.count.assert_called_once_with("webcam country:US")
+        self.assertEqual(data["query"], "device:webcam country:US")
+        mock_api.count.assert_called_once_with("device:webcam country:US")
 
     def test_multiple_queries_are_aggregated(self):
         mock_api = MagicMock()
         mock_api.count.side_effect = [{"total": 125}, {"total": 40}]
         with patch("kamerka.tasks.Shodan", return_value=mock_api), \
-             patch("kamerka.tasks._get_env_key", return_value="fake-key"):
+             patch("kamerka.tasks._get_env_key", return_value="test-shodan-key"):
             response = self.client.get(
                 "/search_cost",
                 {"queries": ["webcam", "hikvision"], "country": "US"},
@@ -1433,11 +1437,34 @@ class SearchCostViewTest(TestCase):
         self.assertEqual(data["credits_cost"], 1)
         self.assertEqual(len(data["queries"]), 2)
 
+    def test_preset_keys_resolve_and_aggregate(self):
+        from app_kamerka.shodan_presets import resolve_selection_keys
+        from kamerka.tasks import ics_queries
+
+        queries, _ = resolve_selection_keys(["modbus", "bacnet"])
+        self.assertEqual(queries[0], ics_queries["modbus"])
+        self.assertEqual(queries[1], ics_queries["bacnet"])
+
+        mock_api = MagicMock()
+        mock_api.count.side_effect = [{"total": 250}, {"total": 150}]
+        with patch("kamerka.tasks.Shodan", return_value=mock_api), \
+             patch("kamerka.tasks._get_env_key", return_value="test-shodan-key"):
+            response = self.client.get(
+                "/search_cost",
+                {"keys": ["modbus", "bacnet"], "country": "US"},
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+        data = json.loads(response.content)
+        self.assertEqual(data["count"], 400)
+        self.assertEqual(data["credits_cost"], 3)
+        self.assertEqual(data["keys"], ["modbus", "bacnet"])
+        self.assertEqual(mock_api.count.call_count, 2)
+
     def test_zero_results_estimate_zero_credits(self):
         mock_api = MagicMock()
         mock_api.count.return_value = {"total": 0}
         with patch("kamerka.tasks.Shodan", return_value=mock_api), \
-             patch("kamerka.tasks._get_env_key", return_value="fake-key"):
+             patch("kamerka.tasks._get_env_key", return_value="test-shodan-key"):
             response = self.client.get(
                 "/search_cost?query=unlikely-device",
                 HTTP_X_REQUESTED_WITH="XMLHttpRequest",
@@ -1670,12 +1697,14 @@ class HomepageHamburgerMenuTest(TestCase):
         content = response.content.decode()
         self.assertIn('/index', content)
         self.assertIn('/history', content)
+        self.assertIn('/watchlists', content)
+        self.assertIn('/playbooks/', content)
+        self.assertIn('/tasks', content)
         self.assertIn('/map', content)
-        self.assertIn('/globe', content)
+        self.assertIn('/map3d', content)
         self.assertIn('/gallery', content)
         self.assertIn('/devices', content)
         self.assertIn('/sources', content)
-        self.assertIn("js/hamburger-nav.js", content)
         self.assertIn("css/hamburger-nav.css", content)
 
 
@@ -1917,8 +1946,121 @@ class SourcesPageTest(TestCase):
         content = response.content.decode()
         self.assertIn('/index', content)
         self.assertIn('/sources', content)
-        self.assertIn('/globe', content)
-        self.assertIn("js/hamburger-nav.js", content)
+        self.assertIn('/map3d', content)
+        self.assertIn('/playbooks/', content)
+        self.assertIn('/tasks', content)
+
+
+class DevicesPageTest(TestCase):
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0",
+            country="US",
+            ics="[]",
+            coordinates_search="[]",
+        )
+        for n in range(5):
+            Device.objects.create(
+                search=self.search,
+                ip="10.0.0.{}".format(n + 1),
+                lat="40.0",
+                lon="-74.0",
+                product="cam",
+                port="80",
+                type="http",
+                country_code="US",
+            )
+
+    def test_devices_page_paginates(self):
+        response = self.client.get("/devices")
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode("utf-8", errors="replace")
+        self.assertIn("devices-table", body)
+        self.assertLess(len(response.content), 500_000)
+
+    def test_devices_ip_filter(self):
+        response = self.client.get("/devices?q=10.0.0.3")
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn("10.0.0.3", body)
+        self.assertNotIn("10.0.0.1", body)
+
+
+class Map3dViewTest(TestCase):
+    def setUp(self):
+        self.search = Search.objects.create(
+            coordinates="0,0",
+            country="CN",
+            ics="[]",
+            coordinates_search="[]",
+        )
+        Device.objects.create(
+            search=self.search,
+            ip="10.0.0.1",
+            lat="39.9",
+            lon="116.4",
+            product="PLC",
+            port="502",
+            type="modbus",
+            country_code="CN",
+        )
+
+    def test_map3d_page_loads(self):
+        response = self.client.get("/map3d")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"map3d-canvas", response.content)
+        self.assertIn(b"vendor/maplibre-gl/maplibre-gl.js", response.content)
+        self.assertIn(b"No account required", response.content)
+
+    def test_globe_redirects_to_map3d(self):
+        response = self.client.get("/globe?search={}".format(self.search.id))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/map3d", response.url)
+
+    def test_map3d_geojson_filtered_by_search(self):
+        response = self.client.get(
+            "/map3d/devices.geojson?search={}".format(self.search.id)
+        )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["type"], "FeatureCollection")
+        self.assertEqual(len(data["features"]), 1)
+        self.assertEqual(data["features"][0]["properties"]["ip"], "10.0.0.1")
+        self.assertIn("weight", data["features"][0]["properties"])
+
+
+class CopilotNavPagesTest(TestCase):
+    """New Copilot pages must load without login redirect or staff-only 403."""
+
+    def test_tasks_page_loads(self):
+        response = self.client.get("/tasks")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Task Runs", response.content)
+
+    def test_playbooks_page_loads(self):
+        response = self.client.get("/playbooks/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Playbooks", response.content)
+
+    def test_setup_checks_page_loads(self):
+        response = self.client.get("/healthz/setup/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"First Run", response.content)
+
+    def test_worker_status_accessible(self):
+        response = self.client.get("/api/worker_status")
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.content)
+        self.assertIn("active_tasks", payload)
+
+    def test_hexsploit_page_loads(self):
+        from django.test import RequestFactory
+        from app_kamerka.hexstrike_views import hexsploit_view
+
+        request = RequestFactory().get("/hexsploit/")
+        response = hexsploit_view(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("HexSploit", response.content.decode("utf-8", errors="replace"))
 
 
 # ---------------------------------------------------------------------------
@@ -2106,9 +2248,9 @@ class InfraFormEmptyItemsCheckTest(TestCase):
                     "all": "",
                 },
             )
-        # Shodan task should have been triggered → redirect to index
+        # Shodan task should have been triggered → redirect to case results
         if response.status_code == 302:
-            self.assertIn("index", response["Location"])
+            self.assertIn("/results/", response["Location"])
         else:
             mock_task.delay.assert_called_once()
 
@@ -2661,3 +2803,76 @@ class ExploitInfoViewUrlFilterTest(TestCase):
         )
         data = json.loads(response.content)
         self.assertEqual(data, {})
+
+
+# ---------------------------------------------------------------------------
+# Shodan presets + production hygiene (no unittest.mock outside tests)
+# ---------------------------------------------------------------------------
+class ShodanPresetsTest(TestCase):
+    def test_hidden_keys_not_in_ics_ui(self):
+        from app_kamerka.shodan_presets import ics_preset_options
+
+        keys = {k for k, _ in ics_preset_options()}
+        self.assertNotIn("moxahttp", keys)
+        self.assertNotIn("WAGO", keys)
+
+    def test_legacy_alias_resolves(self):
+        from app_kamerka.shodan_presets import resolve_selection_keys
+
+        queries, unknown = resolve_selection_keys(["WAGO", "siemens_Sm@rtClient"])
+        self.assertEqual(len(queries), 2)
+        self.assertEqual(unknown, [])
+
+
+class CountryPresetResolveTest(TestCase):
+    """Country Launch must resolve IoT camera keys (e.g. hikvision) for Shodan."""
+
+    def test_hikvision_resolves_for_country_search(self):
+        from kamerka.tasks import _resolve_country_preset, coordinates_queries
+
+        query, category = _resolve_country_preset("hikvision")
+        self.assertEqual(query, coordinates_queries["hikvision"])
+        self.assertEqual(category, "ics")
+
+
+class ResolveOpenPortsHelpersTest(TestCase):
+    """Port field parsing used by _resolve_open_ports (tasks.py)."""
+
+    def test_parse_plain_and_proto_ports(self):
+        from kamerka.tasks import _parse_stored_ports, _format_stored_ports
+
+        tcp, udp = _parse_stored_ports("80, 8081/tcp, 161/udp, 4443/tcp")
+        self.assertEqual(tcp, [80, 4443, 8081])
+        self.assertEqual(udp, [161])
+        self.assertEqual(
+            _format_stored_ports(tcp, udp),
+            "80/tcp, 4443/tcp, 8081/tcp, 161/udp",
+        )
+
+
+class ProductionCodeNoMockImportsTest(TestCase):
+    """Application modules must not import unittest.mock (tests only)."""
+
+    _ROOT = os.path.dirname(os.path.dirname(__file__))
+    _APP_PACKAGES = ("app_kamerka", "app_feeds", "app_layers", "kamerka")
+
+    def test_application_modules_do_not_import_unittest_mock(self):
+        offenders = []
+        for package in self._APP_PACKAGES:
+            base = os.path.join(self._ROOT, package)
+            for dirpath, _dirnames, filenames in os.walk(base):
+                if "migrations" in dirpath or "__pycache__" in dirpath:
+                    continue
+                for name in filenames:
+                    if not name.endswith(".py") or name.startswith("test"):
+                        continue
+                    path = os.path.join(dirpath, name)
+                    with open(path, encoding="utf-8") as fh:
+                        text = fh.read()
+                    if "unittest.mock" in text or "from unittest import mock" in text:
+                        offenders.append(path)
+        self.assertEqual(
+            offenders,
+            [],
+            "unittest.mock belongs in tests only: {}".format(", ".join(offenders)),
+        )

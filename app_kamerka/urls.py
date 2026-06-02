@@ -1,5 +1,6 @@
 from django.urls import path, include
 from app_kamerka import views
+from app_kamerka import hexstrike_views
 
 urlpatterns = [
     path("", views.search_main, name="search_main"),
@@ -55,11 +56,6 @@ urlpatterns = [
         views.get_nearby_devices_coordinates,
         name="get_nearby_devices_coordinates",
     ),
-    path(
-        "send_to_field_agent/<id>/<notes>",
-        views.send_to_field_agent,
-        name="send_to_field_agent",
-    ),
     path("whois/<id>", views.whois, name="whois"),
     path("get_whois/<id>", views.get_whois, name="get_whois"),
     path("scan/<id>", views.scan_dev, name="scan"),
@@ -72,6 +68,8 @@ urlpatterns = [
     path("export/csv/<id>", views.export_csv, name="export_csv"),
     path("export/kml/<id>", views.export_kml, name="export_kml"),
     path("export/json/<id>", views.export_json, name="export_json"),
+    path("map3d", views.map3d, name="map3d"),
+    path("map3d/devices.geojson", views.map3d_devices_geojson, name="map3d_devices_geojson"),
     path("globe", views.globe, name="globe"),
     path("globe/devices.json", views.globe_devices_json, name="globe_devices_json"),
     # Deep Protocol Scan
@@ -127,6 +125,9 @@ urlpatterns = [
     path("api/tools/", views.api_tools_list, name="api_tools_list"),
     path("api/tools/applicable/<int:device_id>/", views.api_tools_applicable, name="api_tools_applicable"),
     # Playbook CRUD + execution
+    path("hexsploit/", hexstrike_views.hexsploit_view, name="hexsploit"),
+    path("api/hexstrike/health/", hexstrike_views.hexstrike_health_api, name="hexstrike_health"),
+    path("api/hexstrike/action/", hexstrike_views.hexstrike_action_api, name="hexstrike_action"),
     path("playbooks/", views.playbooks_list, name="playbooks_list"),
     path("playbooks/<int:pk>/", views.playbook_detail, name="playbook_detail"),
     path("api/playbooks/create/", views.playbook_create, name="playbook_create"),

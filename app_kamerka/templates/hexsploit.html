@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block page_title %}HexSploit C2 — ꓘamerka{% endblock %}
+
+{% block extra_css %}
+<style>
+.hexsploit-panel { border: 1px solid rgba(0,100,215,0.45); border-radius: 8px; padding: 16px; margin-bottom: 16px; background: rgba(0,20,40,0.6); }
+.hexsploit-status-online { color: #00ff88; font-weight: bold; }
+.hexsploit-status-offline { color: #ff2050; font-weight: bold; }
+.hexsploit-output { font-family: monospace; font-size: 0.85em; white-space: pre-wrap; max-height: 420px; overflow: auto; background: #0a1428; border: 1px solid #0064d7; padding: 12px; border-radius: 6px; color: #cceeff; }
+.hexsploit-actions .btn { margin: 4px 6px 4px 0; }
+</style>
+{% endblock %}
+
+{% block case_chrome %}
+{% include "includes/breadcrumbs.html" %}
+{% endblock %}
+
+{% block content %}
+<div class="page-content-wrap">
+  <div class="row">
+    <div class="col-md-12">
+      <div class="panel panel-default">
+        <div class="panel-heading">
+          <h3 class="panel-title">HexSploit — HexStrike C2 Console</h3>
+        </div>
+        <div class="panel-body">
+          {% csrf_token %}
+          <p style="color:#aaa;margin-bottom:14px;">
+            Orchestrates your local <strong>HexStrike</strong> server for ICS/IoT targets already in Kamerka.
+            MCP agents connect to the same API; this page is the operator console inside ꓘamerka.
+            <span style="color:#ff2050;">Authorized lab use only.</span>
+          </p>
+
+          <div class="hexsploit-panel">
+            <div class="row">
+              <div class="col-md-6">
+                <div><span style="color:#888;">HexStrike server:</span> <code>{{ hexstrike_url }}</code></div>
+                <div id="hs-health-line" style="margin-top:8px;">
+                  {% if hexstrike_online %}
+                  <span class="hexsploit-status-online">● ONLINE</span>
+                  {% if health_version %}<span style="color:#888;margin-left:8px;">v{{ health_version }}</span>{% endif %}
+                  {% else %}
+                  <span class="hexsploit-status-offline">○ OFFLINE</span>
+                  <span style="color:#888;margin-left:8px;">Start: <code>python3 hexstrike_server.py</code> in ~/hexstrike-ai</span>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="col-md-6 text-right">
+                <button type="button" class="btn btn-default btn-sm" id="hs-refresh-health">Refresh status</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="hexsploit-panel">
+            <h4 style="color:#00e1ff;margin-top:0;">Target</h4>
+            {% if device %}
+            <p style="margin-bottom:8px;">
+              Device <a href="{% url 'device' id=device.search_id device_id=device.id ip=device.ip %}">#{{ device.id }}</a>
+              — {{ device.product|default:device.type }} — port {{ device.port }}
+            </p>
+            {% endif %}
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <input type="text" id="hs-target" class="form-control" style="max-width:280px;" placeholder="IP or hostname" value="{{ target }}">
+              <input type="hidden" id="hs-device-id" value="{% if device %}{{ device.id }}{% endif %}">
+              <select id="hs-objective" class="form-control" style="max-width:200px;">
+                <option value="comprehensive">Comprehensive</option>
+                <option value="quick">Quick recon</option>
+                <option value="vulnerability">Vulnerability focus</option>
+              </select>
+            </div>
+            {% if cves %}
+            <p style="color:#888;margin-top:10px;font-size:0.9em;">CVEs on device: {{ cves|join:", " }}</p>
+            {% endif %}
+          </div>
+
+          <div class="hexsploit-panel hexsploit-actions">
+            <h4 style="color:#00e1ff;margin-top:0;">Actions</h4>
+            <button type="button" class="btn btn-primary" data-action="analyze_target">Analyze target</button>
+            <button type="button" class="btn btn-info" data-action="select_tools">Select tools</button>
+            <button type="button" class="btn btn-warning" data-action="smart_scan" style="color:#000;">Smart scan</button>
+            <button type="button" class="btn btn-default" data-action="attack_chain">Attack chain</button>
+            <button type="button" class="btn btn-default" data-action="nuclei">Nuclei</button>
+            <button type="button" class="btn btn-default" data-action="process_dashboard">Process dashboard</button>
+            {% if msf_modules %}
+            <span style="margin-left:12px;color:#ffe600;">MSF:</span>
+            {% for m in msf_modules %}
+            <button type="button" class="btn btn-danger btn-sm hs-msf-btn" data-module="{{ m.module }}" title="{{ m.cve_id }}">{{ m.cve_id }}</button>
+            {% endfor %}
+            {% endif %}
+          </div>
+
+          <div class="hexsploit-panel">
+            <h4 style="color:#00e1ff;margin-top:0;">Output</h4>
+            <div id="hs-output" class="hexsploit-output">Ready.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    var output = document.getElementById('hs-output');
+    var deviceId = document.getElementById('hs-device-id').value;
+
+    function getCookie(name) {
+        var value = '; ' + document.cookie;
+        var parts = value.split('; ' + name + '=');
+        if (parts.length === 2) return parts.pop().split(';').shift();
+    }
+
+    function log(msg) {
+        output.textContent = typeof msg === 'string' ? msg : JSON.stringify(msg, null, 2);
+    }
+
+    function postAction(action, payload) {
+        log('Running ' + action + '…');
+        return fetch('/api/hexstrike/action/', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': getCookie('csrftoken') || ''
+            },
+            body: JSON.stringify({
+                action: action,
+                payload: payload || {},
+                device_id: deviceId || null
+            })
+        }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); });
+    }
+
+    function targetPayload(extra) {
+        var t = document.getElementById('hs-target').value.trim();
+        var p = Object.assign({ target: t }, extra || {});
+        var obj = document.getElementById('hs-objective').value;
+        if (obj) {
+            p.objective = obj;
+        }
+        return p;
+    }
+
+    document.querySelectorAll('[data-action]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var action = btn.getAttribute('data-action');
+            var payload = {};
+            if (action !== 'process_dashboard' && action !== 'health') {
+                payload = targetPayload(action === 'smart_scan' ? { max_tools: 5 } : {});
+            }
+            postAction(action, payload).then(function(res) {
+                log(res.data);
+            }).catch(function(e) {
+                log('Request failed: ' + e);
+            });
+        });
+    });
+
+    document.querySelectorAll('.hs-msf-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var module = btn.getAttribute('data-module');
+            var target = document.getElementById('hs-target').value.trim();
+            postAction('metasploit', {
+                module: module,
+                options: { RHOSTS: target }
+            }).then(function(res) { log(res.data); });
+        });
+    });
+
+    document.getElementById('hs-refresh-health').addEventListener('click', function() {
+        fetch('/api/hexstrike/health/', {
+            credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                var line = document.getElementById('hs-health-line');
+                if (d.status === 'healthy') {
+                    line.innerHTML = '<span class="hexsploit-status-online">● ONLINE</span>';
+                } else {
+                    line.innerHTML = '<span class="hexsploit-status-offline">○ OFFLINE</span> ' +
+                        '<span style="color:#888;">' + (d.error || '') + '</span>';
+                }
+                log(d);
+            });
+    });
+})();
+</script>
+{% endblock %}

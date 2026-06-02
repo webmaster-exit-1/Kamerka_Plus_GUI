@@ -11,9 +11,18 @@
                         <div class="col-md-12">
                             <div class="panel panel-default">
                                 <div class="panel-heading">
-                                    <h3 class="panel-title">Devices</h3>
+                                    <h3 class="panel-title">All devices
+                                        <span style="color:#888;font-size:0.75em;margin-left:8px;">{{ total_count }} total</span>
+                                    </h3>
                                 </div>
                                 <div class="panel-body">
+                                    <form method="get" class="form-inline" style="margin-bottom:12px;">
+                                        <input type="text" name="q" class="form-control" placeholder="Filter by IP…" value="{{ search_q }}" style="min-width:200px;">
+                                        <button type="submit" class="btn btn-default">Filter</button>
+                                        {% if search_q %}
+                                        <a href="/devices" class="btn btn-link" style="color:#00e1ff;">Clear</a>
+                                        {% endif %}
+                                    </form>
                                     <div class="form-inline" style="margin-bottom:12px;">
                                         <label for="bulk-tool-select">Run on selected:</label>
                                         <select id="bulk-tool-select" class="form-control">
@@ -23,7 +32,7 @@
                                         <span id="bulk-progress" style="margin-left:12px;color:#00e1ff;"></span>
                                     </div>
                                     <div id="bulk-results" style="margin-bottom:12px;"></div>
-                                    <table id="customers2" class="table datatable">
+                                    <table id="devices-table" class="table">
                                         <thead>
                                             <tr>
                                                 <th><input type="checkbox" id="select-all-devices"></th>
@@ -56,7 +65,7 @@
                                                 <td>{{ device.lat }}</td>
                                                 <td>{{ device.lon }}</td>
                                                 <td>{% for cve in device.vulns_list %}<a href="https://nvd.nist.gov/vuln/detail/{{ cve }}" target="_blank" rel="noopener noreferrer" style="font-family:monospace;color:#00e1ff;font-size:0.82em;white-space:nowrap;">{{ cve }}</a>{% if not forloop.last %} {% endif %}{% empty %}—{% endfor %}</td>
-                                                <td>{% for a in device.indicator %}{{ a }} {% endfor %}</td>
+                                                <td>{% for a in device.indicator_list %}{{ a }} {% empty %}—{% endfor %}</td>
                                                 <td>{{ device.located }}</td>
                                                 {% if device.exploited_scanned %}
                                                 <td>True</td>
@@ -67,6 +76,17 @@
                                             {% endfor %}
                                         </tbody>
                                     </table>
+                                    {% if page_obj.has_other_pages %}
+                                    <nav style="margin-top:14px;font-family:monospace;font-size:0.85em;">
+                                        {% if page_obj.has_previous %}
+                                        <a href="?page={{ page_obj.previous_page_number }}{% if search_q %}&amp;q={{ search_q|urlencode }}{% endif %}" style="color:#00e1ff;margin-right:12px;">← Prev</a>
+                                        {% endif %}
+                                        <span style="color:#888;">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                                        {% if page_obj.has_next %}
+                                        <a href="?page={{ page_obj.next_page_number }}{% if search_q %}&amp;q={{ search_q|urlencode }}{% endif %}" style="color:#00e1ff;margin-left:12px;">Next →</a>
+                                        {% endif %}
+                                    </nav>
+                                    {% endif %}
                                 </div>
                             </div>
                         </div>
@@ -77,6 +97,19 @@
 {% block extra_js %}
     <script src="{% static 'js/plugins/datatables/jquery.dataTables.min.js' %}"></script>
     <script src="{% static 'js/plugins/bootstrap/bootstrap-datepicker.js' %}"></script>
+    <script>
+    (function(){
+      if (window.jQuery && jQuery.fn.dataTable && jQuery('#devices-table').length) {
+        jQuery('#devices-table').dataTable({
+          paging: true,
+          pageLength: 50,
+          deferRender: true,
+          order: [[1, 'asc']],
+          stateSave: false
+        });
+      }
+    })();
+    </script>
     <script>
     (function(){
       function getCookie(name){

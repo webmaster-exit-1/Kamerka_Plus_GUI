@@ -1,0 +1,82 @@
+{% load static %}
+<li class="xn-logo">
+    <a href="/">ꓘamerka</a>
+    <a href="#" class="x-navigation-control"></a>
+</li>
+<li class="xn-profile">
+    <div class="profile">
+        <div class="profile-image"></div>
+        <div class="profile-data">
+            <img width="200" height="200"
+                 src="{% static 'images/OffensiveOsint-logo-RGB-2.svg' %}"
+                 alt="Offensive OSINT logo">
+        </div>
+    </div>
+</li>
+
+<li class="xn-title km-nav-section">Command</li>
+<li class="{% if nav_active == 'launch' %}km-nav-active{% endif %}">
+    <a href="/"><span class="fa fa-rocket"></span><span class="xn-text">Launch</span></a>
+</li>
+<li class="{% if nav_active == 'overview' %}km-nav-active{% endif %}">
+    <a href="/index"><span class="fa fa-desktop"></span><span class="xn-text">Overview</span></a>
+</li>
+<li class="{% if nav_active == 'cases' %}km-nav-active{% endif %}">
+    <a href="/history"><span class="fa fa-folder-open"></span><span class="xn-text">Cases</span></a>
+</li>
+{% if active_case_id %}
+<li class="{% if nav_active == 'case' %}km-nav-active{% endif %}">
+    <a href="/results/{{ active_case_id }}"><span class="fa fa-crosshairs"></span><span class="xn-text">Active case #{{ active_case_id }}</span></a>
+</li>
+{% endif %}
+<li class="{% if nav_active == 'target' %}km-nav-active{% else %}km-nav-disabled{% endif %}">
+    <a href="{% if active_target_url %}{{ active_target_url }}{% else %}#{% endif %}">
+        <span class="fa fa-bullseye"></span><span class="xn-text">Target</span>
+    </a>
+</li>
+
+<li class="xn-title km-nav-section">Operations</li>
+<li class="{% if nav_active == 'tasks' %}km-nav-active{% endif %}">
+    <a href="/tasks"><span class="fa fa-tasks"></span><span class="xn-text">Tasks</span></a>
+</li>
+<li class="{% if nav_active == 'playbooks' %}km-nav-active{% endif %}">
+    <a href="/playbooks/"><span class="fa fa-list-alt"></span><span class="xn-text">Playbooks</span></a>
+</li>
+<li class="{% if nav_active == 'watchlists' %}km-nav-active{% endif %}">
+    <a href="/watchlists"><span class="fa fa-list"></span><span class="xn-text">Watchlists</span></a>
+</li>
+<li class="{% if nav_active == 'hexsploit' %}km-nav-active{% endif %}">
+    <a href="/hexsploit/"><span class="fa fa-bolt"></span><span class="xn-text">HexSploit</span></a>
+</li>
+
+<li class="xn-title km-nav-section">Picture</li>
+<li class="{% if nav_active == 'map' %}km-nav-active{% endif %}">
+    <a href="/map"><span class="fa fa-map-marker"></span><span class="xn-text">Map</span></a>
+</li>
+<li class="{% if nav_active == 'map3d' %}km-nav-active{% endif %}">
+    <a href="/map3d{% if active_case_id %}?search={{ active_case_id }}{% endif %}"><span class="fa fa-map"></span><span class="xn-text">3D Map</span></a>
+</li>
+<li class="{% if nav_active == 'camera' %}km-nav-active{% endif %}">
+    <a href="/camera-wall"><span class="fa fa-video-camera"></span><span class="xn-text">Camera wall</span></a>
+</li>
+<li class="{% if nav_active == 'gallery' %}km-nav-active{% endif %}">
+    <a href="/gallery"><span class="fa fa-camera"></span><span class="xn-text">Screenshots</span></a>
+</li>
+<li class="{% if nav_active == 'devices' %}km-nav-active{% endif %}">
+    <a href="/devices"><span class="fa fa-search"></span><span class="xn-text">All devices</span></a>
+</li>
+
+<li class="xn-title km-nav-section">System</li>
+<li class="{% if nav_active == 'setup' %}km-nav-active{% endif %}">
+    <a href="/healthz/setup/"><span class="fa fa-check-circle"></span><span class="xn-text">First run checks</span></a>
+</li>
+<li class="{% if nav_active == 'sources' %}km-nav-active{% endif %}">
+    <a href="/sources"><span class="fa fa-book"></span><span class="xn-text">Intel sources</span></a>
+</li>
+
+<li class="xn-title">Worker</li>
+<li style="padding:10px 15px;color:#9fb4d6;font-family:monospace;">
+    <div>Active: <span id="worker-active">-</span></div>
+    <div>Reserved: <span id="worker-reserved">-</span></div>
+    <div>Queue: <span id="worker-queue">-</span></div>
+</li>

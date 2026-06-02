@@ -4,8 +4,8 @@ from app_feeds.models import FeedSource, FeedEntry, Brief
 
 @admin.register(FeedSource)
 class FeedSourceAdmin(admin.ModelAdmin):
-    list_display = ("name", "category", "active", "last_fetched", "error_count")
-    list_filter = ("active", "category")
+    list_display = ("name", "folder", "category", "active", "last_fetched", "error_count")
+    list_filter = ("active", "category", "folder")
     search_fields = ("name", "url")
 
 

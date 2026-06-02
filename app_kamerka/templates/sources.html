@@ -1,146 +1,28 @@
-<!DOCTYPE html>
-<html lang="en">
-{% load static %}
-{% block page_content %}
+{% extends "base.html" %}
 
+{% block page_title %}Useful Links - ꓘamerka{% endblock %}
 
-    <head>
-        <!-- META SECTION -->
-        <title>Links - ꓘamerka</title>
-        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <!-- END META SECTION -->
+{% block content %}
+<div class="page-content-wrap">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <h3 class="panel-title">Useful Links</h3>
+                </div>
+                <div class="panel-body">
+                    <h2>Blogs</h2>
+                    <p><h3>Wojciech - <a href="https://offensiveosint.io">Offensive OSINT</a> - <a href="https://twitter.com/@the_wojciech">https://twitter.com/@the_wojciech</a></h3></p>
 
-        <!-- CSS INCLUDE -->
-        <link rel="stylesheet" type="text/css" id="theme" href="{% static 'css/theme-default.css' %}"/>
-        <link rel="stylesheet" type="text/css" href="{% static 'css/cyberpunk.css' %}"/>
-        <link rel="stylesheet" type="text/css" href="{% static 'css/hamburger-nav.css' %}"/>
-        <!-- EOF CSS INCLUDE -->
-    </head>
-    <body>
-        {% include "includes/hamburger_nav.html" %}
+                    <h2>Security Resources</h2>
+                    <p><h3>&#128274; Penetration Testing Tools &amp; Security Resources - <a href="https://webmaster-exit-1.github.io/Security_Resources/" target="_blank" rel="noopener noreferrer">webmaster-exit-1.github.io/Security_Resources</a></h3></p>
 
-        <!-- START PAGE CONTAINER -->
-        <div class="page-container">
-
-            <!-- START PAGE SIDEBAR -->
-            <div class="page-sidebar">
-                <!-- START X-NAVIGATION -->
-                <ul class="x-navigation">
-                    <li class="xn-logo">
-                        <a href="/">ꓘamerka</a>
-                        <a href="#" class="x-navigation-control"></a>
-                    </li>
-                    <li class="xn-profile">
-
-                        <div class="profile">
-                            <div class="profile-image">
-                            </div>
-                            <div class="profile-data">
-                                  <img width=200px height=200px src="{% static 'images/OffensiveOsint-logo-RGB-2.svg' %}">
-
-                            </div>
-
-                        </div>
-                    </li>
-                    <li class="xn-title">Navigation</li>
-                    <li class="">
-                        <a href="/index"><span class="fa fa-desktop"></span> <span class="xn-text">Dashboard</span></a>
-                    </li>
-                    <li class="">
-                        <a href="/history"><span class="fa fa-files-o"></span> <span class="xn-text">History</span></a>
-                    </li>
-                    <li class="">
-                        <a href="/map"><span class="fa fa-map-marker"></span> <span class="xn-text">Map</span></a>
-                    </li>
-                    <li class="">
-                        <a href="/devices"><span class="fa fa-search"></span> <span class="xn-text">Search</span></a>
-                    </li>
-
-                                       <li class="">
-                        <a href="/gallery"><span class="fa fa-camera"></span> <span class="xn-text">Screenshots</span></a>
-                    </li>
-                    <li class="">
-                        <a href="/globe"><span class="fa fa-globe"></span> <span class="xn-text">Globe</span></a>
-                    </li>
-
-                    <li class="xn-title">Components</li>
-
-                    <li>
-                        <a href="/sources"><span class="fa fa-book"></span> <span class="xn-text">Useful links</span></a>
-                    </li>
-
-
-                </ul>
-                <!-- END X-NAVIGATION -->
+                    <h2>Other</h2>
+                    <p><h3>Default password for Scada devices - <a href="https://github.com/ITI/ICS-Security-Tools/blob/master/configurations/passwords/scadapass.csv">https://github.com/ITI/ICS-Security-Tools/blob/master/configurations/passwords/scadapass.csv</a></h3></p>
+                    <p><h3>Default password for Scada devices 2 - <a href="http://www.critifence.com/default-password-database/">http://www.critifence.com/default-password-database/</a></h3></p>
+                </div>
             </div>
-            <!-- END PAGE SIDEBAR -->
-
-            <!-- PAGE CONTENT -->
-            <div class="page-content">
-
-                <!-- START BREADCRUMB -->
-
-                <!-- END BREADCRUMB --><div class="page-title">
-                    <h2>Links</h2>
-                </div>
-
-                <!-- PAGE CONTENT WRAPPER -->
-                <div class="page-content-wrap">
-
-                    <div class="row">
-                        <div class="col-md-12">
-
-                            <div class="panel panel-default">
-                                <div class="panel-body">
-
-                                    <h2>Blogs</h2>
-
-                                         <p><h3>Wojciech - <a href="https://offensiveosint.io">Offensive OSINT</a> - <a href="https://twitter.com/@the_wojciech">https://twitter.com/@the_wojciech</a></h3> </p>
-
-                                    <h2>Security Resources</h2>
-                                    <p><h3>&#128274; Penetration Testing Tools &amp; Security Resources - <a href="https://webmaster-exit-1.github.io/Security_Resources/" target="_blank" rel="noopener noreferrer">webmaster-exit-1.github.io/Security_Resources</a></h3></p>
-
-                                    <h2>Other</h2>
-                                    <p><h3>Default password for Scada devices - <a href="https://github.com/ITI/ICS-Security-Tools/blob/master/configurations/passwords/scadapass.csv">https://github.com/ITI/ICS-Security-Tools/blob/master/configurations/passwords/scadapass.csv</a></h3> </p>
-                                    <p><h3>Default password for Scada devices 2- <a href="http://www.critifence.com/default-password-database/">http://www.critifence.com/default-password-database/</a></h3> </p>
-                                </div>
-                            </div>
-
-                        </div>
-                    </div>
-
-                </div>
-
-                </div>
-
-                <!-- END PAGE CONTENT WRAPPER -->
-            </div>
-            <!-- END PAGE CONTENT -->
-        <!-- END PAGE CONTAINER -->
-
-
-                <script type="text/javascript" src="{% static 'js/plugins/jquery/jquery.min.js' %}"></script>
-        <script type="text/javascript" src="{% static 'js/plugins/jquery/jquery-ui.min.js' %}"></script>
-        <script type="text/javascript" src="{% static 'js/plugins/bootstrap/bootstrap.min.js' %}"></script>
-        <!-- END PLUGINS -->
-
-        <!-- START THIS PAGE PLUGINS-->
-
-
-        <!-- END THIS PAGE PLUGINS-->
-
-        <!-- START TEMPLATE -->
-        <script type="text/javascript" src="{% static 'js/plugins.js' %}"></script>
-
-        <script type="text/javascript" src="{% static 'js/actions.js' %}"></script>
-
-        <script src="{% static 'js/hamburger-nav.js' %}"></script>
-
-        <!-- END TEMPLATE -->
-    <!-- END SCRIPTS -->
-    </body>
-</html>
-
+        </div>
+    </div>
+</div>
 {% endblock %}

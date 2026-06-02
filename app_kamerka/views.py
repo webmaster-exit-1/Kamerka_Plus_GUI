@@ -24,6 +24,7 @@ from django.http import HttpResponse, JsonResponse
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.shortcuts import render
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 from django.utils import timezone
 from django.contrib.auth.decorators import login_required, user_passes_test
@@ -47,7 +48,12 @@ from app_kamerka.models import (
     Playbook,
     PlaybookRun,
 )
-from app_kamerka.task_utils import record_task_run, sync_task_run, sync_task_run_by_task_id
+from app_kamerka.task_utils import (
+    record_task_run,
+    reconcile_open_task_runs,
+    sync_task_run,
+    sync_task_run_by_task_id,
+)
 import app_kamerka.tool_registry as _tool_registry
 from app_kamerka.dispatcher import ToolNotFoundError, ToolDisabledError
 from .forms import WatchlistForm
@@ -58,7 +64,6 @@ from kamerka.tasks import (
     shodan_scan_task,
     whoisxml,
     check_credits,
-    send_to_field_agent_task,
     nmap_scan,
     validate_nmap,
     validate_maxmind,
@@ -139,6 +144,23 @@ def _parse_vulns(raw):
         return result if isinstance(result, list) else []
     except Exception:
         return []
+
+
+def _parse_indicator(raw):
+    """Return a list safe for {% for %} in templates (never int/None)."""
+    if not raw:
+        return []
+    try:
+        result = ast.literal_eval(raw)
+    except Exception:
+        return [str(raw)]
+    if result is None:
+        return []
+    if isinstance(result, (list, tuple)):
+        return [str(x) for x in result]
+    if isinstance(result, dict):
+        return ["{}: {}".format(k, v) for k, v in result.items()]
+    return [str(result)]
 
 
 def _safe_coord(value):
@@ -380,6 +402,55 @@ def _get_env_key(name, *, required=False):
     return value
 
 
+def _redirect_to_case(search_id):
+    return HttpResponseRedirect("/results/{}".format(search_id))
+
+
+def _pin_case_session(request, search_id, device=None):
+    request.session["km_active_case_id"] = search_id
+    request.session.modified = True
+    if device is not None:
+        request.km_active_target_url = reverse(
+            "device",
+            kwargs={
+                "id": device.search_id,
+                "device_id": device.id,
+                "ip": device.ip,
+            },
+        )
+
+
+def _case_breadcrumbs(search_id, case_label=None, terminal_label=None):
+    crumbs = [
+        {"label": "Launch", "url": "/"},
+        {"label": "Cases", "url": "/history"},
+        {
+            "label": case_label or "Case #{}".format(search_id),
+            "url": "/results/{}".format(search_id),
+        },
+    ]
+    if terminal_label:
+        crumbs.append({"label": terminal_label, "url": None})
+    return crumbs
+
+
+def _search_main_context(form):
+    from app_kamerka.shodan_presets import (
+        ics_preset_options,
+        iot_camera_preset_options,
+        iot_ics_preset_options,
+        iot_other_preset_options,
+    )
+
+    return {
+        "form": form,
+        "ics_presets": ics_preset_options(),
+        "iot_camera_presets": iot_camera_preset_options(),
+        "iot_other_presets": iot_other_preset_options(),
+        "iot_ics_presets": iot_ics_preset_options(),
+    }
+
+
 def search_main(request):
     if request.method == "POST":
 
@@ -396,7 +467,7 @@ def search_main(request):
 
             if len(ics_country) == 0:
                 form = forms.CountryForm()
-                return render(request, "search_main.html", {"form": form})
+                return render(request, "search_main.html", _search_main_context(form))
 
             search = Search(country=code, ics=ics_country)
             search.save()
@@ -416,7 +487,7 @@ def search_main(request):
             )
             request.session["task_id"] = str(shodan_search_task.id)
 
-            return HttpResponseRedirect("index")
+            return _redirect_to_case(search.id)
 
         elif healthcare_form.is_valid():
             code = healthcare_form.cleaned_data["country_healthcare"]
@@ -426,7 +497,7 @@ def search_main(request):
             if len(healthcare_country) == 0:
 
                 form = forms.CountryHealthcareForm()
-                return render(request, "search_main.html", {"form": form})
+                return render(request, "search_main.html", _search_main_context(form))
 
             search = Search(country=code, ics=healthcare_country)
             search.save()
@@ -452,14 +523,14 @@ def search_main(request):
             )
             request.session["task_id"] = str(shodan_search_task.id)
 
-            return HttpResponseRedirect("index")
+            return _redirect_to_case(search.id)
 
         elif coordinates_form.is_valid():
 
             coordinates = coordinates_form.cleaned_data["coordinates"]
             if len(coordinates) == 0:
                 form = forms.CountryForm()
-                return render(request, "search_main.html", {"form": form})
+                return render(request, "search_main.html", _search_main_context(form))
 
             search = Search(
                 coordinates=coordinates_form.cleaned_data["coordinates"],
@@ -481,7 +552,7 @@ def search_main(request):
 
             request.session["task_id"] = str(shodan_search_task.id)
 
-            return HttpResponseRedirect("index")
+            return _redirect_to_case(search.id)
 
         elif infra_form.is_valid():
 
@@ -491,7 +562,7 @@ def search_main(request):
 
             if len(post) == 0:
                 form = forms.CountryForm()
-                return render(request, "search_main.html", {"form": form})
+                return render(request, "search_main.html", _search_main_context(form))
 
             search = Search(country=code, ics=post)
             search.save()
@@ -510,13 +581,13 @@ def search_main(request):
             )
             request.session["task_id"] = str(shodan_search_task.id)
 
-            return HttpResponseRedirect("index")
+            return _redirect_to_case(search.id)
 
         try:
             myfile = request.FILES["myfile"]
         except:
             form = forms.CountryForm()
-            return render(request, "search_main.html", {"form": form})
+            return render(request, "search_main.html", _search_main_context(form))
 
         if request.method == "POST" and request.FILES["myfile"]:
             myfile = request.FILES["myfile"]
@@ -544,16 +615,16 @@ def search_main(request):
                 print(e)
                 return JsonResponse({"message": str(e)}, status=500)
 
-            return HttpResponseRedirect("index")
+            return _redirect_to_case(search.id)
 
         else:
 
             form = forms.CountryForm()
-            return render(request, "search_main.html", {"form": form})
+            return render(request, "search_main.html", _search_main_context(form))
 
     else:
         form = forms.CountryForm()
-        return render(request, "search_main.html", {"form": form})
+        return render(request, "search_main.html", _search_main_context(form))
 
 
 def index(request):
@@ -600,10 +671,10 @@ def index(request):
         normalized = (code or "").strip().upper()
         if len(normalized) == 2 and normalized.isalpha():
             intel_regions.add(normalized)
-    for countries in FeedEntry.objects.exclude(geo_countries="").values_list(
+    for geo_field in FeedEntry.objects.exclude(geo_countries="").values_list(
         "geo_countries", flat=True
     ):
-        for code in str(countries).split(","):
+        for code in str(geo_field).split(","):
             normalized = code.strip().upper()
             if len(normalized) == 2 and normalized.isalpha():
                 intel_regions.add(normalized)
@@ -624,6 +695,10 @@ def index(request):
     credits = check_credits()
 
     context = {
+        "breadcrumbs": [
+            {"label": "Launch", "url": "/"},
+            {"label": "Overview", "url": None},
+        ],
         "device": all_devices,
         "search": last_5_searches,
         "ics": ics_len,
@@ -642,19 +717,28 @@ def index(request):
 
 
 def devices(request):
-    all_devices = Device.objects.all()
+    """Paginated device registry (avoids loading 2000+ rows into one HTML page)."""
+    from django.core.paginator import Paginator
 
-    for i in all_devices:
-        try:
-            i.indicator = ast.literal_eval(i.indicator)
-        except:
-            pass
-        try:
-            i.vulns_list = _parse_vulns(i.vulns)
-        except Exception:
-            i.vulns_list = []
+    qs = Device.objects.all().order_by("-id")
+    q = (request.GET.get("q") or "").strip()
+    if q:
+        qs = qs.filter(ip__icontains=q)
 
-    context = {"devices": all_devices}
+    paginator = Paginator(qs, 100)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    for i in page_obj.object_list:
+        i.indicator_list = _parse_indicator(i.indicator)
+        i.vulns_list = _parse_vulns(i.vulns)
+
+    context = {
+        "devices": page_obj.object_list,
+        "page_obj": page_obj,
+        "paginator": paginator,
+        "total_count": paginator.count,
+        "search_q": q,
+    }
 
     return render(request, "devices.html", context=context)
 
@@ -772,20 +856,22 @@ def results(request, id):
     sort = sorted(cves_counter.items())[:7]
 
     for i in all_devices:
-        try:
-            i.indicator = ast.literal_eval(i.indicator)
-
-        except:
-            pass
-        try:
-            i.vulns_list = _parse_vulns(i.vulns)
-        except Exception:
-            i.vulns_list = []
+        i.indicator_list = _parse_indicator(i.indicator)
+        i.vulns_list = _parse_vulns(i.vulns)
 
     # Filter to devices with valid numeric coordinates for the map
     map_devices = _devices_with_valid_coords(all_devices)
 
     task = request.session.pop("task_id", None)
+
+    _pin_case_session(request, id)
+    search_row = Search.objects.filter(id=id).first()
+    case_label = "Case #{}".format(id)
+    if search_row:
+        if search_row.country:
+            case_label = "{} · {}".format(case_label, search_row.country)
+        elif search_row.coordinates:
+            case_label = "{} · {}".format(case_label, search_row.coordinates[:40])
 
     context = {
         "search": all_devices,
@@ -795,6 +881,10 @@ def results(request, id):
         "category": categories_list,
         "city": cities_list,
         "task_id": task,
+        "search_id": id,
+        "breadcrumbs": _case_breadcrumbs(id, case_label=case_label),
+        "show_globe_link": True,
+        "device_count": all_devices.count(),
     }
 
     return render(request, "results.html", context)
@@ -814,7 +904,13 @@ def history(request):
         except Exception as e:
             print(e)
 
-    context = {"history": all_searches}
+    context = {
+        "history": all_searches,
+        "breadcrumbs": [
+            {"label": "Launch", "url": "/"},
+            {"label": "Cases", "url": None},
+        ],
+    }
     return render(request, "history.html", context)
 
 
@@ -1047,8 +1143,28 @@ def device(request, id, device_id, ip):
     if safe_lon is None:
         safe_lon = 0.0
 
+    analyst_mode = request.GET.get("analyst") == "1"
+    _pin_case_session(request, id, device_obj)
+
+    risk_class = "km-risk-low"
+    if max_epss >= 0.5 or has_kev:
+        risk_class = "km-risk-high"
+    elif max_epss >= 0.1 or has_exploit:
+        risk_class = "km-risk-med"
+
     context = {
         "device": device_obj,
+        "analyst_mode": analyst_mode,
+        "search_id": id,
+        "device_id": device_obj.id,
+        "device_ip": device_obj.ip,
+        "breadcrumbs": _case_breadcrumbs(id, terminal_label=device_obj.ip),
+        "show_globe_link": True,
+        "risk_class": risk_class,
+        "active_target_url": reverse(
+            "device",
+            kwargs={"id": id, "device_id": device_obj.id, "ip": device_obj.ip},
+        ),
         "device_ip_safe": device_obj.ip.replace(".", "_"),
         "safe_lat": safe_lat,
         "safe_lon": safe_lon,
@@ -1790,35 +1906,6 @@ def get_nearby_devices_coordinates(request, id):
         return JsonResponse(_get_local_nearby_devices(device), safe=False)
 
 
-def send_to_field_agent(request, id, notes):
-    if (
-        request.method == "GET"
-        and request.headers.get("X-Requested-With") == "XMLHttpRequest"
-    ):
-        print(id)
-
-        host = Device.objects.get(id=id)
-        host.notes = notes
-        host.save()
-
-        af_task, task_run = _enqueue_tracked_task(
-            request,
-            send_to_field_agent_task,
-            task_args=[id, notes],
-            device_id=id,
-            tool=TaskRun.TOOL_OTHER,
-        )
-
-        return HttpResponse(
-            json.dumps({"Status": "OK", "task_id": af_task.id, "task_run_id": task_run.id}),
-            content_type="application/json",
-        )
-    else:
-        return HttpResponse(
-            json.dumps({"task_id": None}), content_type="application/json"
-        )
-
-
 def whois(request, id):
     if (
         request.method == "GET"
@@ -1865,8 +1952,107 @@ def get_whois(request, id):
 
 
 def globe(request):
-    """Render the 3-D WebGL globe page."""
-    return render(request, "globe.html", {})
+    """Legacy globe URL — redirect to Mapbox 3D map."""
+    from django.shortcuts import redirect
+
+    params = request.GET.urlencode()
+    url = "/map3d"
+    if params:
+        url = "{}?{}".format(url, params)
+    return redirect(url)
+
+
+def map3d(request):
+    """Mapbox GL 3D map: buildings, heatmap, GeoJSON/KML-friendly exports."""
+    from django.conf import settings
+
+    search_id = request.GET.get("search") or ""
+    return render(
+        request,
+        "map3d.html",
+        {
+            "mapbox_token": getattr(settings, "MAPBOX_ACCESS_TOKEN", "") or "",
+            "search_id": search_id,
+        },
+    )
+
+
+def _device_geojson_features(devices):
+    """Build GeoJSON features from device queryset (shared by map3d API and exports)."""
+    features = []
+    severity_weight = {
+        "info": 0.15,
+        "low": 0.35,
+        "medium": 0.55,
+        "high": 0.75,
+        "critical": 1.0,
+    }
+    for d in devices:
+        try:
+            lat = float(d.lat)
+            lon = float(d.lon)
+        except (ValueError, TypeError):
+            continue
+
+        vuln_count = 0
+        if d.vulns:
+            try:
+                vuln_list = json.loads(d.vulns.replace("'", '"'))
+                vuln_count = len(vuln_list) if isinstance(vuln_list, list) else 0
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        if vuln_count > 10:
+            severity = "critical"
+        elif vuln_count > 5:
+            severity = "high"
+        elif vuln_count > 2:
+            severity = "medium"
+        elif vuln_count > 0:
+            severity = "low"
+        else:
+            severity = "info"
+
+        weight = severity_weight[severity]
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                "properties": {
+                    "id": d.pk,
+                    "search_id": d.search_id,
+                    "ip": d.ip,
+                    "product": d.product or "",
+                    "type": d.type or "",
+                    "port": d.port or "",
+                    "city": d.city or "",
+                    "org": d.org or "",
+                    "country": d.country_code or "",
+                    "vuln_count": vuln_count,
+                    "severity": severity,
+                    "weight": weight,
+                    "risk_score": getattr(d, "risk_score", 0) or 0,
+                    "device_url": "/results/{}/{}/{}".format(
+                        d.search_id, d.id, d.ip
+                    ),
+                },
+            }
+        )
+    return features
+
+
+def map3d_devices_geojson(request):
+    """GeoJSON FeatureCollection for Mapbox heatmap / 3D columns (?search=<case_id>)."""
+    devices = Device.objects.all()
+    search_id = request.GET.get("search")
+    if search_id:
+        devices = devices.filter(search_id=search_id)
+    devices = _devices_with_valid_coords(devices)
+    fc = {
+        "type": "FeatureCollection",
+        "features": _device_geojson_features(devices),
+    }
+    return JsonResponse(fc)
 
 
 def globe_devices_json(request):
@@ -2368,19 +2554,36 @@ def device_report_view(request, id):
 
 def search_cost_view(request):
     """Return estimated Shodan API credit cost for a search query."""
+    from app_kamerka.shodan_presets import resolve_selection_keys, selection_labels
+
     if (
         request.method == "GET"
         and request.headers.get("X-Requested-With") == "XMLHttpRequest"
     ):
-        queries = [
+        keys = [
+            key.strip()
+            for key in (
+                request.GET.getlist("keys[]")
+                or request.GET.getlist("keys")
+            )
+            if key and key.strip()
+        ]
+        raw_queries = [
             query.strip()
             for query in (
                 request.GET.getlist("queries[]")
                 or request.GET.getlist("queries")
-                or [request.GET.get("query", "")]
+                or ([request.GET.get("query", "")] if not keys else [])
             )
             if query and query.strip()
         ]
+        if keys:
+            queries, _unknown = resolve_selection_keys(keys)
+            selection_display = selection_labels(keys)
+        else:
+            queries, _unknown = resolve_selection_keys(raw_queries)
+            selection_display = raw_queries
+
         country = request.GET.get("country", None)
         if not queries:
             return HttpResponse(
@@ -2401,10 +2604,15 @@ def search_cost_view(request):
                     item.get("query", "") for item in estimates if item.get("query")
                 ),
                 "queries": estimates,
+                "selection_count": len(queries),
+                "selection_labels": selection_display,
             }
             errors = [item.get("error") for item in estimates if item.get("error")]
             if errors:
                 result["error"] = "; ".join(errors)
+        if keys:
+            result["keys"] = keys
+            result["selection_labels"] = selection_display
         return HttpResponse(json.dumps(result), content_type="application/json")
     return HttpResponse(
         json.dumps({"error": "Invalid request"}), content_type="application/json"
@@ -2692,8 +2900,10 @@ def shodan_credits_view(request):
         return HttpResponse(json.dumps({"error": "Shodan API error"}), content_type="application/json")
 
 
-@login_required
 def tasks_list(request):
+    # Reconcile all open runs so the list is not stuck on orphaned "pending".
+    reconcile_open_task_runs()
+
     qs = TaskRun.objects.select_related("device", "search", "triggered_by").all()
     tool = request.GET.get("tool", "").strip()
     status = request.GET.get("status", "").strip()
@@ -2705,9 +2915,14 @@ def tasks_list(request):
     if username:
         qs = qs.filter(triggered_by__username__icontains=username)
 
+    status_counts = {
+        row["status"]: row["c"]
+        for row in TaskRun.objects.values("status").annotate(c=Count("status"))
+    }
+
     paginator = Paginator(qs, 50)
     page_obj = paginator.get_page(request.GET.get("page", 1))
-    runs = [sync_task_run(run) for run in page_obj.object_list]
+    runs = list(page_obj.object_list)
     return render(
         request,
         "tasks.html",
@@ -2719,11 +2934,11 @@ def tasks_list(request):
             "selected_user": username,
             "tool_choices": TaskRun.TOOL_CHOICES,
             "status_choices": TaskRun.STATUS_CHOICES,
+            "status_counts": status_counts,
         },
     )
 
 
-@login_required
 def task_detail(request, pk):
     run = get_object_or_404(
         TaskRun.objects.select_related("device", "search", "triggered_by"), pk=pk
@@ -2791,7 +3006,6 @@ def bulk_run(request):
 _STAFF_REQUIRED = user_passes_test(lambda u: u.is_active and u.is_staff)
 
 
-@_STAFF_REQUIRED
 def worker_status_view(request):
     _CACHE_KEY = "worker_status_response"
     _CACHE_TTL = 15  # seconds
@@ -2826,7 +3040,6 @@ def worker_status_view(request):
     return JsonResponse(payload)
 
 
-@_STAFF_REQUIRED
 def setup_check_view(request):
     def _check_binary(name):
         path = shutil.which(name)
@@ -3005,14 +3218,12 @@ def api_tools_applicable(request, device_id):
 # ---------------------------------------------------------------------------
 
 
-@login_required
 def playbooks_list(request):
     """List all playbooks and allow creating new ones."""
     playbooks = Playbook.objects.order_by("name")
     return render(request, "playbooks.html", {"playbooks": playbooks})
 
 
-@login_required
 def playbook_detail(request, pk):
     """Display a playbook and its run history."""
     playbook = get_object_or_404(Playbook, pk=pk)
@@ -3021,7 +3232,6 @@ def playbook_detail(request, pk):
 
 
 @require_POST
-@login_required
 def playbook_create(request):
     """Create a new Playbook from a JSON request body.
 
@@ -3075,7 +3285,6 @@ def playbook_create(request):
 
 
 @require_POST
-@login_required
 def playbook_run_view(request, pk):
     """Execute a Playbook against one or more devices.
 

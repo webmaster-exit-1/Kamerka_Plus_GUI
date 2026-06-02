@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block page_title %}3D Map — ꓘamerka{% endblock %}
+
+{% block extra_css %}
+<link href="{% static 'vendor/maplibre-gl/maplibre-gl.css' %}" rel="stylesheet" />
+<style>
+    #map3d-wrap {
+        position: relative;
+        width: 100%;
+        height: calc(100vh - 56px);
+        background: #0a0d12;
+    }
+    #map3d-canvas { width: 100%; height: 100%; }
+    #map3d-controls {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        z-index: 5;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-width: 300px;
+    }
+    .map3d-panel {
+        background: rgba(10, 13, 18, 0.9);
+        border: 1px solid var(--cp-border, #0064d7);
+        padding: 10px 12px;
+        font-family: var(--cp-font, monospace);
+        font-size: 0.72em;
+        color: var(--cp-dim, #aaa);
+        letter-spacing: 0.06em;
+    }
+    .map3d-panel h4 {
+        margin: 0 0 8px;
+        color: var(--cp-magenta, #ff00cd);
+        font-size: 0.95em;
+        letter-spacing: 0.12em;
+    }
+    .map3d-panel .btn-row { display: flex; flex-wrap: wrap; gap: 6px; }
+    .map3d-btn {
+        background: transparent;
+        border: 1px solid var(--cp-border, #0064d7);
+        color: var(--cp-cyan, #00e1ff);
+        font-family: inherit;
+        font-size: 0.9em;
+        padding: 4px 10px;
+        cursor: pointer;
+    }
+    .map3d-btn:hover { background: rgba(0, 100, 215, 0.25); color: #fff; }
+    .map3d-export a {
+        display: block;
+        color: var(--cp-cyan, #00e1ff);
+        margin: 4px 0;
+        text-decoration: none;
+    }
+    .map3d-export a:hover { color: var(--cp-magenta, #ff00cd); }
+    #map3d-setup {
+        display: none;
+        position: absolute;
+        inset: 0;
+        z-index: 20;
+        background: rgba(10, 13, 18, 0.96);
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+    }
+    #map3d-setup .inner {
+        max-width: 520px;
+        border: 1px solid #ff2050;
+        padding: 24px;
+        font-family: monospace;
+        color: #cceeff;
+    }
+    #map3d-setup code { color: #00e1ff; }
+    .map3d-popup { font-family: monospace; font-size: 0.85em; line-height: 1.5; }
+    #map3d-basemap { color: #666; font-size: 0.9em; margin-top: 4px; }
+</style>
+{% endblock %}
+
+{% block case_chrome %}{% endblock %}
+
+{% block content %}
+<div id="map3d-wrap">
+    <div id="map3d-setup">
+        <div class="inner">
+            <h3 style="color:#ff2050;margin-top:0;">3D map could not load</h3>
+            <p id="map3d-setup-msg">Check your network connection or try the <a href="/map" style="color:#00e1ff;">2D map</a>.</p>
+            <p style="color:#888;margin-top:12px;">
+                Optional: set <code>MAPBOX_ACCESS_TOKEN</code> in <code>.env</code> for Mapbox building detail
+                (<a href="https://account.mapbox.com/access-tokens/" target="_blank" rel="noopener">free tier</a>).
+            </p>
+        </div>
+    </div>
+
+    <div id="map3d-controls">
+        <div class="map3d-panel">
+            <h4>3D MAP</h4>
+            <p style="margin:0 0 4px;">
+                {% if search_id %}Case #{{ search_id }}{% else %}All cases{% endif %}
+                · <span id="map3d-device-count">—</span> devices
+            </p>
+            <div id="map3d-basemap">Loading basemap…</div>
+            <div class="btn-row" style="margin-top:8px;">
+                <button type="button" class="map3d-btn" id="map3d-toggle-heat" title="Heat density by CVE weight">Heatmap</button>
+                <button type="button" class="map3d-btn" id="map3d-toggle-columns" title="Extruded severity columns">3D columns</button>
+                <button type="button" class="map3d-btn" id="map3d-toggle-buildings" title="OSM / Mapbox building mesh">Buildings</button>
+            </div>
+            <div class="btn-row" style="margin-top:6px;">
+                <button type="button" class="map3d-btn" id="map3d-reset-view">Reset view</button>
+                <button type="button" class="map3d-btn" id="map3d-reload">Reload data</button>
+            </div>
+        </div>
+        {% if search_id %}
+        <div class="map3d-panel map3d-export">
+            <h4>EXPORT</h4>
+            <a href="/api/export/geojson/{{ search_id }}">Enhanced GeoJSON</a>
+            <a href="/export/json/{{ search_id }}">Shodan GeoJSON</a>
+            <a href="/export/kml/{{ search_id }}">KML (Kepler / Google Earth)</a>
+            <a href="/export/csv/{{ search_id }}">CSV</a>
+        </div>
+        {% endif %}
+        <div class="map3d-panel" style="font-size:0.65em;color:#666;">
+            No account required · Pitch with right-drag ·
+            <a href="/map" style="color:#0064d7;">2D map</a>
+        </div>
+    </div>
+    <div id="map3d-canvas"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/maplibre-gl/maplibre-gl.js' %}"></script>
+<script src="{% static 'js/kamerka-map3d.js' %}"></script>
+<script>
+(function() {
+    var token = "{{ mapbox_token|escapejs }}";
+    var searchId = "{{ search_id|escapejs }}";
+    var setupEl = document.getElementById('map3d-setup');
+    var viewer = new KamerkaMap3D({
+        token: token,
+        searchId: searchId,
+        dataUrl: '/map3d/devices.geojson'
+    });
+    viewer.init().catch(function(err) {
+        console.error(err);
+        if (setupEl) setupEl.style.display = 'flex';
+    });
+})();
+</script>
+{% endblock %}

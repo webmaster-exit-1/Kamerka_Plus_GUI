@@ -1,8 +1,12 @@
 """
-Curated list of ~50 RSS feeds for cybersecurity, ICS/SCADA, geopolitics,
-and infrastructure intelligence.
+Legacy curated feed list (~50 URLs). Prefer your OPML export instead:
 
-Used by the seed_feeds management command to populate FeedSource records.
+    python manage.py import_feeds_opml
+    python manage.py import_feeds_opml /path/to/export.opml --deactivate-missing
+
+Bundled default: app_feeds/data/feeder-export.opml (97 feeds from Feeder).
+
+seed_feeds still loads this list for backwards compatibility.
 """
 
 SEED_FEEDS = [

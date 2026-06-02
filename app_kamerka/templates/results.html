@@ -1,7 +1,11 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block page_title %}Results - ꓘamerka{% endblock %}
+{% block page_title %}Case #{{ search_id }} - ꓘamerka{% endblock %}
+
+{% block case_chrome %}
+{% include "includes/case_toolbar.html" %}
+{% endblock %}
 
 {% block extra_css %}
     <script src="{% static 'js/d3.js' %}"></script>
@@ -14,16 +18,17 @@
 
 {% block content %}
 
-                <!-- START BREADCRUMB -->
-<ul class="breadcrumb">
-    {% if task_id %}
-    <div class='progress-wrapper'>
-        <div id='progress-bar' class='progress-bar' style="background-color: #0064d7; width: 0%;">&nbsp;</div>
-    </div>
-    <div id="progress-bar-message" style="color:#ff00cd">Scan in progress...</div>
-    {% endif %}
-</ul>
-<!-- END BREADCRUMB -->
+                {% if task_id %}
+                <div class="km-breadcrumb-bar" style="margin-bottom:12px;">
+                    <span class="km-breadcrumb-current">Collecting Shodan results…</span>
+                    <div style="flex:1;min-width:200px;">
+                        <div class='progress-wrapper'>
+                            <div id='progress-bar' class='progress-bar' style="background-color: #0064d7; width: 0%; height:18px;">&nbsp;</div>
+                        </div>
+                        <div id="progress-bar-message" style="color:#ff00cd;font-size:0.85em;">Scan in progress...</div>
+                    </div>
+                </div>
+                {% endif %}
 
                 <!-- PAGE CONTENT WRAPPER -->
 
@@ -98,7 +103,7 @@
                                                     <td>{{ device.lat }}</td>
                                                     <td>{{ device.lon }}</td>
                                                     <td>{% for cve in device.vulns_list %}<a href="https://nvd.nist.gov/vuln/detail/{{ cve }}" target="_blank" rel="noopener noreferrer" style="font-family:monospace;color:#00e1ff;font-size:0.82em;white-space:nowrap;">{{ cve }}</a>{% if not forloop.last %} {% endif %}{% empty %}—{% endfor %}</td>
-                                                    <td>{% for a in device.indicator %}{{ a }} {% endfor %}</td>
+                                                    <td>{% for a in device.indicator_list %}{{ a }} {% empty %}—{% endfor %}</td>
                                                     <td>{{ device.located }}</td>
                                                    <td>{{ device.exploited_scanned }}</td>
 
