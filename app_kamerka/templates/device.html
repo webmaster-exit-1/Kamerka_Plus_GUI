@@ -59,25 +59,14 @@
             box-sizing: border-box;
         }
 
-        /* Tabs: allow wrapping on narrow screens */
-        .nav-tabs.nav-justified > li {
-            display: inline-block;
-            float: none;
+        /* km-tool-dock is the only visible tab bar; legacy nav is removed from template */
+        .km-tabs-panel.tabs {
+            margin-top: 0;
         }
-        .nav-tabs.nav-justified {
-            display: flex;
-            flex-wrap: wrap;
-        }
-        .nav-tabs.nav-justified > li {
-            flex: 1 1 auto;
-            min-width: 0;
-        }
-        .nav-tabs.nav-justified > li > a {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            padding: 8px 10px;
-            font-size: 0.85em;
+        .km-tabs-panel.tabs > .tab-content {
+            margin-top: 0;
+            padding-top: 12px;
+            border-top: 1px solid rgba(0, 100, 215, 0.35);
         }
 
         /* CVE/vuln table: horizontal scroll on narrow */
@@ -100,15 +89,6 @@
             .device-action-bar .btn {
                 flex: 1 1 auto;
             }
-            .nav-tabs.nav-justified > li > a {
-                font-size: 0.75em;
-                padding: 6px 6px;
-            }
-        }
-        @media (max-width: 768px) {
-            .nav-tabs.nav-justified > li {
-                flex: 1 1 50%;
-            }
         }
         </style>
 {% endblock %}
@@ -116,12 +96,12 @@
 {% block sidebar_extra %}
                     <li class="xn-title">Scan Tools</li>
                     <li>
-                        <a href="javascript:void(0)" onclick="$('[href=\'#tab10\']').tab('show');window.scrollTo(0,0);" title="Run an Nmap port/service scan against this device">
+                        <a href="javascript:void(0)" onclick="window.kmShowDeviceTab('#tab10');return false;" title="Run an Nmap port/service scan against this device">
                             <span class="fa fa-terminal" style="color:#ff2050"></span> <span class="xn-text">NMAP Scan</span>
                         </a>
                     </li>
                     <li>
-                        <a href="javascript:void(0)" onclick="$('[href=\'#tab11\']').tab('show');window.scrollTo(0,0);" title="Run exploit checks against this device">
+                        <a href="javascript:void(0)" onclick="window.kmShowDeviceTab('#tab11');return false;" title="Run exploit checks against this device">
                             <span class="fa fa-bug" style="color:#ffe600"></span> <span class="xn-text">Exploit</span>
                         </a>
                     </li>
@@ -161,20 +141,7 @@
                  <div class="row">
                         <div class="col-md-12">
                             <div class="panel panel-default tabs km-tabs-panel">
-                                <ul class="nav nav-tabs nav-justified km-tabs-nav" aria-hidden="true">
-                                       {% if device.located %}
-                                                                    <li class="active"><a href="#tab8" data-toggle="tab" style="background:#ff00cd">Locate</a></li>
-                                    {% else %}
-                                    <li class="active"><a href="#tab8" data-toggle="tab">Locate</a></li>
-                                        {% endif %}
-                                    <li><a href="#tab9" data-toggle="tab">Intel</a></li>
-                                    <li><a href="#tab10" data-toggle="tab" style="color:#ff2050;font-weight:bold;">&#9889; NMAP</a></li>
-                                    {% if not analyst_mode %}<li><a href="#tab11" data-toggle="tab" style="color:#ffe600;font-weight:bold;">&#128027; Exploit</a></li>{% endif %}
-                                    <li><a href="#tab_hw" data-toggle="tab" style="color:#00e1ff;font-weight:bold;">&#128268; Hardware</a></li>
-                                    <li><a href="#tab_risk" data-toggle="tab" style="color:#ff2050;font-weight:bold;">&#9888; Risk</a></li>
-                                    <li><a href="#tab_supply" data-toggle="tab" style="color:#00ff88;font-weight:bold;">&#128230; Supply Chain</a></li>
-                                </ul>
-                                <div class="panel-body tab-content">
+                                <div class="panel-body tab-content km-device-tab-content">
                                     <div class="tab-pane active" id="tab8">
                                         <div class="panel panel-default">
                                             {% if device.located %}
@@ -2475,17 +2442,11 @@ $(document).on('keydown', function(e){
     if (e.key === 'Escape') { $('#cve-modal-overlay').css('display', 'none'); }
 });
 
-// Keep URL hash in sync with active tab
-$('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
-    history.replaceState(null, null, e.target.getAttribute('href'));
-});
-
-// Activate the correct tab if the URL has a hash
+// Activate tab from URL hash (km-tool-dock is the only tab bar)
 (function() {
     var hash = window.location.hash;
-    if (hash) {
-        var tabLink = $('a[href="' + hash + '"][data-toggle="tab"]');
-        if (tabLink.length) { tabLink.tab('show'); }
+    if (hash && window.kmShowDeviceTab) {
+        window.kmShowDeviceTab(hash, false);
     }
 })();
 </script>

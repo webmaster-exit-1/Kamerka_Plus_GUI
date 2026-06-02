@@ -1,6 +1,48 @@
 (function () {
   'use strict';
 
+  function setDockActive(href) {
+    if (!href) return;
+    document.querySelectorAll('[data-km-dock-tab]').forEach(function (el) {
+      el.classList.toggle('is-active', el.getAttribute('data-km-dock-tab') === href);
+    });
+  }
+
+  /**
+   * Switch device workbench tab panes (no duplicate Bootstrap tab bar).
+   * @param {string} href - e.g. "#tab8"
+   * @param {string|boolean} labelOrScroll - label for output pane, or false to skip scroll
+   */
+  function kmShowDeviceTab(href, labelOrScroll) {
+    if (!href || href.charAt(0) !== '#') return;
+    var pane = document.querySelector(href);
+    if (!pane || !pane.classList.contains('tab-pane')) return;
+
+    var container = pane.closest('.tab-content');
+    if (container) {
+      container.querySelectorAll('.tab-pane').forEach(function (p) {
+        p.classList.remove('active');
+      });
+      pane.classList.add('active');
+    }
+
+    setDockActive(href);
+
+    if (labelOrScroll !== false) {
+      if (labelOrScroll && typeof labelOrScroll === 'string') {
+        var out = document.getElementById('km-tool-output');
+        if (out) out.textContent = 'Viewing: ' + labelOrScroll;
+      }
+      window.scrollTo(0, 0);
+    }
+
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState(null, null, href);
+    }
+  }
+
+  window.kmShowDeviceTab = kmShowDeviceTab;
+
   document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('[data-km-export-toggle]').forEach(function (btn) {
       var drawer = document.getElementById('km-export-drawer');
@@ -12,45 +54,18 @@
       });
     });
 
-    function setDockActive(href) {
-      if (!href) return;
-      document.querySelectorAll('[data-km-dock-tab]').forEach(function (el) {
-        el.classList.toggle('is-active', el.getAttribute('data-km-dock-tab') === href);
-      });
-    }
-
-    function showDockTab(href, label) {
-      if (!href) return;
-      var tab = document.querySelector('.nav-tabs a[href="' + href + '"]');
-      if (tab && typeof window.jQuery !== 'undefined') {
-        window.jQuery(tab).tab('show');
-      }
-      setDockActive(href);
-      window.scrollTo(0, 0);
-      var out = document.getElementById('km-tool-output');
-      if (out && label) {
-        out.textContent = 'Viewing: ' + label;
-      }
-    }
-
     document.querySelectorAll('[data-km-dock-tab]').forEach(function (el) {
       el.addEventListener('click', function (e) {
         var href = el.getAttribute('data-km-dock-tab');
         if (!href) return;
         e.preventDefault();
-        showDockTab(href, (el.textContent || '').trim());
+        kmShowDeviceTab(href, (el.textContent || '').trim());
       });
     });
 
-    if (typeof window.jQuery !== 'undefined') {
-      window.jQuery('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
-        var href = e.target && e.target.getAttribute('href');
-        setDockActive(href);
-      });
-      var initial = document.querySelector('.nav-tabs li.active > a[data-toggle="tab"]');
-      if (initial) {
-        setDockActive(initial.getAttribute('href'));
-      }
+    var initial = document.querySelector('.km-device-tab-content .tab-pane.active');
+    if (initial && initial.id) {
+      setDockActive('#' + initial.id);
     }
 
     var output = document.getElementById('km-tool-output');
