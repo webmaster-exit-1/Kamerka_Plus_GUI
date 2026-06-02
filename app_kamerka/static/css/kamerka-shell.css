@@ -171,6 +171,23 @@
   color: var(--cp-magenta);
 }
 
+.km-tool-dock button.is-active,
+.km-tool-dock a.km-dock-btn.is-active {
+  background: rgba(0, 225, 255, 0.22);
+  border-color: var(--cp-cyan);
+  color: #fff;
+}
+
+/* Device workbench: dock replaces the legacy Bootstrap tab row */
+.page-content-wrap .km-tool-dock ~ .row .panel.tabs > ul.nav-tabs {
+  display: none !important;
+}
+
+.page-content-wrap .km-tool-dock ~ .row .panel.tabs > .tab-content {
+  border-top: 1px solid rgba(0, 100, 215, 0.35);
+  padding-top: 12px;
+}
+
 .km-output-pane {
   margin-bottom: 14px;
   padding: 10px 12px;

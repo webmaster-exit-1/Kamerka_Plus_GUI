@@ -12,25 +12,46 @@
       });
     });
 
+    function setDockActive(href) {
+      if (!href) return;
+      document.querySelectorAll('[data-km-dock-tab]').forEach(function (el) {
+        el.classList.toggle('is-active', el.getAttribute('data-km-dock-tab') === href);
+      });
+    }
+
+    function showDockTab(href, label) {
+      if (!href) return;
+      var tab = document.querySelector('.nav-tabs a[href="' + href + '"]');
+      if (tab && typeof window.jQuery !== 'undefined') {
+        window.jQuery(tab).tab('show');
+      }
+      setDockActive(href);
+      window.scrollTo(0, 0);
+      var out = document.getElementById('km-tool-output');
+      if (out && label) {
+        out.textContent = 'Viewing: ' + label;
+      }
+    }
+
     document.querySelectorAll('[data-km-dock-tab]').forEach(function (el) {
       el.addEventListener('click', function (e) {
         var href = el.getAttribute('data-km-dock-tab');
         if (!href) return;
-        var tab = document.querySelector('[href="' + href + '"]');
-        if (tab && typeof window.jQuery !== 'undefined') {
-          e.preventDefault();
-          window.jQuery(tab).tab('show');
-          window.scrollTo(0, 0);
-          var pane = document.querySelector(href);
-          if (pane) {
-            var out = document.getElementById('km-tool-output');
-            if (out) {
-              out.textContent = 'Viewing: ' + (el.textContent || '').trim();
-            }
-          }
-        }
+        e.preventDefault();
+        showDockTab(href, (el.textContent || '').trim());
       });
     });
+
+    if (typeof window.jQuery !== 'undefined') {
+      window.jQuery('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+        var href = e.target && e.target.getAttribute('href');
+        setDockActive(href);
+      });
+      var initial = document.querySelector('.nav-tabs li.active > a[data-toggle="tab"]');
+      if (initial) {
+        setDockActive(initial.getAttribute('href'));
+      }
+    }
 
     var output = document.getElementById('km-tool-output');
     if (output && typeof window.jQuery !== 'undefined') {
