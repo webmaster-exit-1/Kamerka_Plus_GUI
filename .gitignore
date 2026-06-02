@@ -39,6 +39,14 @@ staticfiles/
 db.sqlite3-shm
 db.sqlite3-wal
 dump.rdb
+
+# Celery Beat scheduler state (SQLite WAL — recreated on start)
+celerybeat-schedule
+celerybeat-schedule-shm
+celerybeat-schedule-wal
+
+# Runtime logs (not committed)
+logs/
 *.json.gz
 *.csv
 *.zip
