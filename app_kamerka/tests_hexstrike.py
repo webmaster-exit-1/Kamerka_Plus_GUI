@@ -94,7 +94,6 @@ class HexSploitViewsTest(TestCase):
             "smart_scan",
             "select_tools",
             "attack_chain",
-            "execute_chain",
             "process_dashboard",
             "nuclei",
             "metasploit",

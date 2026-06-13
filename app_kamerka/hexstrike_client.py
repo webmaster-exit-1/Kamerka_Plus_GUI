@@ -20,7 +20,6 @@ ALLOWED_ACTIONS: Dict[str, Tuple[str, str, Tuple[str, ...]]] = {
     "smart_scan": ("POST", "api/intelligence/smart-scan", ("target",)),
     "select_tools": ("POST", "api/intelligence/select-tools", ("target",)),
     "attack_chain": ("POST", "api/intelligence/create-attack-chain", ("target",)),
-    "execute_chain": ("POST", "api/intelligence/smart-scan", ("target",)),
     "process_dashboard": ("GET", "api/processes/dashboard", ()),
     "nuclei": ("POST", "api/tools/nuclei", ("target",)),
     "metasploit": ("POST", "api/tools/metasploit", ("module",)),
