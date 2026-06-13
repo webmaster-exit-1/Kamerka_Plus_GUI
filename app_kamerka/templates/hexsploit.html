@@ -80,7 +80,8 @@
             <button type="button" class="btn btn-primary" data-action="analyze_target">Analyze target</button>
             <button type="button" class="btn btn-info" data-action="select_tools">Select tools</button>
             <button type="button" class="btn btn-warning" data-action="smart_scan" style="color:#000;">Smart scan</button>
-            <button type="button" class="btn btn-default" data-action="attack_chain">Attack chain</button>
+            <button type="button" class="btn btn-default" data-action="attack_chain" title="Plan an attack chain (does not execute — use Execute chain to run)">Plan chain</button>
+            <button type="button" class="btn btn-danger" data-action="execute_chain" title="Execute attack chain via parallel smart-scan (runs tools against target)">Execute chain ▶</button>
             <button type="button" class="btn btn-default" data-action="nuclei">Nuclei</button>
             <button type="button" class="btn btn-default" data-action="process_dashboard">Process dashboard</button>
             {% if msf_modules %}
