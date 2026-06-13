@@ -97,5 +97,10 @@ class HexSploitViewsTest(TestCase):
             "process_dashboard",
             "nuclei",
             "metasploit",
+            "autorecon",
+            "rustscan",
+            "nmap_advanced",
+            "enum4linux_ng",
+            "responder",
         }
         self.assertEqual(set(ALLOWED_ACTIONS.keys()), expected)

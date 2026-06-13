@@ -80,7 +80,8 @@
             <button type="button" class="btn btn-primary" data-action="analyze_target">Analyze target</button>
             <button type="button" class="btn btn-info" data-action="select_tools">Select tools</button>
             <button type="button" class="btn btn-warning" data-action="smart_scan" style="color:#000;">Smart scan</button>
-            <button type="button" class="btn btn-default" data-action="attack_chain">Attack chain</button>
+            <button type="button" class="btn btn-default" data-action="attack_chain" title="Plan an attack chain (does not execute — use Execute chain to run)">Plan chain</button>
+            <button type="button" class="btn btn-danger" data-action="execute_chain" title="Execute planned attack chain steps sequentially against target">Execute chain ▶</button>
             <button type="button" class="btn btn-default" data-action="nuclei">Nuclei</button>
             <button type="button" class="btn btn-default" data-action="process_dashboard">Process dashboard</button>
             {% if msf_modules %}
@@ -108,18 +109,35 @@
     var output = document.getElementById('hs-output');
     var deviceId = document.getElementById('hs-device-id').value;
 
+    // Maps HexStrike tool names (as returned in attack_chain steps) to ALLOWED_ACTIONS keys.
+    var TOOL_ACTION_MAP = {
+        'autorecon':    'autorecon',
+        'rustscan':     'rustscan',
+        'nmap-advanced':'nmap_advanced',
+        'enum4linux-ng':'enum4linux_ng',
+        'responder':    'responder',
+        'nuclei':       'nuclei',
+        'nmap':         'nmap_advanced'
+    };
+
     function getCookie(name) {
         var value = '; ' + document.cookie;
         var parts = value.split('; ' + name + '=');
         if (parts.length === 2) return parts.pop().split(';').shift();
     }
 
+    function append(msg) {
+        var text = typeof msg === 'string' ? msg : JSON.stringify(msg, null, 2);
+        output.textContent += text + '\n';
+        output.scrollTop = output.scrollHeight;
+    }
+
     function log(msg) {
         output.textContent = typeof msg === 'string' ? msg : JSON.stringify(msg, null, 2);
+        output.scrollTop = output.scrollHeight;
     }
 
     function postAction(action, payload) {
-        log('Running ' + action + '…');
         return fetch('/api/hexstrike/action/', {
             method: 'POST',
             credentials: 'same-origin',
@@ -146,13 +164,59 @@
         return p;
     }
 
+    // Execute chain: plan first, then dispatch each step's tool in sequence.
+    function runExecuteChain() {
+        var planPayload = targetPayload();
+        log('Planning attack chain…');
+        postAction('attack_chain', planPayload).then(function(res) {
+            if (!res.ok || !res.data || !res.data.attack_chain) {
+                log('Chain planning failed:\n' + JSON.stringify(res.data, null, 2));
+                return;
+            }
+            var chain = res.data.attack_chain;
+            var steps = chain.steps || [];
+            var target = planPayload.target;
+            output.textContent = '';
+            append('Attack chain planned: ' + steps.length + ' steps for ' + target);
+            append('Risk level: ' + (chain.risk_level || '?') + ' | Est. time: ' + (chain.estimated_time || '?') + 's\n');
+
+            // Execute steps sequentially so output is readable.
+            var promise = Promise.resolve();
+            steps.forEach(function(step, i) {
+                promise = promise.then(function() {
+                    var toolName = step.tool;
+                    var action = TOOL_ACTION_MAP[toolName];
+                    append('[' + (i + 1) + '/' + steps.length + '] Executing ' + toolName + (action ? '' : ' (unsupported — skipped)'));
+                    if (!action) {
+                        return Promise.resolve();
+                    }
+                    return postAction(action, { target: target }).then(function(r) {
+                        append(JSON.stringify(r.data, null, 2) + '\n');
+                    }).catch(function(e) {
+                        append('Error running ' + toolName + ': ' + e + '\n');
+                    });
+                });
+            });
+            promise.then(function() {
+                append('— Chain execution complete —');
+            });
+        }).catch(function(e) {
+            log('Chain planning request failed: ' + e);
+        });
+    }
+
     document.querySelectorAll('[data-action]').forEach(function(btn) {
         btn.addEventListener('click', function() {
             var action = btn.getAttribute('data-action');
+            if (action === 'execute_chain') {
+                runExecuteChain();
+                return;
+            }
             var payload = {};
             if (action !== 'process_dashboard' && action !== 'health') {
                 payload = targetPayload(action === 'smart_scan' ? { max_tools: 5 } : {});
             }
+            log('Running ' + action + '…');
             postAction(action, payload).then(function(res) {
                 log(res.data);
             }).catch(function(e) {
@@ -165,6 +229,7 @@
         btn.addEventListener('click', function() {
             var module = btn.getAttribute('data-module');
             var target = document.getElementById('hs-target').value.trim();
+            log('Running metasploit ' + module + '…');
             postAction('metasploit', {
                 module: module,
                 options: { RHOSTS: target }

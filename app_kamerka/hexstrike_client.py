@@ -23,6 +23,11 @@ ALLOWED_ACTIONS: Dict[str, Tuple[str, str, Tuple[str, ...]]] = {
     "process_dashboard": ("GET", "api/processes/dashboard", ()),
     "nuclei": ("POST", "api/tools/nuclei", ("target",)),
     "metasploit": ("POST", "api/tools/metasploit", ("module",)),
+    "autorecon": ("POST", "api/tools/autorecon", ("target",)),
+    "rustscan": ("POST", "api/tools/rustscan", ("target",)),
+    "nmap_advanced": ("POST", "api/tools/nmap-advanced", ("target",)),
+    "enum4linux_ng": ("POST", "api/tools/enum4linux-ng", ("target",)),
+    "responder": ("POST", "api/tools/responder", ("target",)),
 }
 
 
