@@ -167,7 +167,7 @@
     // Execute chain: plan first, then dispatch each step's tool in sequence.
     function runExecuteChain() {
         var planPayload = targetPayload();
-        log('Planning attack chain…');
+        log('Planning attack chain with AI analysis…');
         postAction('attack_chain', planPayload).then(function(res) {
             if (!res.ok || !res.data || !res.data.attack_chain) {
                 log('Chain planning failed:\n' + JSON.stringify(res.data, null, 2));
@@ -177,8 +177,22 @@
             var steps = chain.steps || [];
             var target = planPayload.target;
             output.textContent = '';
-            append('Attack chain planned: ' + steps.length + ' steps for ' + target);
-            append('Risk level: ' + (chain.risk_level || '?') + ' | Est. time: ' + (chain.estimated_time || '?') + 's\n');
+            
+            // Show AI reasoning if available
+            if (res.data.ollama_used) {
+                append('🤖 AI-Powered Chain Planning (Ollama)');
+                append('Risk Level: ' + (chain.risk_level || '?'));
+                append('Tools Selected: ' + steps.length);
+                if (res.data.reasoning) {
+                    append('\nAI Analysis:\n' + res.data.reasoning + '\n');
+                }
+                append('─'.repeat(50) + '\n');
+            } else {
+                append('Chain planning (standard mode)');
+            }
+            
+            append('Attack chain: ' + steps.length + ' steps for ' + target);
+            append('Est. time: ' + (chain.estimated_time || '?') + 's\n');
 
             // Execute steps sequentially so output is readable.
             var promise = Promise.resolve();
@@ -186,8 +200,10 @@
                 promise = promise.then(function() {
                     var toolName = step.tool;
                     var action = TOOL_ACTION_MAP[toolName];
-                    append('[' + (i + 1) + '/' + steps.length + '] Executing ' + toolName + (action ? '' : ' (unsupported — skipped)'));
+                    var reason = step.reason ? ' — ' + step.reason : '';
+                    append('[' + (i + 1) + '/' + steps.length + '] Executing ' + toolName + reason);
                     if (!action) {
+                        append('  (unsupported tool — skipped)');
                         return Promise.resolve();
                     }
                     var stepPayload = Object.assign({ target: target }, step.parameters || {});

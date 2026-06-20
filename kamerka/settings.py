@@ -378,6 +378,13 @@ SHODAN_API_KEY: str = os.environ.get("SHODAN_API_KEY", "")
 HEXSTRIKE_SERVER_URL: str = os.environ.get("HEXSTRIKE_SERVER_URL", "http://127.0.0.1:8888")
 HEXSTRIKE_TIMEOUT: int = int(os.environ.get("HEXSTRIKE_TIMEOUT", "300"))
 
+# Ollama AI server for smart payload generation and attack chain planning.
+# Example: export OLLAMA_SERVER_URL=http://127.0.0.1:11434
+# Example: export OLLAMA_MODEL=deephat
+OLLAMA_SERVER_URL: str = os.environ.get("OLLAMA_SERVER_URL", "http://127.0.0.1:11434")
+OLLAMA_MODEL: str = os.environ.get("OLLAMA_MODEL", "deephat")
+
+
 # Optional Mapbox token — enhances /map3d building detail. Default basemap is OpenFreeMap (no key).
 MAPBOX_ACCESS_TOKEN: str = os.environ.get("MAPBOX_ACCESS_TOKEN", "")
 
