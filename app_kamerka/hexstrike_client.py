@@ -12,6 +12,7 @@ _TARGET_RE = re.compile(
     r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9]"
     r"(?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$|^(?:\d{1,3}\.){3}\d{1,3}$"
 )
+_ACTION_RE = re.compile(r"^[a-zA-Z0-9_-]{1,80}$")
 
 # Whitelisted proxy actions: name -> (method, path, required payload keys)
 ALLOWED_ACTIONS: Dict[str, Tuple[str, str, Tuple[str, ...]]] = {
@@ -88,9 +89,21 @@ class HexStrikeClient:
             return {"success": False, "error": str(exc)}
 
     def run_action(self, action: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        action = (action or "").strip()
         spec = ALLOWED_ACTIONS.get(action)
+        dynamic_action = False
+        dynamic_action_alt_path = ""
         if not spec:
-            return {"success": False, "error": f"Unknown action: {action}"}
+            # Dynamic pass-through for HexStrike tool endpoints.
+            # This lets the UI execute the full HexStrike catalog without hardcoding every tool.
+            if not _ACTION_RE.match(action):
+                return {"success": False, "error": f"Unknown action: {action}"}
+            dynamic_action = True
+            spec = ("POST", f"api/tools/{action}", ())
+            if "_" in action:
+                dynamic_action_alt_path = f"api/tools/{action.replace('_', '-')}"
+            elif "-" in action:
+                dynamic_action_alt_path = f"api/tools/{action.replace('-', '_')}"
 
         method, path, required = spec
         data = dict(payload or {})
@@ -111,6 +124,13 @@ class HexStrikeClient:
                 return {"success": False, "error": "Invalid Metasploit module path"}
 
         result = self.request(method, path, data)
+        if (
+            dynamic_action
+            and dynamic_action_alt_path
+            and result.get("success") is False
+            and "HTTP 404" in str(result.get("error", ""))
+        ):
+            result = self.request("POST", dynamic_action_alt_path, data)
         result.setdefault("action", action)
         return result
 

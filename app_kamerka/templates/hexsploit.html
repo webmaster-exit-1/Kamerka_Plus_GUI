@@ -84,6 +84,10 @@
             <button type="button" class="btn btn-danger" data-action="execute_chain" title="Execute planned attack chain steps sequentially against target">Execute chain ▶</button>
             <button type="button" class="btn btn-default" data-action="nuclei">Nuclei</button>
             <button type="button" class="btn btn-default" data-action="process_dashboard">Process dashboard</button>
+            <label style="margin-left:10px;font-weight:normal;color:#9fd8ff;">
+              <input type="checkbox" id="hs-auto-artifacts" checked>
+              Auto-create watchlist + playbook from successful chain
+            </label>
             {% if msf_modules %}
             <span style="margin-left:12px;color:#ffe600;">MSF:</span>
             {% for m in msf_modules %}
@@ -109,16 +113,18 @@
     var output = document.getElementById('hs-output');
     var deviceId = document.getElementById('hs-device-id').value;
 
-    // Maps HexStrike tool names (as returned in attack_chain steps) to ALLOWED_ACTIONS keys.
+    // Known aliases; most tools are executed via dynamic pass-through using the exact tool slug.
     var TOOL_ACTION_MAP = {
-        'autorecon':    'autorecon',
-        'rustscan':     'rustscan',
-        'nmap-advanced':'nmap_advanced',
-        'enum4linux-ng':'enum4linux_ng',
-        'responder':    'responder',
-        'nuclei':       'nuclei',
-        'nmap':         'nmap_advanced'
+        'nmap': 'nmap_advanced'
     };
+
+    function chainToolToAction(toolName) {
+        var normalized = String(toolName || '').trim().toLowerCase();
+        if (!normalized) {
+            return '';
+        }
+        return TOOL_ACTION_MAP[normalized] || normalized;
+    }
 
     function getCookie(name) {
         var value = '; ' + document.cookie;
@@ -196,10 +202,11 @@
 
             // Execute steps sequentially so output is readable.
             var promise = Promise.resolve();
+            var successfulResults = [];
             steps.forEach(function(step, i) {
                 promise = promise.then(function() {
                     var toolName = step.tool;
-                    var action = TOOL_ACTION_MAP[toolName];
+                    var action = chainToolToAction(toolName);
                     var reason = step.reason ? ' — ' + step.reason : '';
                     append('[' + (i + 1) + '/' + steps.length + '] Executing ' + toolName + reason);
                     if (!action) {
@@ -209,6 +216,15 @@
                     var stepPayload = Object.assign({}, step.parameters || {}, { target: target });
                     return postAction(action, stepPayload).then(function(r) {
                         append(JSON.stringify(r.data, null, 2) + '\n');
+                        var success = !!(r.ok && r.data && r.data.success !== false && !r.data.error);
+                        if (success) {
+                            successfulResults.push({
+                                tool: toolName,
+                                action: action,
+                                parameters: stepPayload,
+                                response: r.data
+                            });
+                        }
                     }).catch(function(e) {
                         append('Error running ' + toolName + ': ' + e + '\n');
                     });
@@ -216,6 +232,32 @@
             });
             promise.then(function() {
                 append('— Chain execution complete —');
+                var autoArtifacts = document.getElementById('hs-auto-artifacts');
+                if (!autoArtifacts || !autoArtifacts.checked) {
+                    return;
+                }
+                if (!successfulResults.length) {
+                    append('No successful tool runs; skipping watchlist/playbook generation.');
+                    return;
+                }
+                append('Generating watchlist + playbook from successful chain via DeepHat...');
+                postAction('derive_watchlist_playbook', {
+                    target: target,
+                    chain_steps: steps,
+                    successful_results: successfulResults
+                }).then(function(artifactRes) {
+                    if (!artifactRes.ok || !artifactRes.data || artifactRes.data.success === false) {
+                        append('Artifact generation failed:\n' + JSON.stringify(artifactRes.data, null, 2));
+                        return;
+                    }
+                    append(
+                        'Created watchlist #' + artifactRes.data.watchlist.id + ' (' + artifactRes.data.watchlist.name + ')' +
+                        ' and playbook #' + artifactRes.data.playbook.id + ' (' + artifactRes.data.playbook.name + ').'
+                    );
+                    append('Review at /watchlists and /playbooks/' + artifactRes.data.playbook.id + '/');
+                }).catch(function(err) {
+                    append('Artifact generation request failed: ' + err);
+                });
             });
         }).catch(function(e) {
             log('Chain planning request failed: ' + e);

@@ -1,3 +1,4 @@
+import json
 from unittest.mock import patch
 
 import requests
@@ -24,8 +25,15 @@ class HexStrikeClientTest(SimpleTestCase):
     def test_validate_target_rejects_injection(self):
         self.assertIsNone(validate_target("1.2.3.4; rm -rf /"))
 
-    def test_unknown_action_rejected(self):
-        result = HexStrikeClient().run_action("run_shell", {"command": "id"})
+    @patch.object(HexStrikeClient, "request")
+    def test_dynamic_tool_action_passthrough(self, request_mock):
+        request_mock.return_value = {"success": True}
+        result = HexStrikeClient().run_action("run-shell", {"target": "10.0.0.1"})
+        self.assertTrue(result.get("success"))
+        request_mock.assert_called_once_with("POST", "api/tools/run-shell", {"target": "10.0.0.1"})
+
+    def test_invalid_action_rejected(self):
+        result = HexStrikeClient().run_action("run shell", {"target": "10.0.0.1"})
         self.assertIn("Unknown action", result["error"])
 
     @patch("app_kamerka.hexstrike_client.requests.Session")
@@ -191,3 +199,40 @@ class AttackChainApiTest(TestCase):
         self._post('{"action":"attack_chain","payload":{"target":"10.0.0.1","extra":"ignored"}}')
         call_target = mock_gen.call_args[0][0]
         self.assertEqual(call_target, "10.0.0.1")
+
+    def test_derive_watchlist_playbook_invalid_target_returns_400(self):
+        resp = self._post('{"action":"derive_watchlist_playbook","payload":{"target":"10.0.0.1; rm -rf /","successful_results":[],"chain_steps":[]}}')
+        self.assertEqual(resp.status_code, 400)
+        data = resp.json()
+        self.assertFalse(data.get("success"))
+        self.assertEqual(data.get("error"), "Invalid target (use hostname or IPv4)")
+
+    def test_derive_watchlist_playbook_missing_target_returns_400(self):
+        resp = self._post('{"action":"derive_watchlist_playbook","payload":{"successful_results":[],"chain_steps":[]}}')
+        self.assertEqual(resp.status_code, 400)
+        data = resp.json()
+        self.assertFalse(data.get("success"))
+        self.assertEqual(data.get("error"), "Missing required field: target")
+
+    @patch("app_kamerka.hexstrike_views.generate_watchlist_and_playbook")
+    def test_derive_watchlist_playbook_calls_generator(self, mock_gen):
+        mock_gen.return_value = {
+            "success": True,
+            "watchlist": {"id": 11, "name": "wl-demo"},
+            "playbook": {"id": 7, "name": "pb-demo", "step_count": 2},
+        }
+        payload = {
+            "action": "derive_watchlist_playbook",
+            "payload": {
+                "target": "10.0.0.1",
+                "successful_results": [{"tool": "nuclei", "action": "nuclei", "parameters": {}}],
+                "chain_steps": [{"tool": "nuclei", "parameters": {}}],
+            },
+        }
+        resp = self._post(json.dumps(payload))
+        self.assertEqual(resp.status_code, 200)
+        mock_gen.assert_called_once()
+        self.assertEqual(mock_gen.call_args[0][0], "10.0.0.1")
+        data = resp.json()
+        self.assertTrue(data.get("success"))
+        self.assertEqual(data.get("watchlist", {}).get("name"), "wl-demo")
