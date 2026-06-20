@@ -15,12 +15,12 @@ from app_kamerka.models import Device, VulnIntelligence
 
 def ollama_url() -> str:
     """Get Ollama server URL from settings."""
-    return (getattr(settings, "OLLAMA_SERVER_URL", "") or "http://127.0.0.1:11434").rstrip("/")
+    return (getattr(settings, "HEXSPLOIT_OLLAMA_SERVER_URL", "") or "http://127.0.0.1:11434").rstrip("/")
 
 
 def ollama_model() -> str:
     """Get Ollama model name from settings."""
-    return getattr(settings, "OLLAMA_MODEL", "deephat")
+    return getattr(settings, "HEXSPLOIT_OLLAMA_MODEL", "deephat")
 
 
 def query_ollama(prompt: str, timeout: int = 30) -> Optional[str]:
@@ -67,7 +67,11 @@ def build_target_profile(target: str, device: Optional[Device] = None) -> Dict[s
 
         # Risk level from CVEs
         max_cvss = (
-            VulnIntelligence.objects.filter(device=device).values_list("cvss_score", flat=True).first() or 0
+            VulnIntelligence.objects.filter(device=device)
+            .order_by("-cvss_score")
+            .values_list("cvss_score", flat=True)
+            .first()
+            or 0
         )
         if max_cvss >= 9:
             profile["risk_level"] = "critical"
@@ -87,7 +91,7 @@ def craft_tool_recommendation_prompt(target_profile: Dict[str, Any]) -> str:
     device_type = target_profile.get("device_type", "unknown")
     risk_level = target_profile.get("risk_level", "unknown")
 
-    prompt = f"""You are a security expert recommending attack chain tools from HexStrike (150+ security tools available).
+    prompt = f"""You are a security expert recommending attack chain tools from HexStrike.
 
 Target Profile:
 - IP/Hostname: {target_profile.get('target')}
@@ -138,6 +142,35 @@ def extract_json_from_response(text: str) -> Optional[List[Dict[str, Any]]]:
     return None
 
 
+def _fallback_select_tools_chain(target: str, error: Optional[str] = None) -> Dict[str, Any]:
+    """Fall back to HexStrike's built-in select_tools to produce an executable chain."""
+    result = HexStrikeClient().run_action("select_tools", {"target": target})
+    steps: List[Dict[str, Any]] = []
+    if result.get("success") is not False and "error" not in result:
+        # Convert select_tools response into chain steps.
+        # The response may contain a "tools" list or similar structure.
+        raw_tools = result.get("tools") or result.get("recommended_tools") or []
+        if isinstance(raw_tools, list):
+            for item in raw_tools:
+                if isinstance(item, dict):
+                    tool_name = item.get("tool") or item.get("name") or ""
+                    params = item.get("parameters") or {}
+                elif isinstance(item, str):
+                    tool_name = item
+                    params = {}
+                else:
+                    continue
+                if tool_name:
+                    steps.append({"tool": tool_name, "parameters": params, "reason": "Selected by HexStrike fallback"})
+    base: Dict[str, Any] = {
+        "attack_chain": {"steps": steps, "tool": "select_tools", "target": target},
+        "ollama_used": False,
+    }
+    if error:
+        base["error"] = error
+    return base
+
+
 def generate_smart_attack_chain(
     target: str, device_id: Optional[int] = None, use_ollama: bool = True
 ) -> Dict[str, Any]:
@@ -152,23 +185,22 @@ def generate_smart_attack_chain(
     # Build target profile
     profile = build_target_profile(target, device)
 
-    # If Ollama is disabled or unavailable, fall back to hexstrike's select_tools
+    # If Ollama is disabled, fall back to hexstrike's select_tools
     if not use_ollama:
-        return {"attack_chain": {"steps": [], "tool": "select_tools", "target": target}, "ollama_used": False}
+        return _fallback_select_tools_chain(target)
 
     # Query Ollama for recommendations
     prompt = craft_tool_recommendation_prompt(profile)
     ollama_response = query_ollama(prompt, timeout=60)
 
     if not ollama_response:
-        # Fallback to hexstrike's select_tools
-        return {"attack_chain": {"steps": [], "tool": "select_tools", "target": target}, "ollama_used": False, "error": "Ollama unavailable"}
+        return _fallback_select_tools_chain(target, error="Ollama unavailable")
 
     # Extract JSON from response
     recommendations = extract_json_from_response(ollama_response)
 
     if not recommendations:
-        return {"attack_chain": {"steps": [], "tool": "select_tools", "target": target}, "ollama_used": False, "error": "Could not parse Ollama recommendations"}
+        return _fallback_select_tools_chain(target, error="Could not parse Ollama recommendations")
 
     # Convert Ollama recommendations to hexstrike attack chain format
     steps = []
@@ -201,8 +233,8 @@ def generate_smart_attack_chain(
             }
         )
 
-    # Calculate chain metadata
-    total_time = sum([s.get("parameters", {}).get("timeout", 30) for s in steps], 0)
+    # Calculate chain metadata — coerce timeout to int with safe default
+    total_time = sum(int(s.get("parameters", {}).get("timeout") or 30) for s in steps)
 
     return {
         "attack_chain": {

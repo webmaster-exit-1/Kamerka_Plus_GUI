@@ -206,7 +206,7 @@
                         append('  (unsupported tool — skipped)');
                         return Promise.resolve();
                     }
-                    var stepPayload = Object.assign({ target: target }, step.parameters || {});
+                    var stepPayload = Object.assign({}, step.parameters || {}, { target: target });
                     return postAction(action, stepPayload).then(function(r) {
                         append(JSON.stringify(r.data, null, 2) + '\n');
                     }).catch(function(e) {

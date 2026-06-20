@@ -10,7 +10,7 @@ from django.shortcuts import get_object_or_404, render
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 
-from app_kamerka.hexstrike_client import HexStrikeClient, server_url
+from app_kamerka.hexstrike_client import HexStrikeClient, server_url, validate_target
 from app_kamerka.models import Device, VulnIntelligence
 from app_kamerka.ollama_payload_generator import generate_smart_attack_chain
 from app_kamerka.views import _CVE_TO_MSF
@@ -112,12 +112,15 @@ def hexstrike_action_api(request):
 
     # Use smart AI-driven chain planning for attack_chain action
     if action == "attack_chain" and payload.get("target"):
-        result = generate_smart_attack_chain(payload["target"], device_id=device_id, use_ollama=True)
+        raw_target = str(payload["target"])
+        safe_target = validate_target(raw_target)
+        if not safe_target:
+            return JsonResponse({"success": False, "error": "Invalid target (use hostname or IPv4)"}, status=400)
+        result = generate_smart_attack_chain(safe_target, device_id=device_id, use_ollama=True)
         status = 200
     else:
         result = HexStrikeClient().run_action(action, payload)
         status = 200 if result.get("success") is not False and "error" not in result else 502
         if result.get("offline"):
             status = 503
-    return JsonResponse(result, status=status)
     return JsonResponse(result, status=status)
