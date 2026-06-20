@@ -190,7 +190,8 @@
                     if (!action) {
                         return Promise.resolve();
                     }
-                    return postAction(action, { target: target }).then(function(r) {
+                    var stepPayload = Object.assign({ target: target }, step.parameters || {});
+                    return postAction(action, stepPayload).then(function(r) {
                         append(JSON.stringify(r.data, null, 2) + '\n');
                     }).catch(function(e) {
                         append('Error running ' + toolName + ': ' + e + '\n');
