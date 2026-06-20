@@ -59,7 +59,7 @@ class HexStrikeClient:
     def request(self, method: str, path: str, json_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         try:
             if method.upper() == "GET":
-                resp = self.session.get(self._url(path), timeout=min(self.timeout, 30))
+                resp = self.session.get(self._url(path), params=json_data or {}, timeout=min(self.timeout, 30))
             else:
                 resp = self.session.post(self._url(path), json=json_data or {}, timeout=self.timeout)
             resp.raise_for_status()
@@ -110,7 +110,7 @@ class HexStrikeClient:
             if not re.match(r"^[a-zA-Z0-9_/\-]+$", module):
                 return {"success": False, "error": "Invalid Metasploit module path"}
 
-        result = self.request(method, path, data if method.upper() == "POST" else None)
+        result = self.request(method, path, data)
         result.setdefault("action", action)
         return result
 
