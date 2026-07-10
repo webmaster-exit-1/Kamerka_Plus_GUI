@@ -1,4 +1,5 @@
 #!/usr/bin/env fish
+
 # Start Kamerka Django + Celery worker + beat in background (Fish API keys).
 set -l root (path normalize (dirname (status filename))/..)
 set -l logdir "$root/logs"
