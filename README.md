@@ -1,6 +1,6 @@
 # ꓘamerka Plus GUI
 
-**Ultimate Internet of Things & Industrial Control Systems reconnaissance platform — upgraded edition**
+## **Ultimate Internet of Things & Industrial Control Systems reconnaissance platform — upgraded edition**
 
 [![Kamerka Plus GUI CI](https://github.com/webmaster-exit-1/Kamerka_Plus_GUI/actions/workflows/ci.yml/badge.svg)](https://github.com/webmaster-exit-1/Kamerka_Plus_GUI/actions/workflows/ci.yml)
 
@@ -15,7 +15,7 @@ Modernized fork of [Kamerka-GUI](https://github.com/woj-ciech/Kamerka-GUI) for a
 ## What's new in this edition
 
 | Area | Highlights |
-|------|------------|
+| ------ | ------------ |
 | **Maps** | **2D** Leaflet + OpenStreetMap (no API key). **3D** [`/map3d`](http://127.0.0.1:8000/map3d) via MapLibre + [OpenFreeMap](https://openfreemap.org/) by default; optional `MAPBOX_ACCESS_TOKEN` for richer building meshes. GeoJSON / KML / CSV exports for QGIS, Kepler.gl, SandDance. Legacy `/globe` redirects to the web 3D map; optional **PyVista + PyQt6** desktop globe still available. |
 | **Intel** | RSS/Atom ingestion (`feedparser`), OPML import (bundled + your Feeder export), **Feed Intel** panel + **Region Brief** (Ollama or extractive summariser). Plain-text briefs — no raw HTML tags in the UI. |
 | **Workbench** | Per-device tools: Nmap, Nuclei, Wappalyzer, RTSP, Shodan intel, NVD/NRICH, honeypot heuristics, screenshots, ExploitDB, bulk actions, risk score + layer context. |
@@ -29,7 +29,7 @@ Modernized fork of [Kamerka-GUI](https://github.com/woj-ciech/Kamerka-GUI) for a
 ## Documentation
 
 | Document | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | [docs/INSTALL.md](docs/INSTALL.md) | Full install, `.env` / API keys, external tools (Nmap, Nuclei, Naabu, Wappalyzer), PostgreSQL, Android/Termux |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Celery/Redis, verification pipeline, tool paths, map layers |
 | [docs/DATABASE.md](docs/DATABASE.md) | SQLite WAL notes and PostgreSQL migration |
@@ -122,7 +122,7 @@ See [docs/docker.md](docs/docker.md) for profiles, volumes, and migrations.
 ## Key URLs
 
 | Path | Purpose |
-|------|---------|
+| ------ | --------- |
 | `/` | New search (country, coords, healthcare, Nmap upload) |
 | `/index` | Overview dashboard, charts, Feed Intel, Region Brief |
 | `/history` | Cases |
@@ -147,7 +147,7 @@ REDIS_URL=redis://localhost:6379
 ```
 
 | Variable | Purpose |
-|----------|---------|
+| ---------- | --------- |
 | `SHODAN_API_KEY` | Required for Shodan searches and scans |
 | `NVD_API_KEY` | Optional — higher NVD rate limits |
 | `OLLAMA_HOST` | Optional — AI region briefs (`http://localhost:11434`) |
