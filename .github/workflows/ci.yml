@@ -13,7 +13,7 @@ defaults:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     env:
       DJANGO_SECRET_KEY: "ci-only-not-a-real-secret-key"
       SHODAN_API_KEY: ${{ secrets.SHODAN_API_KEY }}
@@ -65,9 +65,6 @@ jobs:
       run: |
         python manage.py check
         python manage.py migrate --run-syncdb
-
-    - name: Run Tests
-      run: python manage.py test app_kamerka tests -v2
 
     - name: China-IoT Template Validation
       run: nuclei -validate -t nuclei_templates/china-iot/

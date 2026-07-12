@@ -3,7 +3,7 @@
 Kamerka Plus GUI can run with one command using Docker Compose:
 
 ```bash
-docker compose --profile postgres up --build
+docker compose --profile dev up --build
 ```
 
 ## Services
@@ -12,7 +12,7 @@ docker compose --profile postgres up --build
 - `redis`: broker/backend cache
 - `celery`: worker
 - `celery-beat`: scheduler
-- `postgres`: optional (enabled with `--profile postgres`)
+- `postgres`: PostgreSQL database used by Django and Celery
 
 ## Persistent volumes
 
@@ -34,25 +34,10 @@ Use `.env` (copy from `.env.example`) and adjust values:
 | `REDIS_URL` | yes | Redis URL |
 | `CELERY_BROKER_URL` | no | Celery broker |
 | `CELERY_RESULT_BACKEND` | no | Celery result backend |
-| `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | for Postgres | Database settings |
+| `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | yes | PostgreSQL connection settings |
 
-## SQLite dev mode (default)
-
-Run without Postgres profile:
-
-```bash
-docker compose up --build
-```
-
-This keeps SQLite for local development (default branch in Django settings when `DB_NAME` is not set).
-
-## Postgres mode
-
-```bash
-docker compose --profile postgres up --build
-```
-
-Set `DB_HOST=postgres` in `.env` so Django can resolve the database service inside Compose.
+PostgreSQL is the only supported backend. With Compose, set `DB_HOST=postgres`;
+for a host-installed server, use `DB_HOST=localhost`.
 
 ## Migrations and upgrades
 

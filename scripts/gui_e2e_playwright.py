@@ -3,8 +3,8 @@
 Drive Kamerka through the real web UI (same buttons/flows a user clicks).
 
 Usage:
-  fish -l -c './venv/bin/python scripts/gui_e2e_playwright.py workbench 499'
-  fish -l -c './venv/bin/python scripts/gui_e2e_playwright.py launch CN s7'
+    fish -l -c './.venv/bin/python scripts/gui_e2e_playwright.py workbench 499'
+    fish -l -c './.venv/bin/python scripts/gui_e2e_playwright.py launch CN s7'
 
 Requires: pip install playwright && playwright install chromium
 """

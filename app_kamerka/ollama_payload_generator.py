@@ -16,12 +16,12 @@ from app_kamerka.models import Device, Playbook, VulnIntelligence, Watchlist
 
 def ollama_url() -> str:
     """Get Ollama server URL from settings."""
-    return (getattr(settings, "HEXSPLOIT_OLLAMA_SERVER_URL", "") or "http://127.0.0.1:11434").rstrip("/")
+    return (getattr(settings, "HEXSPLOIT_OLLAMA_SERVER_URL", "") or "http://192.168.1.103:11434").rstrip("/")
 
 
 def ollama_model() -> str:
     """Get Ollama model name from settings."""
-    return getattr(settings, "HEXSPLOIT_OLLAMA_MODEL", "deephat")
+    return getattr(settings, "HEXSPLOIT_OLLAMA_MODEL", "DeepHat/DeepHat-V1-7B:latest")
 
 
 def query_ollama(prompt: str, timeout: int = 30) -> Optional[str]:
@@ -135,7 +135,7 @@ Format your response as JSON array:
 
 Focus on:
 - Service fingerprinting tools for unknown services
-- Exploitation tools for known CVEs  
+- Exploitation tools for known CVEs
 - Intensive scanning for critical risk targets
 - Stealth for lower-risk reconnaissance
 Use exact HexStrike endpoint slugs for tool names, matching documentation syntax.

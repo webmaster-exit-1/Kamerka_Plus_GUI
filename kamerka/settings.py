@@ -175,38 +175,25 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'kamerka.wsgi.application'
 
-# Database
-# https://docs.djangoproject.com/en/3.2/ref/settings/#databases
-
-if os.environ.get("DB_NAME"):
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.environ.get("DB_NAME", "kamerka"),
-            "USER": os.environ.get("DB_USER", "kamerka"),
-            "PASSWORD": os.environ.get("DB_PASSWORD", ""),
-            "HOST": os.environ.get("DB_HOST", "localhost"),
-            "PORT": os.environ.get("DB_PORT", "5432"),
-            "CONN_MAX_AGE": int(os.environ.get("DB_CONN_MAX_AGE", "60")),
-            "OPTIONS": {
-                "connect_timeout": int(os.environ.get("DB_CONNECT_TIMEOUT", "5")),
-                "keepalives": int(os.environ.get("DB_KEEPALIVES", "1")),
-                "keepalives_idle": int(os.environ.get("DB_KEEPALIVES_IDLE", "30")),
-                "keepalives_interval": int(os.environ.get("DB_KEEPALIVES_INTERVAL", "10")),
-                "keepalives_count": int(os.environ.get("DB_KEEPALIVES_COUNT", "5")),
-            },
-        }
+# Database: PostgreSQL is required for the concurrent Django/Celery deployment.
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.environ.get("DB_NAME", "kamerka"),
+        "USER": os.environ.get("DB_USER", "kamerka"),
+        "PASSWORD": os.environ.get("DB_PASSWORD", "kamerka"),
+        "HOST": os.environ.get("DB_HOST", "localhost"),
+        "PORT": os.environ.get("DB_PORT", "5432"),
+        "CONN_MAX_AGE": int(os.environ.get("DB_CONN_MAX_AGE", "60")),
+        "OPTIONS": {
+            "connect_timeout": int(os.environ.get("DB_CONNECT_TIMEOUT", "5")),
+            "keepalives": int(os.environ.get("DB_KEEPALIVES", "1")),
+            "keepalives_idle": int(os.environ.get("DB_KEEPALIVES_IDLE", "30")),
+            "keepalives_interval": int(os.environ.get("DB_KEEPALIVES_INTERVAL", "10")),
+            "keepalives_count": int(os.environ.get("DB_KEEPALIVES_COUNT", "5")),
+        },
     }
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": os.path.join(BASE_DIR, "db.sqlite3"),
-            "OPTIONS": {
-                "timeout": 30,  # seconds; reduces "database is locked" under concurrent access
-            },
-        }
-    }
+}
 
 # Password validation
 # https://docs.djangoproject.com/en/3.2/ref/settings/#auth-password-validators
@@ -375,14 +362,18 @@ SHODAN_API_KEY: str = os.environ.get("SHODAN_API_KEY", "")
 
 # Local HexStrike tools server (HTTP API used by hexstrike_mcp.py and HexSploit page).
 # Example: export HEXSTRIKE_SERVER_URL=http://127.0.0.1:8888
-HEXSTRIKE_SERVER_URL: str = os.environ.get("HEXSTRIKE_SERVER_URL", "http://127.0.0.1:8888")
+HEXSTRIKE_SERVER_URL: str = os.environ.get("HEXSTRIKE_SERVER_URL", "http://192.168.1.103:8888")
 HEXSTRIKE_TIMEOUT: int = int(os.environ.get("HEXSTRIKE_TIMEOUT", "300"))
 
 # Ollama AI server for smart payload generation and attack chain planning (HexSploit).
 # Example: export HEXSPLOIT_OLLAMA_SERVER_URL=http://127.0.0.1:11434
-# Example: export HEXSPLOIT_OLLAMA_MODEL=deephat
-HEXSPLOIT_OLLAMA_SERVER_URL: str = os.environ.get("HEXSPLOIT_OLLAMA_SERVER_URL", "http://127.0.0.1:11434")
-HEXSPLOIT_OLLAMA_MODEL: str = os.environ.get("HEXSPLOIT_OLLAMA_MODEL", "deephat")
+# Example: export HEXSPLOIT_OLLAMA_MODEL=DeepHat/DeepHat-V1-7B:latest
+HEXSPLOIT_OLLAMA_SERVER_URL: str = os.environ.get(
+    "HEXSPLOIT_OLLAMA_SERVER_URL", "http://192.168.1.103:11434"
+)
+HEXSPLOIT_OLLAMA_MODEL: str = os.environ.get(
+    "HEXSPLOIT_OLLAMA_MODEL", "DeepHat/DeepHat-V1-7B:latest"
+)
 
 
 # Optional Mapbox token — enhances /map3d building detail. Default basemap is OpenFreeMap (no key).

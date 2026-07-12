@@ -10,6 +10,11 @@ services:
       CELERY_BROKER_URL: redis://redis:6379
       CELERY_RESULT_BACKEND: redis://redis:6379
       DB_HOST: postgres
+      HEXSTRIKE_SERVER_URL: http://192.168.1.103:8888
+      HEXSPLOIT_OLLAMA_SERVER_URL: http://192.168.1.103:11434
+      HEXSPLOIT_OLLAMA_MODEL: DeepHat/DeepHat-V1-7B:latest
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
     volumes:
@@ -24,7 +29,6 @@ services:
         condition: service_started
       postgres:
         condition: service_healthy
-        required: false
 
   redis:
     image: redis:7
@@ -41,6 +45,11 @@ services:
       CELERY_BROKER_URL: redis://redis:6379
       CELERY_RESULT_BACKEND: redis://redis:6379
       DB_HOST: postgres
+      HEXSTRIKE_SERVER_URL: http://192.168.1.103:8888
+      HEXSPLOIT_OLLAMA_SERVER_URL: http://192.168.1.103:11434
+      HEXSPLOIT_OLLAMA_MODEL: DeepHat/DeepHat-V1-7B:latest
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - media_data:/app/scans
       - downloads_data:/app/downloads
@@ -50,7 +59,6 @@ services:
         condition: service_started
       postgres:
         condition: service_healthy
-        required: false
 
   celery-beat:
     build:
@@ -63,6 +71,11 @@ services:
       CELERY_BROKER_URL: redis://redis:6379
       CELERY_RESULT_BACKEND: redis://redis:6379
       DB_HOST: postgres
+      HEXSTRIKE_SERVER_URL: http://192.168.1.103:8888
+      HEXSPLOIT_OLLAMA_SERVER_URL: http://192.168.1.103:11434
+      HEXSPLOIT_OLLAMA_MODEL: DeepHat/DeepHat-V1-7B:latest
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - media_data:/app/scans
       - downloads_data:/app/downloads
@@ -72,17 +85,13 @@ services:
         condition: service_started
       postgres:
         condition: service_healthy
-        required: false
 
   postgres:
     image: postgres:16
-    profiles: ["postgres"]
     environment:
       POSTGRES_DB: ${DB_NAME:-kamerka}
       POSTGRES_USER: ${DB_USER:-kamerka}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-kamerka}
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

@@ -158,10 +158,10 @@ class NucleiResult(models.Model):
 
 class ShodanScan(models.Model):
     device = models.ForeignKey(Device, on_delete=models.CASCADE)
-    ports = models.CharField(max_length=100)
-    tags = models.CharField(max_length=100)
-    products = models.CharField(max_length=100)
-    module = models.CharField(max_length=100)
+    ports = models.TextField(default="")
+    tags = models.TextField(default="")
+    products = models.TextField(default="")
+    module = models.TextField(default="")
     vulns = models.TextField(default="")
 
 

@@ -76,6 +76,62 @@
             -webkit-overflow-scrolling: touch;
         }
 
+        .km-exploit-workspace {
+            display: grid;
+            grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+            gap: 16px;
+        }
+        .km-exploit-section {
+            border: 1px solid rgba(0, 100, 215, 0.45);
+            background: rgba(0, 100, 215, 0.06);
+            padding: 14px;
+            min-width: 0;
+        }
+        .km-exploit-section h4 {
+            color: #00e1ff;
+            margin: 0 0 10px;
+            font-size: 1em;
+        }
+        .km-export-scope {
+            color: #c8d6e5;
+            font-size: 0.88em;
+            line-height: 1.45;
+            margin: 0 0 12px;
+        }
+        .km-export-formats {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+        }
+        .km-export-button {
+            min-height: 54px;
+            white-space: normal;
+            text-align: left;
+        }
+        .km-export-button small {
+            display: block;
+            color: inherit;
+            opacity: 0.75;
+            font-size: 0.78em;
+            margin-top: 3px;
+        }
+        .km-export-status {
+            margin-top: 12px;
+            padding: 10px;
+            border-left: 3px solid #0064d7;
+            background: rgba(10, 10, 26, 0.7);
+            color: #c8d6e5;
+            min-height: 40px;
+        }
+        .km-export-status.is-success { border-left-color: #00ff88; color: #00ff88; }
+        .km-export-status.is-error { border-left-color: #ff2050; color: #ff8ba1; }
+        .km-export-status.is-active { border-left-color: #ffe600; color: #ffe600; }
+        .km-export-status strong { display: block; }
+        @media (max-width: 900px) {
+            .km-exploit-workspace { grid-template-columns: 1fr; }
+            .km-export-formats { grid-template-columns: 1fr; }
+        }
+
         .km-tab-exploit-hidden #tab11,
         .km-tab-exploit-hidden .km-dock-exploit,
         .km-tab-exploit-hidden a.km-dock-hex {
@@ -159,8 +215,9 @@
 
                                     <form id="form1" runat="server">
     <div class="device-action-bar">
-        <input type="text" id="txtDestination" placeholder="Find device" />
-        <input type="button" value="Find route" class="btn btn-primary active" onclick="GetRoute()" />
+        <input type="text" id="txtDestination" placeholder="Find device or place" aria-label="Find device or place" />
+        <input type="button" id="find_route_btn" value="Find on map" class="btn btn-primary active" />
+        <span id="map_search_status" role="status" aria-live="polite" style="color:#888;font-size:0.85em;"></span>
 
         <input type="text" id="update_location" placeholder="Update location" />
         <input type="button" id="btn_update_location" class="btn btn-primary active" value="Update location" />
@@ -462,7 +519,7 @@
 
                             <!-- EXPLOIT -->
 <div class="row">
-                        <div class="col-md-6">
+                        <div class="col-md-12">
 
                             <!-- START USERS ACTIVITY BLOCK -->
                             <div class="panel panel-default">
@@ -473,16 +530,43 @@
 
                                 </div>
                                     <div class="panel-body padding-2">
-                                    <br>
+                                    <div class="km-exploit-workspace">
+                                    <div class="km-exploit-section">
+                                    <h4>Target and CVE context</h4>
+                                    <p class="km-export-scope"><strong>{{ device.ip }}</strong> · {{ device.product|default:device.type|default:"Unknown device" }} · port {{ device.port|default:"—" }}<br>Source: <strong>Shodan</strong> · {{ cve_list|length }} associated CVE{{ cve_list|length|pluralize }}</p>
                                     <div style="margin-bottom:12px;">
+                                        <label for="exploit_select" style="display:block;color:#c8d6e5;margin-bottom:5px;">Select CVE or default device check</label>
                                         <select id="exploit_select" style="padding:4px;margin-right:8px;">
                                             <option value="auto">Run default exploit check</option>
                                             {% for vi in vuln_intel %}
                                             <option value="{{ vi.cve_id }}">{{ vi.cve_id }} — CVSS {{ vi.cvss_score|floatformat:1 }}{% if vi.kev_listed %} [KEV]{% endif %}{% if vi.exploit_available %} [Exploit]{% endif %}</option>
                                             {% endfor %}
                                         </select>
-                                        <button type="button" id="exploit" class="btn btn-primary active" style="background:#ffe600;border-color:#ffe600;color:#000;font-weight:bold;"> Exploit </button>
+                                        <button type="button" id="exploit" class="btn btn-primary active" style="background:#ffe600;border-color:#ffe600;color:#000;font-weight:bold;">Run Exploit</button>
                                         <a href="{% url 'hexsploit' %}?device_id={{ device.id }}" class="btn btn-danger" style="margin-left:8px;font-weight:bold;" title="Open HexStrike orchestration for this target">HexSploit C2</a>
+                                    </div>
+                                    <div class="table-responsive-wrap">
+                                        <table style="width:100%;font-size:0.88em;">
+                                            <thead><tr><th style="text-align:left;color:#00e1ff;">CVE</th><th style="text-align:left;color:#00e1ff;">CVSS</th><th style="text-align:left;color:#00e1ff;">Signals</th></tr></thead>
+                                            <tbody>
+                                            {% for vi in vuln_intel %}
+                                            <tr><td style="font-family:monospace;padding:5px 0;">{{ vi.cve_id }}</td><td>{{ vi.cvss_score|floatformat:1 }}</td><td>{% if vi.kev_listed %}<span class="km-risk-pill km-risk-high">KEV</span>{% endif %}{% if vi.exploit_available %}<span class="km-risk-pill km-risk-med">Exploit</span>{% endif %}{% if not vi.kev_listed and not vi.exploit_available %}—{% endif %}</td></tr>
+                                            {% empty %}<tr><td colspan="3" style="color:#888;padding-top:6px;">No enriched CVE intelligence yet.</td></tr>
+                                            {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    </div>
+                                    <div class="km-exploit-section">
+                                    <h4>Export Shodan-backed report</h4>
+                                    <p class="km-export-scope">Export scope: this search, the selected host context, Shodan evidence, and current CVE/exploit state. CSV is for triage, KML for geographic review, and JSON for automation.</p>
+                                    <div class="km-export-formats" role="group" aria-label="Export report formats">
+                                        <button type="button" class="btn btn-primary active km-export-button km-export-trigger" data-format="CSV" data-url="{% url 'export_csv' search_id %}">Export CSV<small>Spreadsheet and triage</small></button>
+                                        <button type="button" class="btn btn-primary active km-export-button km-export-trigger" data-format="KML" data-url="{% url 'export_kml' search_id %}">Export KML<small>Geographic review</small></button>
+                                        <button type="button" class="btn btn-primary active km-export-button km-export-trigger" data-format="JSON" data-url="{% url 'export_json' search_id %}">Export JSON<small>API and automation</small></button>
+                                    </div>
+                                    <div id="km-export-status" class="km-export-status" role="status" aria-live="polite"><strong>Ready to export</strong><span>Select a format to query Shodan and compile a report.</span></div>
+                                    </div>
                                     </div>
                                     <!-- Exploit info panel — populated on dropdown change -->
                                     <div id="exploit_info_panel" style="display:none;margin-bottom:12px;border:1px solid rgba(0,225,255,0.25);border-radius:6px;padding:12px;background:rgba(0,100,215,0.07);"></div>
@@ -960,6 +1044,57 @@ var heatLayer = L.heatLayer(heatPoints, {
 });
 var heatVisible = false;
 
+$('#find_route_btn').on('click', function () {
+    var $button = $(this);
+    var $status = $('#map_search_status');
+    var query = $.trim($('#txtDestination').val());
+    if (!query) {
+        $status.css('color', '#ff2050').text('Enter an IP, device, or place.');
+        $('#txtDestination').trigger('focus');
+        return;
+    }
+
+    $button.prop('disabled', true).val('Finding…');
+    $status.css('color', '#ffe600').text('Searching OpenStreetMap…');
+    $.ajax({
+        url: 'https://nominatim.openstreetmap.org/search',
+        type: 'GET',
+        dataType: 'json',
+        data: { q: query, format: 'jsonv2', limit: 1 },
+        headers: { 'Accept-Language': 'en' },
+        timeout: 10000,
+        success: function (results) {
+            if (!results || !results.length) {
+                $status.css('color', '#ff2050').text('No map result found for that search.');
+                return;
+            }
+            var latitude = parseFloat(results[0].lat);
+            var longitude = parseFloat(results[0].lon);
+            if (isNaN(latitude) || isNaN(longitude)) {
+                $status.css('color', '#ff2050').text('The map returned an invalid location.');
+                return;
+            }
+            map.setView([latitude, longitude], 13);
+            L.marker([latitude, longitude]).addTo(map).bindPopup($('<span>').text(results[0].display_name).html()).openPopup();
+            $status.css('color', '#00ff88').text('Map centered on ' + results[0].display_name);
+        },
+        error: function (xhr, textStatus) {
+            var message = textStatus === 'timeout' ? 'Map search timed out. Try again.' : 'Map search failed. Check your connection.';
+            $status.css('color', '#ff2050').text(message);
+        },
+        complete: function () {
+            $button.prop('disabled', false).val('Find on map');
+        }
+    });
+});
+
+$('#txtDestination').on('keydown', function (event) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        $('#find_route_btn').trigger('click');
+    }
+});
+
 KamerkaTiles.injectPicker(map, themeRef, '.panel-heading');
 
 var mapEl = document.getElementById('leaflet_world_map');
@@ -1338,6 +1473,99 @@ $('#exploit').on('click', function(){
         });
     }
     return false;
+});
+
+function setExportStatus(state, title, detail) {
+    var $status = $('#km-export-status');
+    $status.removeClass('is-success is-error is-active');
+    if (state === 'success') { $status.addClass('is-success'); }
+    if (state === 'error') { $status.addClass('is-error'); }
+    if (state === 'active') { $status.addClass('is-active'); }
+    $status.empty()
+        .append($('<strong>').text(title))
+        .append($('<span>').text(detail));
+}
+
+function validateExportBlob(format, blob) {
+    return new Promise(function(resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function() {
+            var text = reader.result || '';
+            try {
+                if (format === 'JSON') {
+                    JSON.parse(text);
+                } else if (format === 'KML' && text.indexOf('<kml') === -1) {
+                    throw new Error('The response was not valid KML.');
+                } else if (format === 'CSV' && text.indexOf('ip_str') === -1) {
+                    throw new Error('The response was not valid CSV.');
+                }
+                resolve();
+            } catch (error) {
+                reject(error);
+            }
+        };
+        reader.onerror = function() { reject(new Error('The downloaded report could not be read.')); };
+        reader.readAsText(blob);
+    });
+}
+
+$('.km-export-trigger').on('click', function() {
+    var $buttons = $('.km-export-trigger');
+    var $button = $(this);
+    var format = String($button.data('format') || '').toUpperCase();
+    var url = $button.data('url');
+    var extension = format === 'JSON' ? 'geojson' : format.toLowerCase();
+    var filename = 'shodan_export_{{ search_id }}.' + extension;
+
+    $buttons.prop('disabled', true);
+    $button.text('Querying Shodan…');
+    setExportStatus('active', 'Querying Shodan', 'Fetching current evidence for the selected host and search scope.');
+
+    $.ajax({
+        type: 'GET',
+        url: url,
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+        timeout: 30000,
+        xhrFields: {responseType: 'blob'},
+        success: function(blob) {
+            setExportStatus('active', 'Processing ' + format + ' report', 'Compiling and validating the downloaded Shodan evidence.');
+            validateExportBlob(format, blob).then(function() {
+                var downloadUrl = window.URL.createObjectURL(blob);
+                var link = document.createElement('a');
+                link.href = downloadUrl;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.setTimeout(function() { window.URL.revokeObjectURL(downloadUrl); }, 1000);
+                setExportStatus('success', format + ' export ready', 'Download started. The report contains the current search scope, host context, and Shodan evidence.');
+                $buttons.prop('disabled', false);
+                $button.text('Export ' + format);
+            }).catch(function(error) {
+                setExportStatus('error', 'Report validation failed', error.message || 'The report was not created.');
+                $buttons.prop('disabled', false);
+                $button.text('Retry ' + format);
+            });
+        },
+        error: function(xhr, textStatus) {
+            var title = 'Report export failed';
+            var detail = 'The report could not be generated. Try again.';
+            if (textStatus === 'timeout' || xhr.status === 504) {
+                title = 'Shodan request timed out';
+                detail = 'Shodan did not respond within 30 seconds. No report was created.';
+            } else if (xhr.status === 429) {
+                var retryAfter = parseInt(xhr.getResponseHeader('Retry-After') || '0', 10);
+                title = 'Shodan rate limit reached';
+                detail = retryAfter > 0 ? 'Try again in ' + retryAfter + ' seconds.' : 'Wait before retrying the export.';
+            } else if (xhr.status === 404) {
+                title = 'No exportable evidence';
+                detail = 'No report data was found for this search scope.';
+            }
+            setExportStatus('error', title, detail);
+            $buttons.prop('disabled', false);
+            $button.text('Retry ' + format);
+        }
+    });
 });
 
 // Exploit dropdown change → fetch and render the info panel

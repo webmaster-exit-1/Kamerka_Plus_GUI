@@ -1882,8 +1882,9 @@ def shodan_scan_task(id):
 
         return {"current": total, "total": total, "percent": 100}
 
-    except Exception as e:
-        print(e.args)
+    except Exception:
+        logger.exception("Shodan host scan failed for device %s", id)
+        raise
 
 
 ics_scan = {

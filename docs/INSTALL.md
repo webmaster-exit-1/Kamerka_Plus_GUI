@@ -26,7 +26,7 @@ chmod +x scripts/install_kamerka.py   # once
 ```
 
 | Flag | Purpose |
-|------|---------|
+| ------ | --------- |
 | `--venv` | Create `.venv` and install dependencies into it |
 | `--yes` | Non-interactive (CI/lab automation): uses `SHODAN_API_KEY`, `DJANGO_SUPERUSER_*` from the environment |
 | `--no-seed` | Skip `seed_layers` and `import_feeds_opml` |
@@ -83,7 +83,7 @@ docker run -e SHODAN_API_KEY=your_key ...
 ### API Keys
 
 | Variable | Required | Description |
-|---|---|---|
+| --- |---|---|
 | `SHODAN_API_KEY` | ✅ | Shodan paid-account API key |
 | `NVD_API_KEY` | optional | NIST NVD API key — raises rate limit from 5 to 50 req/30 s ([request one here](https://nvd.nist.gov/developers/request-an-api-key)) |
 | `DJANGO_SECRET_KEY` | optional | Override the auto-generated Django secret key |
@@ -93,7 +93,7 @@ docker run -e SHODAN_API_KEY=your_key ...
 These are only needed if the tools are not on your `$PATH`.  See [docs/ARCHITECTURE.md](ARCHITECTURE.md) for full details.
 
 | Variable | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `KAMERKA_NAABU_BIN` | `naabu` | Path to the [Naabu](https://github.com/projectdiscovery/naabu) binary |
 | `KAMERKA_NUCLEI_BIN` | `nuclei` | Path to the [Nuclei](https://github.com/projectdiscovery/nuclei) binary |
 | `KAMERKA_WAPPALYZER_BIN` | `wappalyzer` | Path to the [Wappalyzer](https://github.com/AliasIO/wappalyzer) binary |
@@ -175,7 +175,7 @@ currently used but may be useful for custom enrichment.
 A default superuser is created automatically when you run the `create_default_superuser` management command.
 
 | Setting | Default value |
-|---------|---------------|
+| --------- | --------------- |
 | Username | `admin` |
 | Email | `admin@example.com` |
 | Password | Randomly generated (20 characters) |
@@ -183,16 +183,19 @@ A default superuser is created automatically when you run the `create_default_su
 **The generated password is not printed to the console by default** (to prevent credential leakage in logs).
 
 To display the generated password during creation:
+
 ```bash
 DJANGO_SUPERUSER_PRINT_PASSWORD=true python3 manage.py create_default_superuser
 ```
 
 To set your own password instead of using a generated one:
+
 ```bash
 DJANGO_SUPERUSER_PASSWORD=your_password python3 manage.py create_default_superuser
 ```
 
 **To change the admin password after creation**, run:
+
 ```bash
 python3 manage.py changepassword admin
 ```
@@ -234,12 +237,11 @@ redis-server
 
 The server should be available at `http://localhost:8000/`
 
-## Database — PostgreSQL (Recommended for Production)
+## Database — PostgreSQL (Required)
 
-The default database is SQLite, which works well for single-user setups.
-For multi-worker Celery deployments or heavy concurrent usage, switch to **PostgreSQL**.
-See [docs/DATABASE.md](DATABASE.md) for a detailed discussion of SQLite concurrency
-limitations and the full migration guide.
+PostgreSQL is required because the application runs Django, Celery workers, and
+Celery beat concurrently. See [docs/DATABASE.md](DATABASE.md) for the connection
+configuration.
 
 ### Quick PostgreSQL setup
 
@@ -267,13 +269,13 @@ createuser --createdb kamerka
 createdb -O kamerka kamerka
 ```
 
-2. Ensure Python dependencies are installed (includes PostgreSQL adapter):
+1. Ensure Python dependencies are installed (includes PostgreSQL adapter):
 
 ```bash
 pip3 install -r requirements.txt
 ```
 
-3. Export the database environment variables before starting Django and Celery:
+1. Export the database environment variables before starting Django and Celery:
 
 ```bash
 export DB_NAME=kamerka
@@ -283,20 +285,21 @@ export DB_HOST=localhost
 export DB_PORT=5432
 ```
 
-4. Start Django/Celery with those environment variables set.
-   `kamerka/settings.py` switches to PostgreSQL automatically when `DB_NAME` is present.
+1. Start Django/Celery with those environment variables set.
 
-5. Run migrations:
+2. Run migrations:
 
 ```bash
 python3 manage.py migrate
 ```
 
-## Running Tests
+## Runtime Validation
 
 ```bash
-python3 manage.py test app_kamerka -v2
+python3 manage.py check
 ```
+
+The repository does not include a persistent automated test suite. CI validates Django system checks, Nuclei template syntax, and the installed security-tool versions. Create focused temporary tests when changing behavior that needs automated coverage.
 
 ---
 
@@ -355,7 +358,7 @@ celery --app kamerka beat --loglevel=info &
 ### New API endpoints
 
 | Endpoint | Description |
-|---|---|
+| --- | --- |
 | `GET /api/layers/` | List all enabled data layers (shared metadata for map/globe) |
 | `GET /api/layers/?view=map|globe` | Filter shared layer catalog by frontend view |
 | `GET /api/layers/<slug>/features.json` | GeoJSON features for a layer (`?bbox=min_lon,min_lat,max_lon,max_lat` and `?limit=N` optional filters) |
@@ -381,14 +384,18 @@ The dashboard (`/index`) now includes a **Live Intelligence Feed** panel and a
 To use this effectively:
 
 1. Seed feed sources:
+
    ```bash
    python3 manage.py import_feeds_opml
+
 # or legacy curated list: python3 manage.py seed_feeds
+
    ```
 2. Run worker + beat so feeds are ingested periodically:
    ```bash
    celery --app kamerka worker --beat --loglevel=info
    ```
+
 3. Open `/index` and monitor the live panel.
 
 <details>
@@ -412,9 +419,7 @@ export SHODAN_API_KEY=your_key_here
 export DJANGO_SECRET_KEY=your_secret_key_here
 ```
 
-SQLite is used by default — no database setup needed for a basic install.
-To use PostgreSQL instead, set up the database first (see the PostgreSQL section
-above for the `pkg install postgresql` / no-sudo steps) then also export:
+For Termux, set up PostgreSQL first (see the PostgreSQL section above) and export:
 
 ```
 export DB_NAME=kamerka

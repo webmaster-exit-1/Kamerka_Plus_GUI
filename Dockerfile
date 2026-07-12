@@ -21,7 +21,7 @@ ARG NAABU_VERSION=2.3.3
 ARG TARGETARCH=amd64
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl unzip ca-certificates nodejs npm \
+    && apt-get install -y --no-install-recommends curl unzip ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # nuclei
@@ -38,9 +38,6 @@ RUN curl -sSL "https://github.com/projectdiscovery/naabu/releases/download/v${NA
     && chmod +x /usr/local/bin/naabu \
     && rm /tmp/naabu.zip
 
-# wappalyzer-cli
-RUN npm install -g wappalyzer
-
 FROM python:3.12-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -49,15 +46,26 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq5 nmap nodejs npm \
+    && apt-get install -y --no-install-recommends \
+        libpq5 \
+        nmap \
+        chromium \
+        libasound2 \
+        libgbm1 \
+        libglib2.0-0 \
+        libgtk-3-0 \
+        libnss3 \
+        libx11-6 \
+        libxcb1 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxfixes3 \
+        libxrandr2 \
+        fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=tools /usr/local/bin/nuclei /usr/local/bin/nuclei
 COPY --from=tools /usr/local/bin/naabu /usr/local/bin/naabu
-COPY --from=tools /usr/local/lib/node_modules /usr/local/lib/node_modules
-RUN ln -sf /usr/local/lib/node_modules/wappalyzer/cli.js /usr/local/bin/wappalyzer \
-    && chmod +x /usr/local/bin/wappalyzer
-
 COPY --from=builder /wheels /wheels
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir /wheels/*

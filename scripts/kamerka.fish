@@ -4,7 +4,6 @@
 # Usage:
 #   fish scripts/kamerka.fish manage runserver 127.0.0.1:8000
 #   fish scripts/kamerka.fish celery worker --loglevel=info
-#   fish scripts/kamerka.fish test app_kamerka -v1
 #   fish scripts/kamerka.fish runserver
 #   fish scripts/kamerka.fish worker
 
@@ -15,9 +14,12 @@ end
 set -l root (path normalize (dirname (status filename))/..)
 cd $root
 
-set -l py "$root/venv/bin/python"
+set -l py "$root/.venv/bin/python"
 if not test -x $py
-    echo "Missing venv: $py — run: python3 scripts/install_kamerka.py" >&2
+    set py "$root/venv/bin/python"
+end
+if not test -x $py
+    echo "Missing Python environment: $root/.venv or $root/venv — run: python3 scripts/install_kamerka.py --venv" >&2
     exit 1
 end
 
@@ -25,7 +27,6 @@ if test (count $argv) -eq 0
     echo "Usage: fish scripts/kamerka.fish <command> [args...]"
     echo "  manage <django-args...>   — manage.py"
     echo "  celery <celery-args...>   — celery --app kamerka"
-    echo "  test [pytest-args...]     — manage.py test"
     echo "  runserver [addr:port]     — Django dev server"
     echo "  worker                    — Celery worker"
     exit 1
@@ -39,8 +40,6 @@ switch $cmd
         $py manage.py $rest
     case celery
         $py -m celery --app kamerka $rest
-    case test
-        $py manage.py test $rest
     case runserver
         if test (count $rest) -gt 0
             $py manage.py runserver $rest

@@ -3,10 +3,11 @@ services:
     profiles: ["dev"]
     environment:
       DEBUG: "True"
-      DB_NAME: ""
-      DB_USER: ""
-      DB_PASSWORD: ""
-      DB_PORT: ""
+      DB_NAME: kamerka
+      DB_USER: kamerka
+      DB_PASSWORD: kamerka
+      DB_PORT: "5432"
+      DB_HOST: postgres
       ALLOWED_HOSTS: localhost,127.0.0.1
     volumes:
       - ./:/app
@@ -18,10 +19,11 @@ services:
     profiles: ["dev"]
     environment:
       DEBUG: "True"
-      DB_NAME: ""
-      DB_USER: ""
-      DB_PASSWORD: ""
-      DB_PORT: ""
+      DB_NAME: kamerka
+      DB_USER: kamerka
+      DB_PASSWORD: kamerka
+      DB_PORT: "5432"
+      DB_HOST: postgres
     volumes:
       - ./:/app
       - media_data:/app/scans
@@ -31,10 +33,11 @@ services:
     profiles: ["dev"]
     environment:
       DEBUG: "True"
-      DB_NAME: ""
-      DB_USER: ""
-      DB_PASSWORD: ""
-      DB_PORT: ""
+      DB_NAME: kamerka
+      DB_USER: kamerka
+      DB_PASSWORD: kamerka
+      DB_PORT: "5432"
+      DB_HOST: postgres
     volumes:
       - ./:/app
       - media_data:/app/scans

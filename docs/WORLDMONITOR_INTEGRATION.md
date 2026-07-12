@@ -59,7 +59,7 @@ app_feeds/    — RSS/news feed ingestion, AI briefs, SSE streaming
 ```
 Celery Beat → app_layers.tasks.refresh_layer()
                     → fetch public API (USGS / OSM / TeleGeography …)
-                    → upsert LayerFeature records in SQLite
+                    → upsert LayerFeature records in PostgreSQL
                     → redis.publish("layer_updated", layer_slug)
 
 Celery Beat → app_feeds.tasks.refresh_feeds()

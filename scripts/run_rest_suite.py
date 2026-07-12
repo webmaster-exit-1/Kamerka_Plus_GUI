@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run remaining Kamerka device workbench tools (recon/OSINT, not exploit).
 
-Prefer GUI-driven tests:  ./venv/bin/python scripts/gui_e2e_playwright.py workbench <device_id>
+Prefer GUI-driven validation:  ./.venv/bin/python scripts/gui_e2e_playwright.py workbench <device_id>
 """
 import json
 import os

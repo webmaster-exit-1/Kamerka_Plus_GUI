@@ -1663,7 +1663,10 @@ def export_csv(request, id):
 
     fd, output_path = tempfile.mkstemp(suffix=".csv")
     os.close(fd)
-    shodan_csv_export(id, output_path)
+    try:
+        shodan_csv_export(id, output_path)
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError) as exc:
+        _views_logger.warning("Shodan CSV conversion failed for search %s: %s", id, exc)
     try:
         try:
             with open(output_path, "r", encoding="utf-8", errors="strict") as f:
@@ -1672,7 +1675,11 @@ def export_csv(request, id):
             with open(output_path, "r", encoding="latin-1", errors="strict") as f:
                 content = f.read()
         lines = [line for line in content.splitlines() if line.strip()]
-        if len(lines) <= 1 and Device.objects.filter(search_id=id).exists():
+        search_devices = list(Device.objects.filter(search_id=id))
+        has_current_device = any(
+            device.ip and device.ip in content for device in search_devices
+        )
+        if (len(lines) <= 1 or not has_current_device) and search_devices:
             out = io.StringIO()
             writer = csv.DictWriter(
                 out,
@@ -1689,7 +1696,7 @@ def export_csv(request, id):
                 ],
             )
             writer.writeheader()
-            for device in Device.objects.filter(search_id=id):
+            for device in search_devices:
                 writer.writerow(
                     {
                         "ip_str": device.ip or "",
@@ -1721,7 +1728,10 @@ def export_kml(request, id):
 
     fd, output_path = tempfile.mkstemp(suffix=".kml")
     os.close(fd)
-    shodan_kml_export(id, output_path)
+    try:
+        shodan_kml_export(id, output_path)
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError) as exc:
+        _views_logger.warning("Shodan KML conversion failed for search %s: %s", id, exc)
     try:
         try:
             with open(output_path, "r", encoding="utf-8", errors="strict") as f:
@@ -1771,7 +1781,31 @@ def export_json(request, id):
     GeoJSON FeatureCollection that can be loaded directly into the built-in
     globe, QGIS, Kepler.gl, or any GeoJSON-aware tool.
     """
-    geojson_str = shodan_json_export(id)
+    try:
+        geojson_str = shodan_json_export(id)
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError) as exc:
+        _views_logger.warning("Shodan GeoJSON conversion failed for search %s: %s", id, exc)
+        features = []
+        for device in Device.objects.filter(search_id=id):
+            lat = _safe_coord(device.lat)
+            lon = _safe_coord(device.lon)
+            if lat is None or lon is None:
+                continue
+            features.append({
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                "properties": {
+                    "ip": device.ip or "",
+                    "port": device.port or "",
+                    "org": device.org or "",
+                    "product": device.product or "",
+                    "type": device.type or "",
+                    "country_code": device.country_code or "",
+                    "city": device.city or "",
+                    "vulns": device.vulns or "",
+                },
+            })
+        geojson_str = json.dumps({"type": "FeatureCollection", "features": features})
     response = HttpResponse(geojson_str, content_type="application/geo+json")
     response["Content-Disposition"] = (
         'attachment; filename="shodan_export_{}.geojson"'.format(id)

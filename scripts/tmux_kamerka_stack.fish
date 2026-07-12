@@ -29,7 +29,7 @@ tmux send-keys -t "$session:stack.0" "fish $root/scripts/kamerka.fish runserver"
 tmux send-keys -t "$session:stack.1" "fish $root/scripts/kamerka.fish worker" C-m
 tmux send-keys -t "$session:stack.2" "fish $root/scripts/kamerka.fish celery beat --loglevel=info" C-m
 tmux send-keys -t "$session:stack.3" \
-    "while true; curl -sS -m 3 -H 'X-Requested-With: XMLHttpRequest' http://127.0.0.1:8000/api/worker_status 2>/dev/null | python3 -m json.tool; echo '---'; sleep 15; end" C-m
+    "fish -c \"while true; curl -sS -m 3 -H 'X-Requested-With: XMLHttpRequest' http://127.0.0.1:8000/api/worker_status 2>/dev/null | python3 -m json.tool; echo '---'; sleep 15; end\"" C-m
 
 echo "Started tmux session '$session' (4 panes)."
 echo "  tmux attach -t $session"

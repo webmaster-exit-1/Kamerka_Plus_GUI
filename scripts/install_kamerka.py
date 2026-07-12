@@ -447,10 +447,31 @@ def main() -> None:
         env["ALLOWED_HOSTS"] = _safe_env_value(hosts, "ALLOWED_HOSTS")
         redis = _prompt("REDIS_URL", env.get("REDIS_URL", "redis://localhost:6379"))
         env["REDIS_URL"] = _safe_env_value(redis, "REDIS_URL")
+        print("\nPostgreSQL connection:")
+        env["DB_NAME"] = _safe_env_value(
+            _prompt("DB_NAME", env.get("DB_NAME", "kamerka")), "DB_NAME"
+        )
+        env["DB_USER"] = _safe_env_value(
+            _prompt("DB_USER", env.get("DB_USER", "kamerka")), "DB_USER"
+        )
+        env["DB_PASSWORD"] = _safe_env_value(
+            _prompt("DB_PASSWORD", env.get("DB_PASSWORD", ""), secret=True), "DB_PASSWORD"
+        )
+        env["DB_HOST"] = _safe_env_value(
+            _prompt("DB_HOST", env.get("DB_HOST", "localhost")), "DB_HOST"
+        )
+        env["DB_PORT"] = _safe_env_value(
+            _prompt("DB_PORT", env.get("DB_PORT", "5432")), "DB_PORT"
+        )
     else:
         env.setdefault("DEBUG", "False")
         env.setdefault("ALLOWED_HOSTS", "localhost,127.0.0.1")
         env.setdefault("REDIS_URL", "redis://localhost:6379")
+        env.setdefault("DB_NAME", "kamerka")
+        env.setdefault("DB_USER", "kamerka")
+        env.setdefault("DB_PASSWORD", "")
+        env.setdefault("DB_HOST", "localhost")
+        env.setdefault("DB_PORT", "5432")
 
     env = collect_api_keys(interactive, env)
 
@@ -519,7 +540,6 @@ def main() -> None:
             • HexSploit: http://127.0.0.1:8000/hexsploit/
             • Admin:    http://127.0.0.1:8000/admin/
 
-            Tests: {python} manage.py test app_kamerka -v1
             """
         ).strip()
     )

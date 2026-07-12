@@ -18,11 +18,12 @@ Modernized fork of [Kamerka-GUI](https://github.com/woj-ciech/Kamerka-GUI) for a
 | ------ | ------------ |
 | **Maps** | **2D** Leaflet + OpenStreetMap (no API key). **3D** [`/map3d`](http://127.0.0.1:8000/map3d) via MapLibre + [OpenFreeMap](https://openfreemap.org/) by default; optional `MAPBOX_ACCESS_TOKEN` for richer building meshes. GeoJSON / KML / CSV exports for QGIS, Kepler.gl, SandDance. Legacy `/globe` redirects to the web 3D map; optional **PyVista + PyQt6** desktop globe still available. |
 | **Intel** | RSS/Atom ingestion (`feedparser`), OPML import (bundled + your Feeder export), **Feed Intel** panel + **Region Brief** (Ollama or extractive summariser). Plain-text briefs — no raw HTML tags in the UI. |
+| **Exploit & CVE workspace** | Per-device identity, CVE context, exploit actions, Shodan evidence, risk context, and export status in one workflow. |
 | **Workbench** | Per-device tools: Nmap, Nuclei, Wappalyzer, RTSP, Shodan intel, NVD/NRICH, honeypot heuristics, screenshots, ExploitDB, bulk actions, risk score + layer context. |
 | **HexSploit** | Optional [HexStrike](https://github.com/0x4m4/hexstrike-ai) bridge at `/hexsploit/` — health, tool catalog, smart scan (requires local HexStrike server). |
 | **Ops** | Celery progress in UI, **Tasks** registry with orphan/stale reconciliation, watchlists, setup health check, Fish stack helpers under `scripts/`. |
 | **Verification** | Tiered pipeline: InternetDB (free) → Naabu → Shodan, with credit reporting; honeypot cluster filtering on dense /24 banners. |
-| **Security & config** | API keys via environment / `.env` (no `keys.json`); interactive [`scripts/install_kamerka.py`](scripts/install_kamerka.py) wizard; 225+ automated tests. |
+| **Security & config** | API keys via environment / `.env` (no `keys.json`); interactive [`scripts/install_kamerka.py`](scripts/install_kamerka.py) wizard; CI runs Django system and security-tool checks. |
 
 ---
 
@@ -32,9 +33,12 @@ Modernized fork of [Kamerka-GUI](https://github.com/woj-ciech/Kamerka-GUI) for a
 | ---------- | ------------- |
 | [docs/INSTALL.md](docs/INSTALL.md) | Full install, `.env` / API keys, external tools (Nmap, Nuclei, Naabu, Wappalyzer), PostgreSQL, Android/Termux |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Celery/Redis, verification pipeline, tool paths, map layers |
-| [docs/DATABASE.md](docs/DATABASE.md) | SQLite WAL notes and PostgreSQL migration |
-| [docs/docker.md](docs/docker.md) | Docker Compose stack (web, Redis, Celery, beat, optional Postgres) |
+| [docs/DATABASE.md](docs/DATABASE.md) | PostgreSQL configuration and concurrency requirements |
+| [docs/docker.md](docs/docker.md) | Docker Compose stack (web, Redis, Celery, beat, PostgreSQL) |
 | [docs/WORLDMONITOR_INTEGRATION.md](docs/WORLDMONITOR_INTEGRATION.md) | Feed layers, SSE, briefs, and layer architecture (WorldMonitor-inspired, original code) |
+| [docs/ux/exploit-workspace-jtbd.md](docs/ux/exploit-workspace-jtbd.md) | Jobs-to-be-done and acceptance criteria for the Exploit & CVE workspace |
+| [docs/ux/exploit-workspace-journey.md](docs/ux/exploit-workspace-journey.md) | Analyst journey from device evidence to export |
+| [docs/ux/exploit-workspace-flow.md](docs/ux/exploit-workspace-flow.md) | Figma-ready interaction flow and export state machine |
 
 ---
 
@@ -50,13 +54,14 @@ Modernized fork of [Kamerka-GUI](https://github.com/woj-ciech/Kamerka-GUI) for a
 - **Paginated device registry** — `/devices` scales to thousands of rows
 - **Task audit trail** — `/tasks` syncs with Celery; stale/orphan jobs auto-marked failed
 - **Watchlists** — scheduled Shodan re-runs
-- **Exports** — CSV, KML, JSON, GeoJSON for cases and 3D map
+- **Exploit & CVE workspace** — connect device evidence, vulnerabilities, exploit actions, and report scope
+- **Exports** — Shodan's `convert` utility is the primary CSV/KML/GeoJSON path, with validated device/search fallbacks when conversion is unavailable
 
 ---
 
 ## Quick start (recommended)
 
-**Requirements:** Python 3.10+, Redis, Shodan API key. Optional: Nmap, Nuclei, Naabu, Ollama, HexStrike.
+**Requirements:** Python 3.10+, PostgreSQL, Redis, Shodan API key. Optional: Nmap, Nuclei, Naabu, Ollama, HexStrike.
 
 ```bash
 git clone https://github.com/webmaster-exit-1/Kamerka_Plus_GUI.git
@@ -78,7 +83,7 @@ python3 manage.py runserver 127.0.0.1:8000
 celery --app kamerka worker --beat --loglevel=info
 ```
 
-**Open:** [http://127.0.0.1:8000/](http://127.0.0.1:8000/) (search) · [http://127.0.0.1:8000/index](http://127.0.0.1:8000/index) (overview + Feed Intel / Region Brief) · [http://127.0.0.1:8000/map3d](http://127.0.0.1:8000/map3d)
+**Open:** [http://127.0.0.1:8000/](http://127.0.0.1:8000/) (search) · [http://127.0.0.1:8000/index](http://127.0.0.1:8000/index) (overview + Feed Intel / Region Brief) · [http://127.0.0.1:8000/map3d](http://127.0.0.1:8000/map3d) · select a device to open its Exploit & CVE workspace
 
 ### Import your RSS feeds (Feeder OPML)
 
@@ -112,7 +117,7 @@ python3 manage.py reconcile_task_runs
 ```bash
 cp .env.example .env
 # Edit SHODAN_API_KEY, DJANGO_SECRET_KEY, etc.
-docker compose --profile postgres up --build
+docker compose --profile dev up --build
 ```
 
 See [docs/docker.md](docs/docker.md) for profiles, volumes, and migrations.
@@ -151,6 +156,8 @@ REDIS_URL=redis://localhost:6379
 | `SHODAN_API_KEY` | Required for Shodan searches and scans |
 | `NVD_API_KEY` | Optional — higher NVD rate limits |
 | `OLLAMA_HOST` | Optional — AI region briefs (`http://localhost:11434`) |
+| `HEXSPLOIT_OLLAMA_SERVER_URL` | Optional — Ollama endpoint for HexSploit chain planning |
+| `HEXSPLOIT_OLLAMA_MODEL` | Optional — Ollama model for HexSploit (default `DeepHat/DeepHat-V1-7B:latest`) |
 | `MAPBOX_ACCESS_TOKEN` | Optional — enhanced 3D buildings on `/map3d` |
 | `HEXSTRIKE_SERVER_URL` | Optional — HexSploit backend (default `http://127.0.0.1:8888`) |
 | `TASK_RUN_STALE_MINUTES` | Mark orphaned pending tasks failed (default `90`) |
