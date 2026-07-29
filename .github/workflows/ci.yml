@@ -17,9 +17,27 @@ jobs:
     env:
       DJANGO_SECRET_KEY: "ci-only-not-a-real-secret-key"
       SHODAN_API_KEY: ${{ secrets.SHODAN_API_KEY }}
+      DB_NAME: kamerka
+      DB_USER: kamerka
+      DB_PASSWORD: kamerka
+      DB_HOST: localhost
+      DB_PORT: "5432"
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: kamerka
+          POSTGRES_USER: kamerka
+          POSTGRES_PASSWORD: kamerka
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kamerka -d kamerka"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
       redis:
         image: redis:7
         ports:
@@ -75,4 +93,3 @@ jobs:
         naabu -version
         nuclei -version
         pip show wappalyzer
-
