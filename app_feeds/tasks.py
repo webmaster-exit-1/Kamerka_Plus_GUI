@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import re
+import threading
 from collections import OrderedDict, defaultdict
 from typing import Dict, List, Optional, Tuple
 
@@ -41,6 +42,7 @@ _TRANSLATION_CACHE: "OrderedDict[str, str]" = OrderedDict()
 _MAX_GEOCODE_CACHE_SIZE = 2000
 _MAX_TRANSLATION_CACHE_SIZE = 4000
 GLOBAL_BRIEF_ALIASES = {"GLOBAL", "ALL", "WORLD", "*"}
+_CACHE_LOCK = threading.Lock()
 
 _COORDINATE_PATTERN = re.compile(
     r"(?P<lat>[+-]?(?:90(?:\.0+)?|[1-8]?\d(?:\.\d+)?))\s*[,/]\s*"
@@ -59,6 +61,24 @@ def _get_max_entries() -> int:
     """Return the configured FEED_MAX_ENTRIES value from Django settings."""
     from django.conf import settings
     return getattr(settings, "FEED_MAX_ENTRIES", 500)
+
+
+def _get_max_translation_calls() -> int:
+    from django.conf import settings
+
+    return int(getattr(settings, "FEED_TRANSLATION_MAX_CALLS", 60))
+
+
+def _get_translation_endpoint() -> str:
+    from django.conf import settings
+
+    return str(
+        getattr(
+            settings,
+            "FEED_TRANSLATE_URL",
+            "https://translate.argosopentech.com/translate",
+        )
+    ).strip()
 
 
 def _extract_country_codes(text: str) -> List[str]:
@@ -103,48 +123,60 @@ def _is_probably_english(text: str, language_hint: str = "") -> bool:
 
 
 def _bounded_cache_set(cache_obj: OrderedDict, key: str, value, max_size: int) -> None:
-    cache_obj[key] = value
-    cache_obj.move_to_end(key)
-    while len(cache_obj) > max_size:
-        cache_obj.popitem(last=False)
+    with _CACHE_LOCK:
+        cache_obj[key] = value
+        cache_obj.move_to_end(key)
+        while len(cache_obj) > max_size:
+            cache_obj.popitem(last=False)
 
 
-def _translate_to_english(text: str, language_hint: str = "") -> str:
+def _translate_to_english(
+    text: str, language_hint: str = "", budget: Optional[Dict[str, int]] = None
+) -> str:
     text = (text or "").strip()
     if not text:
         return text
     if _is_probably_english(text, language_hint):
         return text
     cache_key = f"{language_hint}|{text[:1000]}"
-    cached = _TRANSLATION_CACHE.get(cache_key)
+    with _CACHE_LOCK:
+        cached = _TRANSLATION_CACHE.get(cache_key)
+        if cached is not None:
+            _TRANSLATION_CACHE.move_to_end(cache_key)
     if cached is not None:
-        _TRANSLATION_CACHE.move_to_end(cache_key)
         return cached
+    if budget is not None and budget.get("remaining", 0) <= 0:
+        return text
 
     try:
         import requests
 
-        params = {
-            "client": "gtx",
-            "sl": "auto",
-            "tl": "en",
-            "dt": "t",
-            "q": text[:4500],
-        }
-        response = requests.get(
-            "https://translate.googleapis.com/translate_a/single",
-            params=params,
+        endpoint = _get_translation_endpoint()
+        if not endpoint:
+            return text
+        response = requests.post(
+            endpoint,
+            json={
+                "q": text[:4500],
+                "source": "auto",
+                "target": "en",
+                "format": "text",
+            },
             timeout=6,
         )
         response.raise_for_status()
         payload = response.json()
-        translated = "".join(chunk[0] for chunk in (payload[0] or []) if chunk and chunk[0]).strip()
+        translated = str(payload.get("translatedText") or "").strip()
         if translated:
             _bounded_cache_set(_TRANSLATION_CACHE, cache_key, translated, _MAX_TRANSLATION_CACHE_SIZE)
+            if budget is not None:
+                budget["remaining"] = max(0, budget.get("remaining", 0) - 1)
             return translated
     except Exception:
         logger.debug("Feed translation failed", exc_info=True)
 
+    if budget is not None:
+        budget["remaining"] = max(0, budget.get("remaining", 0) - 1)
     _bounded_cache_set(_TRANSLATION_CACHE, cache_key, text, _MAX_TRANSLATION_CACHE_SIZE)
     return text
 
@@ -161,6 +193,7 @@ def refresh_feeds(self) -> str:
 
     sources = FeedSource.objects.filter(active=True)
     total_new = 0
+    translation_budget = {"remaining": _get_max_translation_calls()}
 
     for src in sources:
         try:
@@ -188,8 +221,8 @@ def refresh_feeds(self) -> str:
             title = html_to_plain(entry.get("title", ""), max_len=500)
             summary = html_to_plain(entry.get("summary", ""), max_len=5000)
             entry_language_hint = entry.get("language") or feed_language_hint
-            title = _translate_to_english(title, entry_language_hint)[:500]
-            summary = _translate_to_english(summary, entry_language_hint)[:5000]
+            title = _translate_to_english(title, entry_language_hint, budget=translation_budget)[:500]
+            summary = _translate_to_english(summary, entry_language_hint, budget=translation_budget)[:5000]
             url = entry.get("link", "")[:500]
 
             # Parse published date
@@ -411,6 +444,9 @@ def _entries_for_global(max_entries: int = 40) -> list:
     )
 
     for entry in recent_entries:
+        if not entry.source:
+            fallback.append(entry)
+            continue
         countries = [
             code.strip().upper()
             for code in (entry.geo_countries or "").split(",")
@@ -494,16 +530,19 @@ def _extract_address_candidate(text: str) -> Optional[str]:
 def _geocode_address(address: str) -> Optional[Tuple[float, float]]:
     if not address:
         return None
-    if address in _GEOCODE_CACHE:
-        _GEOCODE_CACHE.move_to_end(address)
-        return _GEOCODE_CACHE[address]
+    with _CACHE_LOCK:
+        if address in _GEOCODE_CACHE:
+            _GEOCODE_CACHE.move_to_end(address)
+            return _GEOCODE_CACHE[address]
 
     global _NOMINATIM_GEOCODER
     try:
         if _NOMINATIM_GEOCODER is None:
-            from geopy.geocoders import Nominatim
+            with _CACHE_LOCK:
+                if _NOMINATIM_GEOCODER is None:
+                    from geopy.geocoders import Nominatim
 
-            _NOMINATIM_GEOCODER = Nominatim(user_agent="kamerka_feeds_geo")
+                    _NOMINATIM_GEOCODER = Nominatim(user_agent="kamerka_feeds_geo")
         location = _NOMINATIM_GEOCODER.geocode(address, timeout=5)
         if location:
             coords = (float(location.latitude), float(location.longitude))
