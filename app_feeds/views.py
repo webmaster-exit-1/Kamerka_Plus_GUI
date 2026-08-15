@@ -19,16 +19,15 @@ from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.http import require_GET, require_POST
 
 from app_feeds.models import Brief, FeedEntry
+from app_feeds.tasks import GLOBAL_BRIEF_ALIASES
 from app_feeds.text_utils import html_to_plain
 
 logger = logging.getLogger(__name__)
 
-_GLOBAL_BRIEF_ALIASES = {"GLOBAL", "ALL", "WORLD", "*"}
-
 
 def _normalize_brief_region(region: str) -> str:
     normalized = (region or "").strip().upper()
-    if normalized in _GLOBAL_BRIEF_ALIASES:
+    if normalized in GLOBAL_BRIEF_ALIASES:
         return "GLOBAL"
     return normalized
 

@@ -13,7 +13,7 @@ import json
 import logging
 import os
 import re
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from typing import Dict, List, Optional, Tuple
 
 from celery import shared_task
@@ -36,7 +36,11 @@ _CENTROIDS = {
 
 _MAX_ENTRIES = None  # resolved lazily from settings to respect runtime config
 _NOMINATIM_GEOCODER = None
-_GEOCODE_CACHE: Dict[str, Optional[Tuple[float, float]]] = {}
+_GEOCODE_CACHE: "OrderedDict[str, Optional[Tuple[float, float]]]" = OrderedDict()
+_TRANSLATION_CACHE: "OrderedDict[str, str]" = OrderedDict()
+_MAX_GEOCODE_CACHE_SIZE = 2000
+_MAX_TRANSLATION_CACHE_SIZE = 4000
+GLOBAL_BRIEF_ALIASES = {"GLOBAL", "ALL", "WORLD", "*"}
 
 _COORDINATE_PATTERN = re.compile(
     r"(?P<lat>[+-]?(?:90(?:\.0+)?|[1-8]?\d(?:\.\d+)?))\s*[,/]\s*"
@@ -48,6 +52,7 @@ _ADDRESS_PATTERN = re.compile(
     r"(?:,\s*[A-Za-z][A-Za-z\s.\-]{1,40}){0,3}",
     flags=re.IGNORECASE,
 )
+_NON_LATIN_PATTERN = re.compile(r"[^\x00-\x7F]")
 
 
 def _get_max_entries() -> int:
@@ -77,6 +82,73 @@ def _extract_country_codes(text: str) -> List[str]:
     return list(dict.fromkeys(found))  # deduplicate, preserve order
 
 
+def _is_probably_english(text: str, language_hint: str = "") -> bool:
+    hint = (language_hint or "").strip().lower()
+    if hint.startswith("en"):
+        return True
+    if not text:
+        return True
+    non_latin = len(_NON_LATIN_PATTERN.findall(text))
+    if non_latin > 0:
+        return False
+    tokens = re.findall(r"[a-z]+", text.lower())
+    if not tokens:
+        return True
+    common_en = {
+        "the", "and", "for", "with", "from", "this", "that", "security",
+        "attack", "vulnerability", "threat", "update", "report", "cyber",
+    }
+    hits = sum(1 for token in tokens if token in common_en)
+    return hits >= 2 or (hits >= 1 and len(tokens) < 12)
+
+
+def _bounded_cache_set(cache_obj: OrderedDict, key: str, value, max_size: int) -> None:
+    cache_obj[key] = value
+    cache_obj.move_to_end(key)
+    while len(cache_obj) > max_size:
+        cache_obj.popitem(last=False)
+
+
+def _translate_to_english(text: str, language_hint: str = "") -> str:
+    text = (text or "").strip()
+    if not text:
+        return text
+    if _is_probably_english(text, language_hint):
+        return text
+    cache_key = f"{language_hint}|{text[:1000]}"
+    cached = _TRANSLATION_CACHE.get(cache_key)
+    if cached is not None:
+        _TRANSLATION_CACHE.move_to_end(cache_key)
+        return cached
+
+    try:
+        import requests
+
+        params = {
+            "client": "gtx",
+            "sl": "auto",
+            "tl": "en",
+            "dt": "t",
+            "q": text[:4500],
+        }
+        response = requests.get(
+            "https://translate.googleapis.com/translate_a/single",
+            params=params,
+            timeout=6,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        translated = "".join(chunk[0] for chunk in (payload[0] or []) if chunk and chunk[0]).strip()
+        if translated:
+            _bounded_cache_set(_TRANSLATION_CACHE, cache_key, translated, _MAX_TRANSLATION_CACHE_SIZE)
+            return translated
+    except Exception:
+        logger.debug("Feed translation failed", exc_info=True)
+
+    _bounded_cache_set(_TRANSLATION_CACHE, cache_key, text, _MAX_TRANSLATION_CACHE_SIZE)
+    return text
+
+
 @shared_task(name="app_feeds.tasks.refresh_feeds", bind=True, max_retries=2)
 def refresh_feeds(self) -> str:
     """Fetch all active FeedSource URLs and upsert new FeedEntry records."""
@@ -100,12 +172,24 @@ def refresh_feeds(self) -> str:
             continue
 
         new_in_source = 0
+        feed_language_hint = ""
+        try:
+            feed_language_hint = (
+                feed.get("feed", {}).get("language")
+                or feed.get("headers", {}).get("content-language")
+                or ""
+            )
+        except Exception:
+            feed_language_hint = ""
         for entry in (feed.entries or [])[:100]:
             entry_id = entry.get("id") or entry.get("link") or ""
             from app_feeds.text_utils import html_to_plain
 
             title = html_to_plain(entry.get("title", ""), max_len=500)
             summary = html_to_plain(entry.get("summary", ""), max_len=5000)
+            entry_language_hint = entry.get("language") or feed_language_hint
+            title = _translate_to_english(title, entry_language_hint)[:500]
+            summary = _translate_to_english(summary, entry_language_hint)[:5000]
             url = entry.get("link", "")[:500]
 
             # Parse published date
@@ -287,7 +371,7 @@ def _region_search_terms(region: str) -> List[str]:
 
 def _is_global_region(region: str) -> bool:
     normalized = (region or "").strip().upper()
-    return normalized in {"GLOBAL", "ALL", "WORLD", "*"}
+    return normalized in GLOBAL_BRIEF_ALIASES
 
 
 def _entries_for_region(region: str, max_entries: int = 10) -> list:
@@ -338,9 +422,7 @@ def _entries_for_global(max_entries: int = 40) -> list:
             if needed_country and entry.pk not in selected_ids:
                 selected.append(entry)
                 selected_ids.add(entry.pk)
-                for country_code in countries:
-                    if per_country_cyber[country_code] < 2:
-                        per_country_cyber[country_code] += 1
+                per_country_cyber[needed_country] += 1
                 if len(selected) >= max_entries:
                     break
                 continue
@@ -413,6 +495,7 @@ def _geocode_address(address: str) -> Optional[Tuple[float, float]]:
     if not address:
         return None
     if address in _GEOCODE_CACHE:
+        _GEOCODE_CACHE.move_to_end(address)
         return _GEOCODE_CACHE[address]
 
     global _NOMINATIM_GEOCODER
@@ -424,12 +507,12 @@ def _geocode_address(address: str) -> Optional[Tuple[float, float]]:
         location = _NOMINATIM_GEOCODER.geocode(address, timeout=5)
         if location:
             coords = (float(location.latitude), float(location.longitude))
-            _GEOCODE_CACHE[address] = coords
+            _bounded_cache_set(_GEOCODE_CACHE, address, coords, _MAX_GEOCODE_CACHE_SIZE)
             return coords
     except Exception:
         logger.debug("Failed to geocode address: %s", address)
 
-    _GEOCODE_CACHE[address] = None
+    _bounded_cache_set(_GEOCODE_CACHE, address, None, _MAX_GEOCODE_CACHE_SIZE)
     return None
 
 

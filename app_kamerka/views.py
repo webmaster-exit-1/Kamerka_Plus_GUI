@@ -719,19 +719,19 @@ def index(request):
 def feeds_briefing(request):
     sources = FeedSource.objects.all().order_by("category", "folder", "name")
     entries = (
-        FeedEntry.objects.select_related("source")
-        .exclude(geo_countries="")
+        FeedEntry.objects.exclude(geo_countries="")
+        .values("geo_countries", "source_id", "source__category")
         .order_by("-published", "-id")[:1000]
     )
 
     cyber_by_country = defaultdict(set)
     for entry in entries:
-        if entry.source.category != "cyber":
+        if entry["source__category"] != "cyber":
             continue
-        for code in str(entry.geo_countries or "").split(","):
+        for code in str(entry.get("geo_countries") or "").split(","):
             normalized = code.strip().upper()
             if len(normalized) == 2 and normalized.isalpha():
-                cyber_by_country[normalized].add(entry.source_id)
+                cyber_by_country[normalized].add(entry["source_id"])
 
     country_coverage = []
     for code, source_ids in cyber_by_country.items():
