@@ -19,9 +19,17 @@ from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.http import require_GET, require_POST
 
 from app_feeds.models import Brief, FeedEntry
+from app_feeds.tasks import GLOBAL_BRIEF_ALIASES
 from app_feeds.text_utils import html_to_plain
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_brief_region(region: str) -> str:
+    normalized = (region or "").strip().upper()
+    if normalized in GLOBAL_BRIEF_ALIASES:
+        return "GLOBAL"
+    return normalized
 
 
 def _require_staff(request):
@@ -130,7 +138,7 @@ def brief_view(request, region: str):
     """Return the latest brief for *region*, generating one if none exists."""
     from app_feeds.tasks import generate_brief, is_brief_pending, mark_brief_pending
 
-    region = (region or "").strip().upper()
+    region = _normalize_brief_region(region)
     brief = Brief.objects.filter(region=region).order_by("-generated_at").first()
     if not brief:
         if not is_brief_pending(region):
@@ -159,7 +167,7 @@ def brief_generate(request, region: str):
 
     from app_feeds.tasks import generate_brief, mark_brief_pending
 
-    region = (region or "").strip().upper()
+    region = _normalize_brief_region(region)
     mark_brief_pending(region)
     task = generate_brief.delay(region)
     return JsonResponse({"task_id": task.id, "region": region})
