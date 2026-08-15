@@ -13,7 +13,8 @@ import json
 import logging
 import os
 import re
-from typing import List, Optional
+from collections import defaultdict
+from typing import Dict, List, Optional, Tuple
 
 from celery import shared_task
 from django.utils import timezone
@@ -34,6 +35,19 @@ _CENTROIDS = {
 }
 
 _MAX_ENTRIES = None  # resolved lazily from settings to respect runtime config
+_NOMINATIM_GEOCODER = None
+_GEOCODE_CACHE: Dict[str, Optional[Tuple[float, float]]] = {}
+
+_COORDINATE_PATTERN = re.compile(
+    r"(?P<lat>[+-]?(?:90(?:\.0+)?|[1-8]?\d(?:\.\d+)?))\s*[,/]\s*"
+    r"(?P<lon>[+-]?(?:180(?:\.0+)?|1[0-7]\d(?:\.\d+)?|[1-9]?\d(?:\.\d+)?))"
+)
+_ADDRESS_PATTERN = re.compile(
+    r"\b\d{1,5}\s+[A-Za-z0-9][A-Za-z0-9\s.\-]{3,80}\s"
+    r"(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Way|Place|Pl|Court|Ct)\b"
+    r"(?:,\s*[A-Za-z][A-Za-z\s.\-]{1,40}){0,3}",
+    flags=re.IGNORECASE,
+)
 
 
 def _get_max_entries() -> int:
@@ -147,28 +161,47 @@ def refresh_feeds(self) -> str:
 
 @shared_task(name="app_feeds.tasks.geo_tag_entries")
 def geo_tag_entries(hours: int = 24) -> str:
-    """Extract country codes from recently fetched entries that lack geo tags."""
+    """Extract country codes and coordinates from recently fetched feed entries."""
     from app_feeds.models import FeedEntry
+    from app_feeds.text_utils import html_to_plain
+    from django.db.models import Q
     from django.utils.timezone import now, timedelta
 
     cutoff = now() - timedelta(hours=hours)
-    qs = FeedEntry.objects.filter(
-        fetched_at__gte=cutoff, geo_countries=""
+    qs = FeedEntry.objects.filter(fetched_at__gte=cutoff).filter(
+        Q(geo_countries="") | Q(geo_lat__isnull=True) | Q(geo_lon__isnull=True)
     )
     tagged = 0
+    mapped = 0
     for entry in qs:
-        text = f"{entry.title} {entry.summary}"
-        codes = _extract_country_codes(text)
-        if codes:
-            entry.geo_countries = ",".join(codes[:10])
-            # Use centroid of first resolved country
-            centroid = _CENTROIDS.get(codes[0])
-            if centroid:
-                entry.geo_lat, entry.geo_lon = centroid
-            entry.save(update_fields=["geo_countries", "geo_lat", "geo_lon"])
-            tagged += 1
+        text = html_to_plain(f"{entry.title} {entry.summary}", max_len=8000)
+        updated_fields = []
 
-    return f"geo_tag_entries: {tagged} entries tagged"
+        if not entry.geo_countries:
+            codes = _extract_country_codes(text)
+            if codes:
+                entry.geo_countries = ",".join(codes[:10])
+                updated_fields.append("geo_countries")
+                tagged += 1
+
+        if entry.geo_lat is None or entry.geo_lon is None:
+            coords = _extract_coordinate_pair(text)
+            if not coords:
+                address = _extract_address_candidate(text)
+                if address:
+                    coords = _geocode_address(address)
+            if not coords and entry.geo_countries:
+                first_code = entry.geo_countries.split(",")[0].strip().upper()
+                coords = _CENTROIDS.get(first_code)
+            if coords:
+                entry.geo_lat, entry.geo_lon = coords
+                updated_fields.extend(["geo_lat", "geo_lon"])
+                mapped += 1
+
+        if updated_fields:
+            entry.save(update_fields=sorted(set(updated_fields)))
+
+    return f"geo_tag_entries: {tagged} entries tagged, {mapped} entries mapped"
 
 
 @shared_task(name="app_feeds.tasks.generate_brief")
@@ -183,12 +216,17 @@ def generate_brief(region: str, max_entries: int = 10) -> str:
     from app_feeds.ai_briefs import generate as _gen
 
     region = (region or "").strip().upper()
+    is_global = _is_global_region(region)
+    brief_scope = "GLOBAL" if is_global else region
     try:
-        entries = _entries_for_region(region, max_entries=max_entries)
+        if is_global:
+            entries = _entries_for_global(max_entries=max(max_entries, 40))
+        else:
+            entries = _entries_for_region(region, max_entries=max_entries)
         if not entries:
-            content = _empty_brief_message(region)
-            Brief.objects.create(region=region, content=content, method="empty")
-            return f"generate_brief: empty brief for {region!r}"
+            content = _empty_brief_message(brief_scope)
+            Brief.objects.create(region=brief_scope, content=content, method="empty")
+            return f"generate_brief: empty brief for {brief_scope!r}"
 
         from app_feeds.text_utils import html_to_plain
 
@@ -196,11 +234,11 @@ def generate_brief(region: str, max_entries: int = 10) -> str:
             f"{html_to_plain(e.title)}: {html_to_plain(e.summary, max_len=300)}"
             for e in entries
         ]
-        content, method = _gen(region, texts)
-        Brief.objects.create(region=region, content=content, method=method)
-        return f"generate_brief: {method} brief created for {region!r}"
+        content, method = _gen(brief_scope, texts)
+        Brief.objects.create(region=brief_scope, content=content, method=method)
+        return f"generate_brief: {method} brief created for {brief_scope!r}"
     finally:
-        _clear_brief_pending(region)
+        _clear_brief_pending(brief_scope)
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +285,11 @@ def _region_search_terms(region: str) -> List[str]:
     return [t for t in terms if t]
 
 
+def _is_global_region(region: str) -> bool:
+    normalized = (region or "").strip().upper()
+    return normalized in {"GLOBAL", "ALL", "WORLD", "*"}
+
+
 def _entries_for_region(region: str, max_entries: int = 10) -> list:
     """Feed rows for a region: geo tag first, then title/summary keyword match."""
     from django.db.models import Q
@@ -266,6 +309,52 @@ def _entries_for_region(region: str, max_entries: int = 10) -> list:
     if not q:
         return []
     return list(FeedEntry.objects.filter(q).order_by("-published")[:max_entries])
+
+
+def _entries_for_global(max_entries: int = 40) -> list:
+    """Prioritize up to 2 cyber entries per country, then fill with latest entries."""
+    from app_feeds.models import FeedEntry
+
+    max_entries = max(10, max_entries)
+    selected = []
+    selected_ids = set()
+    fallback = []
+    per_country_cyber = defaultdict(int)
+    recent_entries = (
+        FeedEntry.objects.select_related("source")
+        .exclude(title="")
+        .order_by("-published", "-id")[:500]
+    )
+
+    for entry in recent_entries:
+        countries = [
+            code.strip().upper()
+            for code in (entry.geo_countries or "").split(",")
+            if len(code.strip()) == 2 and code.strip().isalpha()
+        ] or ["GLOBAL"]
+
+        if entry.source.category == "cyber":
+            needed_country = next((c for c in countries if per_country_cyber[c] < 2), None)
+            if needed_country and entry.pk not in selected_ids:
+                selected.append(entry)
+                selected_ids.add(entry.pk)
+                for country_code in countries:
+                    if per_country_cyber[country_code] < 2:
+                        per_country_cyber[country_code] += 1
+                if len(selected) >= max_entries:
+                    break
+                continue
+        fallback.append(entry)
+
+    for entry in fallback:
+        if entry.pk in selected_ids:
+            continue
+        selected.append(entry)
+        selected_ids.add(entry.pk)
+        if len(selected) >= max_entries:
+            break
+
+    return selected[:max_entries]
 
 
 def _empty_brief_message(region: str) -> str:
@@ -288,11 +377,60 @@ def _empty_brief_message(region: str) -> str:
             "The feed database is empty. Run refresh_feeds or wait for the "
             "hourly Celery task to pull RSS sources."
         )
+    if _is_global_region(region):
+        return (
+            "No feed articles are available for the global briefing.\n\n"
+            "Run refresh_feeds or wait for the hourly Celery task, then "
+            "allow geo_tag_entries to map countries and coordinates."
+        )
     return (
         f"No feed articles matched region {region}.\n\n"
         "Entries may lack geo tags — geo_tag_entries runs hourly. "
         "Try another region from the dropdown or refresh feeds."
     )
+
+
+def _extract_coordinate_pair(text: str) -> Optional[Tuple[float, float]]:
+    for match in _COORDINATE_PATTERN.finditer(text or ""):
+        try:
+            lat = float(match.group("lat"))
+            lon = float(match.group("lon"))
+        except (TypeError, ValueError):
+            continue
+        if -90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0:
+            return lat, lon
+    return None
+
+
+def _extract_address_candidate(text: str) -> Optional[str]:
+    match = _ADDRESS_PATTERN.search(text or "")
+    if not match:
+        return None
+    return match.group(0).strip()
+
+
+def _geocode_address(address: str) -> Optional[Tuple[float, float]]:
+    if not address:
+        return None
+    if address in _GEOCODE_CACHE:
+        return _GEOCODE_CACHE[address]
+
+    global _NOMINATIM_GEOCODER
+    try:
+        if _NOMINATIM_GEOCODER is None:
+            from geopy.geocoders import Nominatim
+
+            _NOMINATIM_GEOCODER = Nominatim(user_agent="kamerka_feeds_geo")
+        location = _NOMINATIM_GEOCODER.geocode(address, timeout=5)
+        if location:
+            coords = (float(location.latitude), float(location.longitude))
+            _GEOCODE_CACHE[address] = coords
+            return coords
+    except Exception:
+        logger.debug("Failed to geocode address: %s", address)
+
+    _GEOCODE_CACHE[address] = None
+    return None
 
 
 def _publish_redis(channel: str, payload: dict) -> None:

@@ -23,6 +23,15 @@ from app_feeds.text_utils import html_to_plain
 
 logger = logging.getLogger(__name__)
 
+_GLOBAL_BRIEF_ALIASES = {"GLOBAL", "ALL", "WORLD", "*"}
+
+
+def _normalize_brief_region(region: str) -> str:
+    normalized = (region or "").strip().upper()
+    if normalized in _GLOBAL_BRIEF_ALIASES:
+        return "GLOBAL"
+    return normalized
+
 
 def _require_staff(request):
     """Return a 403 JSON response unless the requester is an authenticated staff user."""
@@ -130,7 +139,7 @@ def brief_view(request, region: str):
     """Return the latest brief for *region*, generating one if none exists."""
     from app_feeds.tasks import generate_brief, is_brief_pending, mark_brief_pending
 
-    region = (region or "").strip().upper()
+    region = _normalize_brief_region(region)
     brief = Brief.objects.filter(region=region).order_by("-generated_at").first()
     if not brief:
         if not is_brief_pending(region):
@@ -159,7 +168,7 @@ def brief_generate(request, region: str):
 
     from app_feeds.tasks import generate_brief, mark_brief_pending
 
-    region = (region or "").strip().upper()
+    region = _normalize_brief_region(region)
     mark_brief_pending(region)
     task = generate_brief.delay(region)
     return JsonResponse({"task_id": task.id, "region": region})

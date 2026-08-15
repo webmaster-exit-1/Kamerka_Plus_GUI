@@ -5,6 +5,7 @@ from app_kamerka import hexstrike_views
 urlpatterns = [
     path("", views.search_main, name="search_main"),
     path("index", views.index, name="index"),
+    path("feeds-briefing", views.feeds_briefing, name="feeds_briefing"),
     path("history", views.history, name="history"),
     path("watchlists", views.watchlists, name="watchlists"),
     path("watchlists/<int:watchlist_id>/toggle", views.watchlist_toggle, name="watchlist_toggle"),

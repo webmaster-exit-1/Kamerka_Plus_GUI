@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block page_title %}Feeds Briefing - ꓘamerka{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" type="text/css" href="{% static 'css/leaflet.css' %}"/>
+{% endblock %}
+
+{% block content %}
+<ul class="breadcrumb"></ul>
+<div class="page-content-wrap">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="panel panel-default">
+                <div class="panel-heading"><h3 class="panel-title">Global Feeds Briefing</h3></div>
+                <div class="panel-body" style="background-color:#0a141d;">
+                    <div id="cp-brief-status" style="font-family:var(--cp-font,monospace);font-size:0.85em;color:#3a4555;margin-bottom:8px;">
+                        Loading global briefing…
+                    </div>
+                    <div id="cp-brief-content" style="white-space:pre-wrap;word-break:break-word;max-height:240px;overflow-y:auto;background:#050b12;border:1px solid #153046;color:#c9d6e3;padding:8px;font-size:0.86em;font-family:var(--cp-font,monospace);">No brief loaded.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-7">
+            <div class="panel panel-default">
+                <div class="panel-heading"><h3 class="panel-title">Recent Imported Feed Articles</h3></div>
+                <div class="panel-body" style="background-color:#0a141d;">
+                    <div id="cp-feed-status" style="font-family:var(--cp-font,monospace);font-size:0.85em;color:#3a4555;margin-bottom:8px;">
+                        Loading feeds…
+                    </div>
+                    <div id="cp-feed-list" style="max-height:360px;overflow-y:auto;border:1px solid #153046;padding:8px;">
+                        <div style="color:#3a4555;font-family:monospace;">Loading feed entries…</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-5">
+            <div class="panel panel-default">
+                <div class="panel-heading"><h3 class="panel-title">Integrated Feed Map</h3></div>
+                <div class="panel-body panel-body-map">
+                    <div id="cp-feed-map" style="width:100%;height:360px;border:1px solid #153046;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-6">
+            <div class="panel panel-default">
+                <div class="panel-heading"><h3 class="panel-title">Imported Feed Sources</h3></div>
+                <div class="panel-body" style="background-color:#0a141d;max-height:320px;overflow:auto;">
+                    <table class="table table-condensed table-striped">
+                        <thead>
+                            <tr><th>Name</th><th>Category</th><th>Folder</th><th>Status</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for src in feed_sources %}
+                            <tr>
+                                <td><a href="{{ src.url }}" target="_blank" rel="noopener noreferrer">{{ src.name }}</a></td>
+                                <td>{{ src.category|upper }}</td>
+                                <td>{{ src.folder|default:"-" }}</td>
+                                <td>{% if src.active %}active{% else %}inactive{% endif %}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4">No feed sources imported.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="panel panel-default">
+                <div class="panel-heading"><h3 class="panel-title">Cyber Feed Coverage by Country</h3></div>
+                <div class="panel-body" style="background-color:#0a141d;max-height:320px;overflow:auto;">
+                    <div style="font-family:var(--cp-font,monospace);font-size:0.8em;color:#6f8092;margin-bottom:8px;">
+                        Target: at least 2 cyber feeds per country where data is available.
+                    </div>
+                    <table class="table table-condensed table-striped">
+                        <thead>
+                            <tr><th>Country</th><th>Code</th><th>Cyber feeds</th><th>Target</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for item in country_coverage %}
+                            <tr>
+                                <td>{{ item.name }}</td>
+                                <td>{{ item.code }}</td>
+                                <td>{{ item.cyber_feed_count }}</td>
+                                <td>{% if item.meets_target %}<span style="color:#66ff99;">ok</span>{% else %}<span style="color:#ffb366;">needs +{{ item.missing_count }}</span>{% endif %}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4">No mapped cyber feed coverage yet.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/leaflet.js' %}"></script>
+<script>
+(function() {
+    var MAX_SUMMARY_LENGTH = Number('{{ intel_feed_summary_max|default:"200"|escapejs }}');
+    if (!Number.isFinite(MAX_SUMMARY_LENGTH) || MAX_SUMMARY_LENGTH <= 0) {
+        MAX_SUMMARY_LENGTH = 200;
+    }
+    var BRIEF_POLL_MS = 2500;
+    var BRIEF_POLL_MAX = 40;
+    var briefPollTimer = null;
+
+    var feedListEl = document.getElementById('cp-feed-list');
+    var feedStatusEl = document.getElementById('cp-feed-status');
+    var briefStatusEl = document.getElementById('cp-brief-status');
+    var briefContentEl = document.getElementById('cp-brief-content');
+    var mapEl = document.getElementById('cp-feed-map');
+    if (!feedListEl || !feedStatusEl || !briefStatusEl || !briefContentEl || !mapEl) {
+        return;
+    }
+
+    function escHtml(value) {
+        var node = document.createElement('div');
+        node.textContent = (value === null || value === undefined) ? '' : String(value);
+        return node.innerHTML;
+    }
+
+    function formatPublished(value) {
+        if (!value) return 'n/a';
+        var parsed = new Date(value);
+        if (isNaN(parsed.getTime())) return String(value);
+        return parsed.toISOString().replace('T', ' ').replace('Z', ' UTC');
+    }
+
+    function safeHttpUrl(value) {
+        if (!value) return '';
+        try {
+            var parsed = new URL(String(value), window.location.origin);
+            if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                return encodeURI(parsed.href);
+            }
+        } catch (e) {}
+        return '';
+    }
+
+    var map = L.map('cp-feed-map', {minZoom: 1, maxZoom: 17}).setView([20, 0], 2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 17,
+        attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+    var markerLayer = L.layerGroup().addTo(map);
+
+    function renderMarkers(entries) {
+        markerLayer.clearLayers();
+        var markers = [];
+        entries.forEach(function(e) {
+            if (typeof e.geo_lat !== 'number' || typeof e.geo_lon !== 'number') return;
+            var marker = L.marker([e.geo_lat, e.geo_lon]).addTo(markerLayer);
+            var title = escHtml(e.title || '(untitled)');
+            var source = escHtml(e.source || 'unknown');
+            var countries = escHtml(e.geo_countries || '');
+            var link = safeHttpUrl(e.url);
+            var linkHtml = link ? '<a href="' + escHtml(link) + '" target="_blank" rel="noopener noreferrer">open</a>' : '';
+            marker.bindPopup('<b>' + title + '</b><br>[' + source + '] ' + countries + '<br>' + linkHtml);
+            markers.push(marker);
+        });
+        if (markers.length > 0) {
+            var group = L.featureGroup(markers);
+            map.fitBounds(group.getBounds().pad(0.12));
+            return;
+        }
+        map.setView([20, 0], 2);
+    }
+
+    async function loadFeedEntries() {
+        try {
+            var response = await fetch('/api/feeds/entries/?limit=200');
+            if (!response.ok) throw new Error('feed endpoint unavailable');
+            var payload = await response.json();
+            var entries = Array.isArray(payload.entries) ? payload.entries : [];
+            if (!entries.length) {
+                feedListEl.innerHTML = '<div style="color:#3a4555;font-family:monospace;">No entries available.</div>';
+            } else {
+                feedListEl.innerHTML = entries.map(function(e) {
+                    var title = escHtml(e.title || '(untitled)');
+                    var source = escHtml(e.source || 'unknown');
+                    var countries = escHtml(e.geo_countries || 'N/A');
+                    var published = escHtml(formatPublished(e.published));
+                    var rawSummary = e.summary || '';
+                    var summary = escHtml(rawSummary.slice(0, MAX_SUMMARY_LENGTH) + (rawSummary.length > MAX_SUMMARY_LENGTH ? '…' : ''));
+                    var link = safeHttpUrl(e.url);
+                    var linkHtml = link ? '<a href="' + escHtml(link) + '" target="_blank" rel="noopener noreferrer" style="color:#00e1ff;">open</a>' : '';
+                    return (
+                        '<div style="padding:8px 2px;border-bottom:1px dashed #1b2b3a;">' +
+                        '<div style="font-family:var(--cp-font,monospace);font-size:0.88em;color:#00e1ff;">' + title + '</div>' +
+                        '<div style="font-size:0.78em;color:#6f8092;margin-top:2px;">[' + source + '] ' + published + ' [' + countries + '] ' + linkHtml + '</div>' +
+                        '<div style="font-size:0.82em;color:#b7c5d3;margin-top:4px;">' + summary + '</div>' +
+                        '</div>'
+                    );
+                }).join('');
+            }
+            feedStatusEl.textContent = 'showing ' + entries.length + ' imported entries [GLOBAL]';
+            renderMarkers(entries);
+        } catch (err) {
+            feedStatusEl.textContent = 'feed unavailable';
+            feedListEl.innerHTML = '<div style="color:#ff6030;font-family:monospace;">Failed to load feed entries.</div>';
+        }
+    }
+
+    function stopBriefPoll() {
+        if (briefPollTimer) {
+            clearTimeout(briefPollTimer);
+            briefPollTimer = null;
+        }
+    }
+
+    function scheduleBriefPoll(attempt) {
+        stopBriefPoll();
+        if (attempt >= BRIEF_POLL_MAX) {
+            briefStatusEl.textContent = 'Brief generation timed out for GLOBAL';
+            briefContentEl.textContent = 'The worker may be offline or feeds are still ingesting. Try again in a minute.';
+            return;
+        }
+        briefPollTimer = setTimeout(function() { loadBrief(attempt + 1); }, BRIEF_POLL_MS);
+    }
+
+    async function loadBrief(attempt) {
+        attempt = attempt || 0;
+        try {
+            var response = await fetch('/api/feeds/brief/GLOBAL/');
+            var payload = await response.json();
+            if (response.status === 202 || payload.method === 'pending') {
+                briefStatusEl.textContent = 'Generating global brief… (' + (attempt + 1) + ')';
+                briefContentEl.textContent = payload.content || 'Generating brief…';
+                scheduleBriefPoll(attempt);
+                return;
+            }
+            stopBriefPoll();
+            briefStatusEl.textContent = 'Latest global brief [' + (payload.method || 'unknown') + ']';
+            briefContentEl.textContent = payload.content || 'No brief available.';
+        } catch (err) {
+            stopBriefPoll();
+            briefStatusEl.textContent = 'Global brief unavailable';
+            briefContentEl.textContent = 'Failed to load global brief.';
+        }
+    }
+
+    if (window.EventSource) {
+        try {
+            var events = new EventSource('/api/feeds/entries/sse/');
+            events.addEventListener('feed_updated', function() {
+                feedStatusEl.textContent = 'live update received — refreshing…';
+                loadFeedEntries();
+                loadBrief(0);
+            });
+        } catch (e) {}
+    }
+
+    loadFeedEntries();
+    loadBrief(0);
+})();
+</script>
+{% endblock %}

@@ -8,6 +8,8 @@ def kamerka_shell(request):
         nav_active = "launch"
     elif path == "/index":
         nav_active = "overview"
+    elif path.startswith("/feeds-briefing"):
+        nav_active = "briefing"
     elif path.startswith("/history"):
         nav_active = "cases"
     elif path.startswith("/results"):
