@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    env:
+      DJANGO_SECRET_KEY: "ci-only-not-a-real-secret-key"
+      DB_NAME: kamerka
+      DB_USER: kamerka
+      DB_PASSWORD: kamerka
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: kamerka
+          POSTGRES_USER: kamerka
+          POSTGRES_PASSWORD: kamerka
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kamerka -d kamerka"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpcap-dev nmap
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26'
+          check-latest: true
+          cache: false
+
+      - name: Install ProjectDiscovery Tools
+        run: |
+          GOTOOLCHAIN=go1.26.0 go install -v github.com/projectdiscovery/pdtm/cmd/pdtm@latest
+          $(go env GOPATH)/bin/pdtm -i nuclei,naabu
+          echo "$HOME/.pdtm/go/bin" >> $GITHUB_PATH
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Django System Checks
+        run: |
+          python manage.py check
+          python manage.py migrate --run-syncdb
+
+      - name: Create source archive
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          git archive --format=tar.gz --prefix="Kamerka_Plus_GUI-${TAG}/" HEAD \
+            -o "/tmp/Kamerka_Plus_GUI-${TAG}.tar.gz"
+          git archive --format=zip --prefix="Kamerka_Plus_GUI-${TAG}/" HEAD \
+            -o "/tmp/Kamerka_Plus_GUI-${TAG}.zip"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            /tmp/Kamerka_Plus_GUI-${{ github.ref_name }}.tar.gz
+            /tmp/Kamerka_Plus_GUI-${{ github.ref_name }}.zip
