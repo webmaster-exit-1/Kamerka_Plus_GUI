@@ -17,6 +17,11 @@ jobs:
     env:
       DJANGO_SECRET_KEY: "ci-only-not-a-real-secret-key"
       SHODAN_API_KEY: ${{ secrets.SHODAN_API_KEY }}
+      DB_NAME: kamerka
+      DB_USER: kamerka
+      DB_PASSWORD: kamerka
+      DB_HOST: localhost
+      DB_PORT: "5432"
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     services:
@@ -33,7 +38,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
       redis:
         image: redis:7
         ports:
@@ -49,7 +53,7 @@ jobs:
         sudo apt-get install -y libpcap-dev nmap
 
     - name: Set up Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@v7
       with:
         go-version: '1.26'
         check-latest: true
@@ -65,7 +69,7 @@ jobs:
         echo "$HOME/.pdtm/go/bin" >> $GITHUB_PATH
 
     - name: Set up Python
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
         python-version: '3.12'
         cache: 'pip'
@@ -89,4 +93,3 @@ jobs:
         naabu -version
         nuclei -version
         pip show wappalyzer
-

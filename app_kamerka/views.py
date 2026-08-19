@@ -8,7 +8,7 @@ import re
 import shutil
 import subprocess
 import time
-from collections import Counter
+from collections import Counter, defaultdict
 from django.conf import settings
 from django.core.cache import cache
 from django.core.files.storage import FileSystemStorage
@@ -57,7 +57,7 @@ from app_kamerka.task_utils import (
 import app_kamerka.tool_registry as _tool_registry
 from app_kamerka.dispatcher import ToolNotFoundError, ToolDisabledError
 from .forms import WatchlistForm
-from app_feeds.models import FeedEntry
+from app_feeds.models import FeedEntry, FeedSource
 from kamerka.tasks import (
     shodan_search,
     devices_nearby,
@@ -714,6 +714,54 @@ def index(request):
         "intel_feed_summary_max": INTEL_FEED_SUMMARY_MAX,
     }
     return render(request, "index.html", context)
+
+
+def feeds_briefing(request):
+    sources = FeedSource.objects.all().order_by("category", "folder", "name")
+    entries = (
+        FeedEntry.objects.filter(source__category="cyber")
+        .exclude(geo_countries="")
+        .values("geo_countries", "source_id", "source__category")
+        .order_by("-published", "-id")[:1000]
+    )
+
+    cyber_by_country = defaultdict(set)
+    for entry in entries:
+        for code in str(entry.get("geo_countries") or "").split(","):
+            normalized = code.strip().upper()
+            if len(normalized) == 2 and normalized.isalpha():
+                cyber_by_country[normalized].add(entry["source_id"])
+
+    country_coverage = []
+    for code, source_ids in cyber_by_country.items():
+        country_name = code
+        try:
+            resolved = pycountry.countries.get(alpha_2=code)
+            if resolved:
+                country_name = resolved.name
+        except Exception:
+            pass
+        country_coverage.append(
+            {
+                "code": code,
+                "name": country_name,
+                "cyber_feed_count": len(source_ids),
+                "meets_target": len(source_ids) >= 2,
+                "missing_count": max(0, 2 - len(source_ids)),
+            }
+        )
+    country_coverage.sort(key=lambda item: (item["meets_target"], item["code"]))
+
+    context = {
+        "breadcrumbs": [
+            {"label": "Launch", "url": "/"},
+            {"label": "Feeds Briefing", "url": None},
+        ],
+        "feed_sources": sources,
+        "country_coverage": country_coverage,
+        "intel_feed_summary_max": INTEL_FEED_SUMMARY_MAX,
+    }
+    return render(request, "feeds_briefing.html", context)
 
 
 def devices(request):
