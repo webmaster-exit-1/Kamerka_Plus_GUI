@@ -50,6 +50,7 @@ export DB_USER=kamerka
 export DB_PASSWORD=CHANGE_ME
 export DB_HOST=localhost
 export DB_PORT=5432
+export REDIS_URL=redis://127.0.0.1:6379/0
 ```
 
 Run the app:
@@ -57,7 +58,6 @@ Run the app:
 ```bash
 python manage.py migrate
 python manage.py create_default_superuser
-python manage.py runserver 127.0.0.1:8000
 ```
 
 In a second Termux session:
@@ -71,6 +71,13 @@ In a third Termux session:
 ```bash
 cd Kamerka_Plus_GUI
 celery --app kamerka worker --beat --loglevel=info
+```
+
+In a fourth Termux session:
+
+```bash
+cd Kamerka_Plus_GUI
+python manage.py runserver 127.0.0.1:8000
 ```
 
 Open:
