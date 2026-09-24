@@ -123,7 +123,7 @@ private fun HeroCard() {
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = "K+",
+                        text = stringResource(R.string.hero_monogram),
                         color = MaterialTheme.colorScheme.onPrimary,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
@@ -232,13 +232,13 @@ private fun StatusCard() {
             )
 
             StatusRow(
-                badge = "UI",
+                badge = stringResource(R.string.status_badge_ui),
                 title = stringResource(R.string.status_maps_title),
                 summary = stringResource(R.string.status_maps_body),
             )
 
             StatusRow(
-                badge = "DX",
+                badge = stringResource(R.string.status_badge_dx),
                 title = stringResource(R.string.status_pipeline_title),
                 summary = stringResource(R.string.status_pipeline_body),
             )
