@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="kamerka_blue">#0F4C81</color>
+    <color name="kamerka_cyan">#4DD0E1</color>
+    <color name="kamerka_navy">#07111F</color>
+    <color name="kamerka_gold">#FAB95B</color>
+    <color name="white">#FFFFFF</color>
+    <color name="mist">#F3F6FB</color>
+</resources>
+
