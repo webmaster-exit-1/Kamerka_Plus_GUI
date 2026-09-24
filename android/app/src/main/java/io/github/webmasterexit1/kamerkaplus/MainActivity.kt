@@ -4,6 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -159,6 +161,7 @@ private fun HeroCard() {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FeatureCard(features: List<String>) {
     Card(
@@ -176,19 +179,18 @@ private fun FeatureCard(features: List<String>) {
                 fontWeight = FontWeight.SemiBold,
             )
 
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                features.chunked(2).forEach { rowFeatures ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        rowFeatures.forEach { feature ->
-                            AssistChip(
-                                onClick = {},
-                                label = { Text(feature) },
-                                colors = AssistChipDefaults.assistChipColors(
-                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                ),
-                            )
-                        }
-                    }
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                features.forEach { feature ->
+                    AssistChip(
+                        onClick = {},
+                        label = { Text(feature) },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        ),
+                    )
                 }
             }
         }
