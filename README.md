@@ -26,6 +26,7 @@ git clone https://github.com/webmaster-exit-1/Kamerka_Plus_GUI.git
 cd Kamerka_Plus_GUI
 
 python -m pip install -r requirements.txt
+export KAMERKA_HOME="$(pwd)"
 ```
 
 This guide uses `python -m pip install -r requirements.txt` on Termux. Recommended: create and activate a virtual environment first (`python -m venv .venv && . .venv/bin/activate`) to avoid cross-project package conflicts.
@@ -71,6 +72,7 @@ EOF
 ```
 
 If any value contains spaces, `#`, or shell-significant characters, wrap it in single quotes in `.env`.
+If your repository is not in the default location, update `KAMERKA_HOME` to your checkout path before running session commands.
 
 Run the app:
 
@@ -86,7 +88,7 @@ In a second Termux session:
 
 ```bash
 bash -lc '
-cd Kamerka_Plus_GUI
+cd "$KAMERKA_HOME"
 pg_ctl -D $PREFIX/var/lib/postgresql status || pg_ctl -D $PREFIX/var/lib/postgresql start
 set -a
 . ./.env
@@ -101,7 +103,7 @@ In a third Termux session:
 
 ```bash
 bash -lc '
-cd Kamerka_Plus_GUI
+cd "$KAMERKA_HOME"
 set -a
 . ./.env
 set +a
