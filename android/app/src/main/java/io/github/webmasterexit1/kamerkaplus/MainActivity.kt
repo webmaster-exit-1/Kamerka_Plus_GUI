@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -38,6 +39,12 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.github.webmasterexit1.kamerkaplus.ui.theme.KamerkaPlusTheme
 import io.github.webmasterexit1.kamerkaplus.ui.theme.PanelBlue
+
+private val featureResourceIds = listOf(
+    R.string.feature_recon,
+    R.string.feature_map,
+    R.string.feature_alerts,
+)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,12 +65,6 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KamerkaPlusApp() {
-    val features = listOf(
-        stringResource(R.string.feature_recon),
-        stringResource(R.string.feature_map),
-        stringResource(R.string.feature_alerts),
-    )
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -93,7 +94,7 @@ fun KamerkaPlusApp() {
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             HeroCard()
-            FeatureCard(features = features)
+            FeatureCard(featureResourceIds = featureResourceIds)
             StatusCard()
         }
     }
@@ -124,7 +125,7 @@ private fun HeroCard() {
                 ) {
                     Text(
                         text = "K+",
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onPrimary,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
@@ -150,17 +151,11 @@ private fun HeroCard() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            Surface(
-                color = MaterialTheme.colorScheme.primaryContainer,
-                shape = RoundedCornerShape(999.dp),
+            FilledTonalButton(
+                onClick = {},
+                enabled = false,
             ) {
-                Text(
-                    text = stringResource(R.string.primary_action),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
+                Text(text = stringResource(R.string.primary_action))
             }
         }
     }
@@ -168,7 +163,7 @@ private fun HeroCard() {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FeatureCard(features: List<String>) {
+private fun FeatureCard(featureResourceIds: List<Int>) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -188,13 +183,13 @@ private fun FeatureCard(features: List<String>) {
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                features.forEach { feature ->
+                featureResourceIds.forEach { featureResId ->
                     Surface(
                         color = MaterialTheme.colorScheme.secondaryContainer,
                         shape = RoundedCornerShape(999.dp),
                     ) {
                         Text(
-                            text = feature,
+                            text = stringResource(featureResId),
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
