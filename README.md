@@ -38,7 +38,7 @@ mkdir -p $PREFIX/var/lib/postgresql
 initdb $PREFIX/var/lib/postgresql
 pg_ctl -D $PREFIX/var/lib/postgresql start
 until pg_isready -h localhost -p 5432 >/dev/null 2>&1; do sleep 1; done
-createuser --createdb kamerka
+createuser --login --createdb kamerka
 createdb -O kamerka kamerka
 psql -d postgres -c "ALTER USER kamerka WITH PASSWORD 'CHANGE_ME';"
 ```
@@ -63,6 +63,7 @@ Save these variables into a reusable shell env file so each session can load the
 cat > kamerka_env.sh <<'EOF'
 export SHODAN_API_KEY='your_key_here'
 export DJANGO_SECRET_KEY='your_long_random_secret'
+export KAMERKA_HOME="$HOME/Kamerka_Plus_GUI"
 export DB_NAME='kamerka'
 export DB_USER='kamerka'
 export DB_PASSWORD='CHANGE_ME'
