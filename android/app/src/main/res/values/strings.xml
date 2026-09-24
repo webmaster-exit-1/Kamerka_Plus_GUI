@@ -4,7 +4,8 @@
     <string name="hero_title">Mobile recon workspace</string>
     <string name="hero_subtitle">A native Android shell for future field-ready workflows.</string>
     <string name="hero_body">This standalone Android Studio project is intentionally isolated from the Django app so mobile features can be designed, built, and tested independently.</string>
-    <string name="primary_action">Explore roadmap</string>
+    <string name="primary_action">Roadmap preview</string>
+    <string name="primary_action_note">Placeholder actions will be connected as the native workflow expands.</string>
     <string name="feature_section_title">Planned modules</string>
     <string name="feature_recon">Recon dashboard</string>
     <string name="feature_map">Device map</string>
@@ -15,4 +16,3 @@
     <string name="status_pipeline_title">Isolated Android workspace</string>
     <string name="status_pipeline_body">Gradle files, resources, and app sources live entirely under the android folder to protect the existing Python/Django setup.</string>
 </resources>
-

@@ -13,9 +13,11 @@ class MainActivityTest {
 
     @Test
     fun mainScreenShowsPrimarySections() {
-        composeTestRule.onNodeWithText("Kamerka Plus").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Mobile recon workspace").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Planned modules").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Project status").assertIsDisplayed()
+        val activity = composeTestRule.activity
+
+        composeTestRule.onNodeWithText(activity.getString(R.string.app_name)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(activity.getString(R.string.hero_title)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(activity.getString(R.string.feature_section_title)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(activity.getString(R.string.status_section_title)).assertIsDisplayed()
     }
 }
