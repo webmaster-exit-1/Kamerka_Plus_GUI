@@ -28,6 +28,8 @@ cd Kamerka_Plus_GUI
 pip install -r requirements.txt
 ```
 
+`pip install -r requirements.txt` is sufficient for this repository on Termux (a virtual environment is optional).
+
 Initialize PostgreSQL in Termux:
 
 ```bash
@@ -53,9 +55,25 @@ export DB_PORT=5432
 export REDIS_URL=redis://127.0.0.1:6379/0
 ```
 
+Save these variables into a local `.env` file so each Termux session can load the same runtime configuration:
+
+```bash
+cat > .env <<'EOF'
+SHODAN_API_KEY=your_key_here
+DJANGO_SECRET_KEY=your_long_random_secret
+DB_NAME=kamerka
+DB_USER=kamerka
+DB_PASSWORD=CHANGE_ME
+DB_HOST=localhost
+DB_PORT=5432
+REDIS_URL=redis://127.0.0.1:6379/0
+EOF
+```
+
 Run the app:
 
 ```bash
+set -a && source .env && set +a
 python manage.py migrate
 python manage.py create_default_superuser
 ```
@@ -70,6 +88,7 @@ In a third Termux session:
 
 ```bash
 cd Kamerka_Plus_GUI
+set -a && source .env && set +a
 celery --app kamerka worker --beat --loglevel=info
 ```
 
@@ -77,6 +96,7 @@ In a fourth Termux session:
 
 ```bash
 cd Kamerka_Plus_GUI
+set -a && source .env && set +a
 python manage.py runserver 127.0.0.1:8000
 ```
 
