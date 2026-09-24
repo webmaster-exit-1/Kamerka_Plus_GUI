@@ -74,7 +74,7 @@ If any value contains spaces, `#`, or shell-significant characters, wrap it in s
 
 Run the app:
 
-Use `sh`/`bash` for the following commands (`set -a` is POSIX-shell syntax).
+The next commands explicitly invoke `bash` so they work even if your interactive shell is different.
 
 In a first Termux session:
 
@@ -85,20 +85,28 @@ redis-server
 In a second Termux session:
 
 ```bash
+bash -lc '
 cd Kamerka_Plus_GUI
 pg_ctl -D $PREFIX/var/lib/postgresql status || pg_ctl -D $PREFIX/var/lib/postgresql start
-set -a && . ./.env && set +a
+set -a
+. ./.env
+set +a
 python manage.py migrate
 python manage.py create_default_superuser
 python manage.py runserver 127.0.0.1:8000
+'
 ```
 
 In a third Termux session:
 
 ```bash
+bash -lc '
 cd Kamerka_Plus_GUI
-set -a && . ./.env && set +a
+set -a
+. ./.env
+set +a
 celery --app kamerka worker --beat --loglevel=info
+'
 ```
 
 Open:
