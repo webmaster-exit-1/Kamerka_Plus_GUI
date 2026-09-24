@@ -36,6 +36,7 @@ initdb $PREFIX/var/lib/postgresql
 pg_ctl -D $PREFIX/var/lib/postgresql start
 createuser --createdb kamerka
 createdb -O kamerka kamerka
+psql -d postgres -c "ALTER USER kamerka WITH PASSWORD 'CHANGE_ME';"
 ```
 
 Set required environment variables:
@@ -54,13 +55,18 @@ export DB_PORT=5432
 Run the app:
 
 ```bash
-redis-server --daemonize yes
 python manage.py migrate
 python manage.py create_default_superuser
 python manage.py runserver 127.0.0.1:8000
 ```
 
 In a second Termux session:
+
+```bash
+redis-server
+```
+
+In a third Termux session:
 
 ```bash
 cd Kamerka_Plus_GUI
