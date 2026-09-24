@@ -111,6 +111,8 @@ Open:
 
 ## Android documentation
 
+Non-Android setup and broader project guidance now live in the main documentation set:
+
 - [docs/INSTALL.md](docs/INSTALL.md) — full installation details including Android/Termux notes
 - [docs/DATABASE.md](docs/DATABASE.md) — PostgreSQL requirements
 
