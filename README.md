@@ -25,7 +25,7 @@ pkg install python git redis postgresql
 git clone https://github.com/webmaster-exit-1/Kamerka_Plus_GUI.git
 cd Kamerka_Plus_GUI
 
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 `pip install -r requirements.txt` is sufficient for this repository on Termux (a virtual environment is optional).
@@ -70,9 +70,12 @@ REDIS_URL=redis://127.0.0.1:6379/0
 EOF
 ```
 
+If any value contains spaces, `#`, or shell-significant characters, wrap it in single quotes in `.env`.
+
 Run the app:
 
 ```bash
+pg_ctl -D $PREFIX/var/lib/postgresql start
 set -a && . ./.env && set +a
 python manage.py migrate
 python manage.py create_default_superuser
