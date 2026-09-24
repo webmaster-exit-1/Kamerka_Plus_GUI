@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Kamerka Plus GUI</string>
+    <string name="default_server_url">http://127.0.0.1:8000/</string>
+</resources>
