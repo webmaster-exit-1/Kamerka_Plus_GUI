@@ -74,6 +74,8 @@ If any value contains spaces, `#`, or shell-significant characters, wrap it in s
 
 Run the app:
 
+Use `sh`/`bash` for the following commands (`set -a` is POSIX-shell syntax).
+
 In a first Termux session:
 
 ```bash
@@ -84,7 +86,7 @@ In a second Termux session:
 
 ```bash
 cd Kamerka_Plus_GUI
-pg_ctl -D $PREFIX/var/lib/postgresql start
+pg_ctl -D $PREFIX/var/lib/postgresql status || pg_ctl -D $PREFIX/var/lib/postgresql start
 set -a && . ./.env && set +a
 python manage.py migrate
 python manage.py create_default_superuser
