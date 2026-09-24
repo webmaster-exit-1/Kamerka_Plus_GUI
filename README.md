@@ -1,229 +1,86 @@
-# ꓘamerka Plus GUI 
+# ꓘamerka Plus GUI for Android
 
-## **Ultimate Internet of Things & Industrial Control Systems reconnaissance platform — upgraded edition**
+Android-focused guide for running Kamerka Plus GUI on Android devices via Termux.
 
-[![Kamerka Plus GUI CI](https://github.com/webmaster-exit-1/Kamerka_Plus_GUI/actions/workflows/ci.yml/badge.svg)](https://github.com/webmaster-exit-1/Kamerka_Plus_GUI/actions/workflows/ci.yml)
+## Scope
 
-![logo](https://www.offensiveosint.io/content/images/2020/07/OffensiveOsint-logo-RGB-2.png)
+This README is intentionally scoped to Android usage only.
+For non-Android environments, use the detailed documentation under [`docs/`](docs/).
 
-### Powered by Shodan · enriched with OSINT feeds, layers, and optional local AI
+## Requirements (Android / Termux)
 
-Modernized fork of [Kamerka-GUI](https://github.com/woj-ciech/Kamerka-GUI) for analysts who want **cases → maps → device workbench → exports** in one cyberpunk-styled web UI, with background scanning on Celery and Redis.
+- Android device with [Termux](https://termux.dev/)
+- Python 3
+- Git
+- Redis
+- PostgreSQL (Termux package)
+- Shodan API key
 
----
-
-## What's new in this edition
-
-| Area | Highlights |
-| ------ | ------------ |
-| **Maps** | **2D** Leaflet + OpenStreetMap (no API key). **3D** [`/map3d`](http://127.0.0.1:8000/map3d) via MapLibre + [OpenFreeMap](https://openfreemap.org/) by default; optional `MAPBOX_ACCESS_TOKEN` for richer building meshes. GeoJSON / KML / CSV exports for QGIS, Kepler.gl, SandDance. Legacy `/globe` redirects to the web 3D map; optional **PyVista + PyQt6** desktop globe still available. |
-| **Intel** | RSS/Atom ingestion (`feedparser`), OPML import (bundled + your Feeder export), **Feed Intel** panel + **Region Brief** (Ollama or extractive summariser). Plain-text briefs — no raw HTML tags in the UI. |
-| **Exploit & CVE workspace** | Per-device identity, CVE context, exploit actions, Shodan evidence, risk context, and export status in one workflow. |
-| **Workbench** | Per-device tools: Nmap, Nuclei, Wappalyzer, RTSP, Shodan intel, NVD/NRICH, honeypot heuristics, screenshots, ExploitDB, bulk actions, risk score + layer context. |
-| **HexSploit** | Optional [HexStrike](https://github.com/0x4m4/hexstrike-ai) bridge at `/hexsploit/` — health, tool catalog, smart scan (requires local HexStrike server). |
-| **Ops** | Celery progress in UI, **Tasks** registry with orphan/stale reconciliation, watchlists, setup health check, Fish stack helpers under `scripts/`. |
-| **Verification** | Tiered pipeline: InternetDB (free) → Naabu → Shodan, with credit reporting; honeypot cluster filtering on dense /24 banners. |
-| **Security & config** | API keys via environment / `.env` (no `keys.json`); interactive [`scripts/install_kamerka.py`](scripts/install_kamerka.py) wizard; CI runs Django system and security-tool checks. |
-
----
-
-## Documentation
-
-| Document | Description |
-| ---------- | ------------- |
-| [docs/INSTALL.md](docs/INSTALL.md) | Full install, `.env` / API keys, external tools (Nmap, Nuclei, Naabu, Wappalyzer), PostgreSQL, Android/Termux |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Celery/Redis, verification pipeline, tool paths, map layers |
-| [docs/DATABASE.md](docs/DATABASE.md) | PostgreSQL configuration and concurrency requirements |
-| [docs/docker.md](docs/docker.md) | Docker Compose stack (web, Redis, Celery, beat, PostgreSQL) |
-| [docs/WORLDMONITOR_INTEGRATION.md](docs/WORLDMONITOR_INTEGRATION.md) | Feed layers, SSE, briefs, and layer architecture (WorldMonitor-inspired, original code) |
-| [docs/ux/exploit-workspace-jtbd.md](docs/ux/exploit-workspace-jtbd.md) | Jobs-to-be-done and acceptance criteria for the Exploit & CVE workspace |
-| [docs/ux/exploit-workspace-journey.md](docs/ux/exploit-workspace-journey.md) | Analyst journey from device evidence to export |
-| [docs/ux/exploit-workspace-flow.md](docs/ux/exploit-workspace-flow.md) | Figma-ready interaction flow and export state machine |
-
----
-
-## Features
-
-- **100+ ICS / IoT Shodan queries** — see [queries.md](queries.md)
-- **Case-centric workflow** — search → results map → device workbench → exports
-- **2D map** — Leaflet + OSM, no map API bill
-- **3D map** — heatmap, 3D columns, buildings layer; free basemap out of the box
-- **OSINT RSS** — import OPML, hourly refresh, geo-tagged entries, regional AI briefs
-- **Vulnerability & recon tools** — Nuclei (incl. China-IoT templates), WHOIS (`ipwhois`), Wappalyzer, RTSP, port scans
-- **Gallery & camera wall** — screenshots and RTSP discoveries in one place
-- **Paginated device registry** — `/devices` scales to thousands of rows
-- **Task audit trail** — `/tasks` syncs with Celery; stale/orphan jobs auto-marked failed
-- **Watchlists** — scheduled Shodan re-runs
-- **Exploit & CVE workspace** — connect device evidence, vulnerabilities, exploit actions, and report scope
-- **Exports** — Shodan's `convert` utility is the primary CSV/KML/GeoJSON path, with validated device/search fallbacks when conversion is unavailable
-
----
-
-## Quick start (recommended)
-
-**Requirements:** Python 3.10+, PostgreSQL, Redis, Shodan API key. Optional: Nmap, Nuclei, Naabu, Ollama, HexStrike.
+## Quick start (Termux)
 
 ```bash
+pkg update && pkg upgrade
+pkg install python git redis postgresql
+
 git clone https://github.com/webmaster-exit-1/Kamerka_Plus_GUI.git
 cd Kamerka_Plus_GUI
 
-# Guided setup: .env, migrations, superuser, seed layers + bundled feeds
-python3 scripts/install_kamerka.py --venv
+pip install -r requirements.txt
+```
 
-# Load secrets (or use fish/bash profile exports)
-set -a && source .env && set +a   # bash
-# fish: export from ~/.config/fish/config.fish or source .env manually
+Initialize PostgreSQL in Termux:
 
-redis-server &   # or: docker run -p 6379:6379 redis:7-alpine
+```bash
+mkdir -p $PREFIX/var/lib/postgresql
+initdb $PREFIX/var/lib/postgresql
+pg_ctl -D $PREFIX/var/lib/postgresql start
+createuser --createdb kamerka
+createdb -O kamerka kamerka
+```
 
-# Terminal 1 — Django
-python3 manage.py runserver 127.0.0.1:8000
+Set required environment variables:
 
-# Terminal 2 — Celery worker + beat (feeds, layers, watchlists, task reconcile)
+```bash
+export SHODAN_API_KEY=your_key_here
+export DJANGO_SECRET_KEY=your_long_random_secret
+
+export DB_NAME=kamerka
+export DB_USER=kamerka
+export DB_PASSWORD=CHANGE_ME
+export DB_HOST=localhost
+export DB_PORT=5432
+```
+
+Run the app:
+
+```bash
+redis-server --daemonize yes
+python manage.py migrate
+python manage.py create_default_superuser
+python manage.py runserver 127.0.0.1:8000
+```
+
+In a second Termux session:
+
+```bash
+cd Kamerka_Plus_GUI
 celery --app kamerka worker --beat --loglevel=info
 ```
 
-**Open:** [http://127.0.0.1:8000/](http://127.0.0.1:8000/) (search) · [http://127.0.0.1:8000/index](http://127.0.0.1:8000/index) (overview + Feed Intel / Region Brief) · [http://127.0.0.1:8000/map3d](http://127.0.0.1:8000/map3d) · select a device to open its Exploit & CVE workspace
+Open:
 
-### Import your RSS feeds (Feeder OPML)
+- `http://127.0.0.1:8000/`
 
-```bash
-python3 manage.py import_feeds_opml /path/to/feeder-export.opml
-# Optional: deactivate sources not in this file
-python3 manage.py import_feeds_opml /path/to/export.opml --deactivate-missing
-```
+## Android limitations
 
-### Fish helpers (optional)
+- Raw packet scan modes (for example Nmap `-sS`) require elevated capabilities not available in standard Termux setups.
+- The application falls back to non-raw scan paths where supported, which are slower but work without root.
 
-```bash
-fish scripts/kamerka.fish runserver
-fish scripts/kamerka.fish worker
-fish scripts/start_stack.fish      # tmux-style stack
-fish scripts/start_hexstrike.fish  # HexStrike for HexSploit
-```
+## Android documentation
 
-### Reconcile stuck tasks
-
-If **Tasks** shows many old `pending` rows (worker was down or Redis lost results):
-
-```bash
-python3 manage.py reconcile_task_runs
-```
-
----
-
-## Quick start (Docker)
-
-```bash
-cp .env.example .env
-# Edit SHODAN_API_KEY, DJANGO_SECRET_KEY, etc.
-docker compose --profile dev up --build
-```
-
-See [docs/docker.md](docs/docker.md) for profiles, volumes, and migrations.
-
----
-
-## Key URLs
-
-| Path | Purpose |
-| ------ | --------- |
-| `/` | New search (country, coords, healthcare, Nmap upload) |
-| `/index` | Overview dashboard, charts, Feed Intel, Region Brief |
-| `/history` | Cases |
-| `/devices` | All devices (paginated, searchable) |
-| `/map` | 2D Leaflet map |
-| `/map3d` | 3D MapLibre map + exports |
-| `/tasks` | Celery task runs |
-| `/hexsploit/` | HexStrike integration UI |
-| `/api/feeds/entries/` | RSS JSON API |
-| `/api/feeds/brief/<ISO2>/` | Regional intelligence brief |
-
----
-
-## Environment variables (essentials)
-
-Copy [`.env.example`](.env.example) to `.env`. Minimum for searches:
-
-```bash
-SHODAN_API_KEY=your_key_here
-DJANGO_SECRET_KEY=your_long_random_secret
-REDIS_URL=redis://localhost:6379
-```
-
-| Variable | Purpose |
-| ---------- | --------- |
-| `SHODAN_API_KEY` | Required for Shodan searches and scans |
-| `NVD_API_KEY` | Optional — higher NVD rate limits |
-| `OLLAMA_HOST` | Optional — AI region briefs (`http://localhost:11434`) |
-| `HEXSPLOIT_OLLAMA_SERVER_URL` | Optional — Ollama endpoint for HexSploit chain planning |
-| `HEXSPLOIT_OLLAMA_MODEL` | Optional — Ollama model for HexSploit (default `DeepHat/DeepHat-V1-7B:latest`) |
-| `MAPBOX_ACCESS_TOKEN` | Optional — enhanced 3D buildings on `/map3d` |
-| `HEXSTRIKE_SERVER_URL` | Optional — HexSploit backend (default `http://127.0.0.1:8888`) |
-| `TASK_RUN_STALE_MINUTES` | Mark orphaned pending tasks failed (default `90`) |
-
-Full list: [docs/INSTALL.md](docs/INSTALL.md) and `.env.example`.
-
----
-
-## NSA and CISA advisory
-
-> Shodan, Kamerka, are creating a "perfect storm" of
->
-> 1) easy access to unsecured assets,
->
-> 2) use of common, open-source information about devices, and
->
-> 3) an extensive list of exploits deployable via common exploit frameworks (e.g., Metasploit, Core Impact, and Immunity Canvas).
-
-<https://us-cert.cisa.gov/ncas/alerts/aa20-205a>
-
-**Use only on systems you are authorised to assess.**
-
----
-
-## Screenshots
-
-### Search
-
-![Search — cyberpunk UI](screens/cyberpunk_search.png)
-
-### Dashboard
-
-![Dashboard — cyberpunk UI](screens/cyberpunk_dashboard.png)
-
-### Devices
-
-![Devices list — cyberpunk UI](screens/cyberpunk_devices_list.png)
-
-### Map (Leaflet + OpenStreetMap)
-
-![Map — cyberpunk UI](screens/cyberpunk_map.png)
-
----
-
-## Articles
-
-- <https://www.offensiveosint.io/hack-the-planet-with-amerka-gui-ultimate-internet-of-things-industrial-control-systems-reconnaissance-tool/>
-- <https://www.offensiveosint.io/offensive-osint-s01e03-intelligence-gathering-on-critical-infrastructure-in-southeast-asia/>
-- <https://www.offensiveosint.io/hack-like-its-2077-presenting-amerka-mobile/>
-- <https://www.zdnet.com/article/kamerka-osint-tool-shows-your-countrys-internet-connected-critical-infrastructure/>
-- <https://www.icscybersecurityconference.com/intelligence-gathering-on-u-s-critical-infrastructure/>
-
----
-
-## Supported device queries
-
-<https://github.com/webmaster-exit-1/Kamerka_Plus_GUI/blob/master/queries.md>
-
----
+- [docs/INSTALL.md](docs/INSTALL.md) — full installation details including Android/Termux notes
+- [docs/DATABASE.md](docs/DATABASE.md) — PostgreSQL requirements
 
 ## License
 
 MIT License — see [LICENSE.md](LICENSE.md).
-
----
-
-## Disclaimer
-
-The author is not responsible for any damage caused by misuse of this tool. Reconnaissance and scanning must comply with applicable law and scope agreements.
