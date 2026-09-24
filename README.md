@@ -37,6 +37,7 @@ Initialize PostgreSQL in Termux:
 mkdir -p $PREFIX/var/lib/postgresql
 initdb $PREFIX/var/lib/postgresql
 pg_ctl -D $PREFIX/var/lib/postgresql start
+until pg_isready -h localhost -p 5432 >/dev/null 2>&1; do sleep 1; done
 createuser --createdb kamerka
 createdb -O kamerka kamerka
 psql -d postgres -c "ALTER USER kamerka WITH PASSWORD 'CHANGE_ME';"
@@ -56,22 +57,22 @@ export DB_PORT=5432
 export REDIS_URL=redis://127.0.0.1:6379/0
 ```
 
-Save these variables into a local `.env` file so each Termux session can load the same runtime configuration:
+Save these variables into a reusable shell env file so each session can load the same runtime configuration:
 
 ```bash
-cat > .env <<'EOF'
-SHODAN_API_KEY=your_key_here
-DJANGO_SECRET_KEY=your_long_random_secret
-DB_NAME=kamerka
-DB_USER=kamerka
-DB_PASSWORD=CHANGE_ME
-DB_HOST=localhost
-DB_PORT=5432
-REDIS_URL=redis://127.0.0.1:6379/0
+cat > kamerka_env.sh <<'EOF'
+export SHODAN_API_KEY='your_key_here'
+export DJANGO_SECRET_KEY='your_long_random_secret'
+export DB_NAME='kamerka'
+export DB_USER='kamerka'
+export DB_PASSWORD='CHANGE_ME'
+export DB_HOST='localhost'
+export DB_PORT='5432'
+export REDIS_URL='redis://127.0.0.1:6379/0'
 EOF
 ```
 
-If any value contains spaces, `#`, or shell-significant characters, wrap it in single quotes in `.env`.
+Keep values single-quoted in `kamerka_env.sh` (especially secrets containing `#`, spaces, or shell-significant characters).
 If your repository is not in the default location, update `KAMERKA_HOME` to your checkout path before running session commands.
 
 Run the app:
@@ -90,11 +91,9 @@ In a second Termux session:
 bash -lc '
 cd "$KAMERKA_HOME"
 pg_ctl -D $PREFIX/var/lib/postgresql status || pg_ctl -D $PREFIX/var/lib/postgresql start
-set -a
-. ./.env
-set +a
+. ./kamerka_env.sh
 python manage.py migrate
-python manage.py create_default_superuser
+python manage.py createsuperuser
 python manage.py runserver 127.0.0.1:8000
 '
 ```
@@ -104,9 +103,7 @@ In a third Termux session:
 ```bash
 bash -lc '
 cd "$KAMERKA_HOME"
-set -a
-. ./.env
-set +a
+. ./kamerka_env.sh
 celery --app kamerka worker --beat --loglevel=info
 '
 ```
