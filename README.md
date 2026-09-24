@@ -73,7 +73,7 @@ EOF
 Run the app:
 
 ```bash
-set -a && source .env && set +a
+set -a && . ./.env && set +a
 python manage.py migrate
 python manage.py create_default_superuser
 ```
@@ -88,7 +88,7 @@ In a third Termux session:
 
 ```bash
 cd Kamerka_Plus_GUI
-set -a && source .env && set +a
+set -a && . ./.env && set +a
 celery --app kamerka worker --beat --loglevel=info
 ```
 
@@ -96,7 +96,7 @@ In a fourth Termux session:
 
 ```bash
 cd Kamerka_Plus_GUI
-set -a && source .env && set +a
+set -a && . ./.env && set +a
 python manage.py runserver 127.0.0.1:8000
 ```
 
