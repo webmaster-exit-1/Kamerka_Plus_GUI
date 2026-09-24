@@ -113,6 +113,27 @@ Open:
 
 - `http://127.0.0.1:8000/`
 
+## Build Android APK client
+
+This repository now includes a native Android Gradle project under [`android/`](android/).
+The APK is a WebView client for the same Kamerka Plus GUI interface.
+
+Build locally:
+
+```bash
+cd android
+./gradlew assembleDebug
+```
+
+Debug APK output:
+
+- `android/app/build/outputs/apk/debug/app-debug.apk`
+
+CI artifact:
+
+- Workflow: `.github/workflows/android-apk.yml`
+- Artifact name: `kamerka-plus-gui-debug-apk`
+
 ## Android limitations
 
 - Raw packet scan modes (for example Nmap `-sS`) require elevated capabilities not available in standard Termux setups.
