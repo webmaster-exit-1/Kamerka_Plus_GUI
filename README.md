@@ -28,7 +28,7 @@ cd Kamerka_Plus_GUI
 python -m pip install -r requirements.txt
 ```
 
-`python -m pip install -r requirements.txt` is sufficient for this repository on Termux (a virtual environment is optional).
+This guide uses `python -m pip install -r requirements.txt` directly on Termux (a virtual environment is optional).
 
 Initialize PostgreSQL in Termux:
 
@@ -117,7 +117,7 @@ Open:
 
 Non-Android setup and broader project guidance now live in the main documentation set:
 
-- [docs/INSTALL.md](docs/INSTALL.md) — full installation details including Android/Termux notes
+- [docs/INSTALL.md](docs/INSTALL.md) — full installation details for non-Android/advanced environments
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — service architecture and component behavior
 - [docs/DATABASE.md](docs/DATABASE.md) — PostgreSQL requirements
 - [docs/docker.md](docs/docker.md) — Docker-based setup
