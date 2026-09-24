@@ -28,7 +28,7 @@ cd Kamerka_Plus_GUI
 python -m pip install -r requirements.txt
 ```
 
-This guide uses `python -m pip install -r requirements.txt` directly on Termux (a virtual environment is optional).
+This guide uses `python -m pip install -r requirements.txt` on Termux. Recommended: create and activate a virtual environment first (`python -m venv .venv && . .venv/bin/activate`) to avoid cross-project package conflicts.
 
 Initialize PostgreSQL in Termux:
 
@@ -74,18 +74,21 @@ If any value contains spaces, `#`, or shell-significant characters, wrap it in s
 
 Run the app:
 
+In a first Termux session:
+
+```bash
+redis-server
+```
+
+In a second Termux session:
+
 ```bash
 cd Kamerka_Plus_GUI
 pg_ctl -D $PREFIX/var/lib/postgresql start
 set -a && . ./.env && set +a
 python manage.py migrate
 python manage.py create_default_superuser
-```
-
-In a second Termux session:
-
-```bash
-redis-server
+python manage.py runserver 127.0.0.1:8000
 ```
 
 In a third Termux session:
@@ -94,14 +97,6 @@ In a third Termux session:
 cd Kamerka_Plus_GUI
 set -a && . ./.env && set +a
 celery --app kamerka worker --beat --loglevel=info
-```
-
-In a fourth Termux session:
-
-```bash
-cd Kamerka_Plus_GUI
-set -a && . ./.env && set +a
-python manage.py runserver 127.0.0.1:8000
 ```
 
 Open:
