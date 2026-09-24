@@ -267,7 +267,7 @@ private fun StatusRow(
             Text(
                 text = badge,
                 style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
                 fontWeight = FontWeight.Bold,
             )
         }
