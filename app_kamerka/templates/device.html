@@ -379,7 +379,7 @@
                                         {{ device.category }}<br>
 
                                     {% if device.screenshot %}
-                                    <img src="data:image/png;base64,{{ device.screenshot }}" style="max-width:100%;cursor:zoom-in;" data-toggle="modal" data-target="#screenshot-modal" alt="Click to enlarge">
+                                    <a href="#screenshot-modal" data-toggle="modal" aria-label="Enlarge device screenshot"><img src="data:image/png;base64,{{ device.screenshot }}" style="max-width:100%;cursor:zoom-in;" alt="Device screenshot"></a>
                                     {% endif %}
 </center>
                                     </div>
