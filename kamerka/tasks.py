@@ -516,6 +516,7 @@ def shodan_search(
     coordinates_search=None,
     all_results=False,
     infra=None,
+    max_pages=1,
 ):
     progress_recorder = ProgressRecorder(self)
     result = 0
@@ -534,6 +535,7 @@ def shodan_search(
                     search_type=i,
                     category=category,
                     all_results=all_results,
+                    max_pages=max_pages,
                 )
                 progress_recorder.set_progress(c + 1, total=total)
             except Exception as exc:
@@ -555,6 +557,7 @@ def shodan_search(
                         category="coordinates",
                         coordinates=coordinates,
                         all_results=all_results,
+                    max_pages=max_pages,
                     )
                     progress_recorder.set_progress(c + 1, total=total)
                 except Exception as exc:

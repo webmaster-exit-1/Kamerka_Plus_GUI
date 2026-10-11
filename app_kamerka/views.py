@@ -773,6 +773,13 @@ def devices(request):
     if q:
         qs = qs.filter(ip__icontains=q)
 
+    hide_honeypots = request.GET.get("hide_honeypots") == "1"
+    if hide_honeypots:
+        likely_honeypot_ids = HoneypotAnalysis.objects.filter(
+            probability__gte=0.5
+        ).values("device_id")
+        qs = qs.exclude(id__in=likely_honeypot_ids)
+
     paginator = Paginator(qs, 100)
     page_obj = paginator.get_page(request.GET.get("page"))
 
@@ -786,6 +793,7 @@ def devices(request):
         "paginator": paginator,
         "total_count": paginator.count,
         "search_q": q,
+        "hide_honeypots": hide_honeypots,
     }
 
     return render(request, "devices.html", context=context)

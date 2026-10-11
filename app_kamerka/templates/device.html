@@ -379,7 +379,7 @@
                                         {{ device.category }}<br>
 
                                     {% if device.screenshot %}
-                                    <img src="data:image/png;base64,{{ device.screenshot }}" style="max-width:100%;">
+                                    <img src="data:image/png;base64,{{ device.screenshot }}" style="max-width:100%;cursor:zoom-in;" data-toggle="modal" data-target="#screenshot-modal" alt="Click to enlarge">
                                     {% endif %}
 </center>
                                     </div>
@@ -635,7 +635,7 @@
                                         <progress id="progress-bar-screenshot" value="0" max="100" style="display:none; width:100%; margin-top:8px;"></progress>
                                         <div id="screenshot_container" style="margin-top:10px;">
                                             {% if device.screenshot %}
-                                            <img src="data:image/png;base64,{{ device.screenshot }}" style="max-width:100%;border:1px solid #0064d7;border-radius:4px;" />
+                                            <img src="data:image/png;base64,{{ device.screenshot }}" style="max-width:100%;border:1px solid #0064d7;border-radius:4px;cursor:zoom-in;" data-toggle="modal" data-target="#screenshot-modal" alt="Click to enlarge" />
                                             {% endif %}
                                         </div>
                                 </div>
@@ -1119,6 +1119,21 @@ mapEl.appendChild(heatBtn);
 
 
         <!-- END MESSAGE BOX-->
+{% if device.screenshot %}
+<div class="modal fade" id="screenshot-modal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document" style="width:auto;max-width:92vw;">
+        <div class="modal-content" style="background:#0a141d;border:1px solid #0064d7;">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close" style="color:#fff;">&times;</button>
+                <h4 class="modal-title">Screenshot — {{ device.ip }}</h4>
+            </div>
+            <div class="modal-body text-center">
+                <img src="data:image/png;base64,{{ device.screenshot }}" style="max-width:100%;max-height:80vh;" alt="Device screenshot enlarged">
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}
