@@ -19,7 +19,7 @@
                                         <div class="panel-heading">
                                             <h3 class="panel-title">Device Screenshots</h3>
                                             <form method="get" class="pull-right" style="margin:0">
-                                                <select name="country" onchange="this.form.submit()">
+                                                <select name="country" aria-label="Filter screenshots by country" onchange="this.form.submit()">
                                                     <option value="">All countries</option>
                                                     {% for c in countries %}
                                                     <option value="{{ c }}" {% if c == active_country %}selected{% endif %}>{{ c }}</option>
