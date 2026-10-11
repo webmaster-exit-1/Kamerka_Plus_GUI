@@ -1120,12 +1120,12 @@ mapEl.appendChild(heatBtn);
 
         <!-- END MESSAGE BOX-->
 {% if device.screenshot %}
-<div class="modal fade" id="screenshot-modal" tabindex="-1" role="dialog" aria-hidden="true">
+<div class="modal fade" id="screenshot-modal" tabindex="-1" role="dialog" aria-hidden="true" aria-labelledby="screenshot-modal-title">
     <div class="modal-dialog modal-lg" role="document" style="width:auto;max-width:92vw;">
         <div class="modal-content" style="background:#0a141d;border:1px solid #0064d7;">
             <div class="modal-header">
                 <button type="button" class="close" data-dismiss="modal" aria-label="Close" style="color:#fff;">&times;</button>
-                <h4 class="modal-title">Screenshot — {{ device.ip }}</h4>
+                <h4 class="modal-title" id="screenshot-modal-title">Screenshot — {{ device.ip }}</h4>
             </div>
             <div class="modal-body text-center">
                 <img src="data:image/png;base64,{{ device.screenshot }}" style="max-width:100%;max-height:80vh;" alt="Device screenshot enlarged">
