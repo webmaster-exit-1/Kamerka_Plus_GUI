@@ -1,4 +1,4 @@
-import itertools
+import hashlib
 import json
 import logging
 import math
@@ -557,7 +557,7 @@ def shodan_search(
                         category="coordinates",
                         coordinates=coordinates,
                         all_results=all_results,
-                    max_pages=max_pages,
+                        max_pages=max_pages,
                     )
                     progress_recorder.set_progress(c + 1, total=total)
                 except Exception as exc:
@@ -824,6 +824,22 @@ def _apply_camera_candidate_classification(
     return score, reasons
 
 
+def _bounded_shodan_banners(api, query, max_pages):
+    """Limit API page requests, not just the number of yielded banners."""
+    try:
+        page_limit = max(1, int(max_pages))
+    except (TypeError, ValueError, OverflowError):
+        page_limit = 1
+    for page in range(1, page_limit + 1):
+        response = api.search(query, page=page, minify=False)
+        matches = response["matches"]
+        if not matches:
+            break
+        yield from matches
+        if page * 100 >= response["total"]:
+            break
+
+
 def shodan_search_worker(
     fk,
     query,
@@ -834,10 +850,7 @@ def shodan_search_worker(
     all_results=False,
     max_pages=1,
 ):
-    results = True
-    page = 1
     SHODAN_API_KEY = _get_env_key("SHODAN_API_KEY", required=True)
-    screenshot = ""
     logger.debug("shodan_search_worker query=%s", query)
 
     # ── Build the Shodan query string ──────────────────────────────────
@@ -852,16 +865,15 @@ def shodan_search_worker(
     api = Shodan(SHODAN_API_KEY)
 
     # ── "shodan download" step ─────────────────────────────────────────
-    # Use search_cursor (the Python equivalent of `shodan download`) which
-    # handles paging automatically and respects Shodan's rate limits
-    # internally (retries=5 by default).
-    #
-    # When all_results=False we mirror the old behaviour of only collecting
-    # the first page (~100 results).  When True we stream everything.
+    # Bound actual page requests even if Shodan returns a short page.
+    # Explicit all_results mode retains the SDK's streaming/retry behavior.
     download_path = _shodan_download_path(fk)
-    cursor = api.search_cursor(query_string, minify=False)
-    if not all_results:
-        cursor = itertools.islice(cursor, max(1, int(max_pages)) * 100)
+    if all_results:
+        cursor = api.search_cursor(query_string, minify=False)
+    else:
+        cursor = _bounded_shodan_banners(api, query_string, max_pages)
+    seen_banners = set()
+    fout = None
 
     try:
         fout = shodan_helpers.open_file(download_path)  # append to existing file
@@ -875,7 +887,17 @@ def shodan_search_worker(
                 logger.debug("Skipping Shodan-tagged honeypot %s", result.get("ip_str"))
                 continue
 
+            # Suppress only identical banners; repeated IPs/ports alone are
+            # neither duplicates nor reliable evidence of a honeypot.
+            banner_hash = hashlib.sha256(
+                json.dumps(result, sort_keys=True).encode("utf-8")
+            ).digest()
+            if banner_hash in seen_banners:
+                continue
+            seen_banners.add(banner_hash)
+
             # ── Parse into Device record (existing app logic) ──────────
+            screenshot = ""
             location = result.get("location") or {}
             lat = location.get("latitude")
             lon = location.get("longitude")
@@ -903,8 +925,8 @@ def shodan_search_worker(
             cpe_list = result.get("cpe23") or result.get("cpe") or []
             cpe = cpe_list[0] if cpe_list else ""
 
-            if result["location"]["city"] is not None:
-                city = result["location"]["city"]
+            if location.get("city") is not None:
+                city = location["city"]
 
             hostnames = ""
             try:
@@ -1108,7 +1130,7 @@ def shodan_search_worker(
                     "city": city,
                     "lat": lat,
                     "lon": lon,
-                    "country_code": result["location"]["country_code"],
+                    "country_code": location.get("country_code") or "",
                     "query": search_type,
                     "category": category,
                     "vulns": vulns,
@@ -1123,13 +1145,15 @@ def shodan_search_worker(
                 },
             )
 
-        fout.close()
     except Exception as exc:
         logger.warning(
             "shodan_search_worker: error during search/download for '%s': %s",
             query_string,
             exc,
         )
+    finally:
+        if fout is not None:
+            fout.close()
 
 
 def nmap_host_worker(host_arg, max_reader, search):

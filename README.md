@@ -45,6 +45,7 @@ Modernized fork of [Kamerka-GUI](https://github.com/woj-ciech/Kamerka-GUI) for a
 ## Features
 
 - **100+ ICS / IoT Shodan queries** — see [queries.md](queries.md)
+- **Bounded Shodan searches** — backend `max_pages` defaults to one page per query; invalid/non-positive values fall back to one. Only explicit `all_results=True` streams all pages. Tagged honeypots and identical repeated banners remain in raw downloads but are excluded from device processing; repeated IPs alone are not classified as honeypots.
 - **Case-centric workflow** — search → results map → device workbench → exports
 - **2D map** — Leaflet + OSM, no map API bill
 - **3D map** — heatmap, 3D columns, buildings layer; free basemap out of the box
