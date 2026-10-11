@@ -822,13 +822,20 @@ def _apply_camera_candidate_classification(
 
 
 def shodan_search_worker(
-    fk, query, search_type, category, country=None, coordinates=None, all_results=False
+    fk,
+    query,
+    search_type,
+    category,
+    country=None,
+    coordinates=None,
+    all_results=False,
+    max_pages=1,
 ):
     results = True
     page = 1
     SHODAN_API_KEY = _get_env_key("SHODAN_API_KEY", required=True)
     screenshot = ""
-    print(query)
+    logger.debug("shodan_search_worker query=%s", query)
 
     # ── Build the Shodan query string ──────────────────────────────────
     if coordinates:
@@ -851,13 +858,19 @@ def shodan_search_worker(
     download_path = _shodan_download_path(fk)
     cursor = api.search_cursor(query_string, minify=False)
     if not all_results:
-        cursor = itertools.islice(cursor, 100)
+        cursor = itertools.islice(cursor, max(1, int(max_pages)) * 100)
 
     try:
         fout = shodan_helpers.open_file(download_path)  # append to existing file
         for result in cursor:
             # ── "shodan download" — persist raw banner ─────────────────
             shodan_helpers.write_banner(fout, result)
+
+            # Shodan tags known honeypots; skip them so they don't pollute
+            # the device list (raw banner is still kept in the download file).
+            if "honeypot" in (result.get("tags") or []):
+                logger.debug("Skipping Shodan-tagged honeypot %s", result.get("ip_str"))
+                continue
 
             # ── Parse into Device record (existing app logic) ──────────
             location = result.get("location") or {}
@@ -1185,7 +1198,7 @@ def validate_maxmind():
 def nmap_scan(self, file, fk):
     progress_recorder = ProgressRecorder(self)
     result = 0
-    print(file)
+    logger.debug("%s", file)
     search = Search.objects.get(id=fk)
     max_reader = maxminddb.open_database("GeoLite2-City.mmdb")
     nmap_report = NmapParser.parse_fromfile(file)

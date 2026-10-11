@@ -59,3 +59,12 @@ logs/
 *.pid
 *.seed
 *.pid.lock
+# Runtime artifacts
+app_kamerka/static/images/screens/
+dump.rdb
+celerybeat-schedule
+celerybeat.pid
+.venv/
+venv/
+.coverage
+htmlcov/

@@ -800,8 +800,34 @@ def map(request):
 
 
 def gallery(request):
-    all_devices = Device.objects.filter(screenshot__gt="", screenshot__isnull=False)
-    context = {"devices": all_devices}
+    page_size_options = [20, 50, 100]
+    active_country = request.GET.get("country", "").strip().upper()
+    try:
+        page_size = int(request.GET.get("per_page", page_size_options[0]))
+    except (TypeError, ValueError):
+        page_size = page_size_options[0]
+    if page_size not in page_size_options:
+        page_size = page_size_options[0]
+
+    base = Device.objects.filter(screenshot__gt="", screenshot__isnull=False)
+    qs = base.order_by("-id")
+    if active_country:
+        qs = qs.filter(country_code=active_country)
+    countries = (
+        base.exclude(country_code="")
+        .values_list("country_code", flat=True)
+        .distinct()
+        .order_by("country_code")
+    )
+    page_obj = Paginator(qs, page_size).get_page(request.GET.get("page", 1))
+    context = {
+        "devices": page_obj,
+        "page_obj": page_obj,
+        "countries": list(countries),
+        "active_country": active_country,
+        "page_size": page_size,
+        "page_size_options": page_size_options,
+    }
 
     return render(request, "gallery.html", context=context)
 

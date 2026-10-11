@@ -18,6 +18,19 @@
                                     <div class="panel panel-default">
                                         <div class="panel-heading">
                                             <h3 class="panel-title">Device Screenshots</h3>
+                                            <form method="get" class="pull-right" style="margin:0">
+                                                <select name="country" onchange="this.form.submit()">
+                                                    <option value="">All countries</option>
+                                                    {% for c in countries %}
+                                                    <option value="{{ c }}" {% if c == active_country %}selected{% endif %}>{{ c }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                                <select name="per_page" onchange="this.form.submit()">
+                                                    {% for o in page_size_options %}
+                                                    <option value="{{ o }}" {% if o == page_size %}selected{% endif %}>{{ o }} / page</option>
+                                                    {% endfor %}
+                                                </select>
+                                            </form>
                                         </div>
                                         <div class="panel-body">
                                             {% for device in devices %}
@@ -36,6 +49,11 @@
                                                 </div>
                                             </div>
                                             {% endfor %}
+                                            <div class="col-md-12 text-center">
+                                                {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}&country={{ active_country }}&per_page={{ page_size }}">&laquo; Prev</a>{% endif %}
+                                                Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+                                                {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}&country={{ active_country }}&per_page={{ page_size }}">Next &raquo;</a>{% endif %}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
