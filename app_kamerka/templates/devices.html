@@ -32,6 +32,12 @@
                                         <span id="bulk-progress" style="margin-left:12px;color:#00e1ff;"></span>
                                     </div>
                                     <div id="bulk-results" style="margin-bottom:12px;"></div>
+                                    <form method="get" style="margin-bottom:10px;">
+                                        {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+                                        <label title="Hide devices with a honeypot probability of 50% or more (run Honeypot Check to populate)">
+                                            <input type="checkbox" name="hide_honeypots" value="1" {% if hide_honeypots %}checked{% endif %} onchange="this.form.submit()"> Filter Honeypots
+                                        </label>
+                                    </form>
                                     <table id="devices-table" class="table">
                                         <thead>
                                             <tr>
@@ -79,11 +85,11 @@
                                     {% if page_obj.has_other_pages %}
                                     <nav style="margin-top:14px;font-family:monospace;font-size:0.85em;">
                                         {% if page_obj.has_previous %}
-                                        <a href="?page={{ page_obj.previous_page_number }}{% if search_q %}&amp;q={{ search_q|urlencode }}{% endif %}" style="color:#00e1ff;margin-right:12px;">← Prev</a>
+                                        <a href="?page={{ page_obj.previous_page_number }}{% if search_q %}&amp;q={{ search_q|urlencode }}{% endif %}{% if hide_honeypots %}&amp;hide_honeypots=1{% endif %}" style="color:#00e1ff;margin-right:12px;">← Prev</a>
                                         {% endif %}
                                         <span style="color:#888;">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
                                         {% if page_obj.has_next %}
-                                        <a href="?page={{ page_obj.next_page_number }}{% if search_q %}&amp;q={{ search_q|urlencode }}{% endif %}" style="color:#00e1ff;margin-left:12px;">Next →</a>
+                                        <a href="?page={{ page_obj.next_page_number }}{% if search_q %}&amp;q={{ search_q|urlencode }}{% endif %}{% if hide_honeypots %}&amp;hide_honeypots=1{% endif %}" style="color:#00e1ff;margin-left:12px;">Next →</a>
                                         {% endif %}
                                     </nav>
                                     {% endif %}
