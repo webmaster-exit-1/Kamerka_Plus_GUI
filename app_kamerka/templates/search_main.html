@@ -323,6 +323,21 @@
   var lastTrigger = null;
   var requestVersion = 0;
 
+  function labelCountryPicker() {
+    var select = this;
+    var picker = $(select).parent('.bootstrap-select');
+    var label = root.querySelector('label[for="' + select.id + '"]');
+    if (label) picker.find('button.dropdown-toggle').attr('aria-label', label.textContent);
+    // The country plugin supplies only ISO codes as search tokens.
+    picker.find('li[data-original-index] a').each(function () {
+      var option = select.options[$(this).parent().data('original-index')];
+      if (option) $(this).data('tokens', option.value + ' ' + option.textContent);
+    });
+  }
+  $(root).find('.countrypicker')
+    .on('loaded.bs.select refreshed.bs.select', labelCountryPicker)
+    .each(labelCountryPicker);
+
   if (typeof Selectr !== 'undefined') {
     root.querySelectorAll('select[multiple]').forEach(function (select) {
       var picker = new Selectr(select, {searchable: true, multiple: true, width: '100%', placeholder: 'Search and select presets'});

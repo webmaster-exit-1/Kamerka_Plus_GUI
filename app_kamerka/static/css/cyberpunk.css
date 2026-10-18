@@ -32,6 +32,9 @@ body {
   font: 14px/1.6 var(--cp-body);
 }
 body.km-app { background: var(--cp-bg); }
+.km-app .page-container,
+.km-app .page-container .page-content,
+.km-app .page-container .page-content-wrap { background: var(--cp-bg); }
 ::selection { background: #285957; color: #fff; }
 a { color: var(--cp-cyan); }
 a:hover, a:focus { color: #a7eee8; }
@@ -82,7 +85,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 .panel .panel-title-box span { color: var(--cp-dim); }
 .panel .panel-body, .panel .panel-body.panel-body-table { background: transparent; color: var(--cp-fg); }
-.panel .panel-body { padding: 20px; }
+.panel .panel-body { padding: 20px; overflow-wrap: anywhere; }
 .panel .panel-body.panel-body-table { padding: 0; }
 .panel .panel-footer, .modal-header, .modal-footer {
   background: transparent;
@@ -212,10 +215,40 @@ label { color: var(--cp-fg); font-weight: 500; }
   vertical-align: middle;
   background: transparent;
 }
-.table-striped > tbody > tr:nth-child(odd) > td,
-.table-striped > tbody > tr:nth-child(odd) > th { background: #14202c; }
-.table-hover > tbody > tr:hover > td,
-.table-hover > tbody > tr:hover > th { background: #1b2d3b; }
+.km-app .table-striped > tbody > tr:nth-child(odd) > td,
+.km-app .table-striped > tbody > tr:nth-child(odd) > th { background: #14202c; }
+.km-app .table-hover > tbody > tr:hover > td,
+.km-app .table-hover > tbody > tr:hover > th { background: #1b2d3b; }
+.km-app .table > :is(thead, tbody, tfoot) > tr.active > :is(td, th),
+.km-app .table > :is(thead, tbody, tfoot) > tr > :is(td, th).active {
+  background: #243b4b; color: var(--cp-fg);
+}
+.km-app .table > :is(thead, tbody, tfoot) > tr.success > :is(td, th),
+.km-app .table > :is(thead, tbody, tfoot) > tr > :is(td, th).success {
+  background: #1c382f; color: #c4edda;
+}
+.km-app .table > :is(thead, tbody, tfoot) > tr.info > :is(td, th),
+.km-app .table > :is(thead, tbody, tfoot) > tr > :is(td, th).info {
+  background: #1b3542; color: #c0e4ef;
+}
+.km-app .table > :is(thead, tbody, tfoot) > tr.warning > :is(td, th),
+.km-app .table > :is(thead, tbody, tfoot) > tr > :is(td, th).warning {
+  background: #3a3020; color: #f3dbb4;
+}
+.km-app .table > :is(thead, tbody, tfoot) > tr.danger > :is(td, th),
+.km-app .table > :is(thead, tbody, tfoot) > tr > :is(td, th).danger {
+  background: #402830; color: #f6c9cf;
+}
+.km-app .table-hover > tbody > tr.active:hover > :is(td, th),
+.km-app .table-hover > tbody > tr:hover > :is(td, th).active { background: #2d485a; }
+.km-app .table-hover > tbody > tr.success:hover > :is(td, th),
+.km-app .table-hover > tbody > tr:hover > :is(td, th).success { background: #264a3e; }
+.km-app .table-hover > tbody > tr.info:hover > :is(td, th),
+.km-app .table-hover > tbody > tr:hover > :is(td, th).info { background: #264858; }
+.km-app .table-hover > tbody > tr.warning:hover > :is(td, th),
+.km-app .table-hover > tbody > tr:hover > :is(td, th).warning { background: #4c3f2b; }
+.km-app .table-hover > tbody > tr.danger:hover > :is(td, th),
+.km-app .table-hover > tbody > tr:hover > :is(td, th).danger { background: #54353f; }
 .table-bordered, .table-bordered > thead > tr > th, .table-bordered > tbody > tr > td { border-color: var(--cp-border); }
 .table-responsive { border-color: var(--cp-border); }
 .table td a { color: var(--cp-cyan); }

@@ -19,7 +19,7 @@
 .km-launch-tabs a:hover, .km-launch-tabs a:focus { color: var(--cp-fg); background: var(--cp-surface); text-decoration: none; }
 .km-launch-tabs li.active a { background: #1c373e; color: var(--cp-cyan); border-color: #35585f; }
 .km-launch .tab-pane { padding: 28px; }
-.km-launch:not(.km-launch-ready) .tab-pane { display: block; }
+.km-launch:not(.km-launch-ready) .tab-pane { display: block; visibility: visible; }
 .km-launch:not(.km-launch-ready) .tab-pane + .tab-pane { border-top: 1px solid var(--cp-border); }
 .km-launch .tab-pane h2 { font-size: 20px; margin: 0 0 6px; }
 .km-launch-intro { color: var(--cp-dim); margin: 0 0 24px; }

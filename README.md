@@ -79,6 +79,27 @@ layout and interactions live in `kamerka-shell.css` and `kamerka-shell.js`.
 Page-specific styles load before these shared styles. Navigation is defined once
 in `app_kamerka/context_processors.py` for both desktop and mobile.
 
+### Interface previews
+
+Captured from the running application; the overview uses a local demonstration
+case, not live scan results.
+
+| Search workspace | Operations overview |
+| --- | --- |
+| ![Desktop search workspace](screens/ui-launch-desktop.png) | ![Desktop operations overview](screens/ui-overview-desktop.png) |
+
+[Mobile search](screens/ui-launch-mobile.png) · [Mobile navigation](screens/ui-navigation-mobile.png)
+
+### UI regression checks
+
+Run the shared template tests with `python manage.py test app_kamerka.tests`.
+With the application running locally and Playwright/Chromium installed, run
+`python scripts/gui_e2e_playwright.py smoke --device-path /results/CASE/DEVICE/IP`,
+replacing the path with an existing local device. The smoke mode clicks the
+desktop/mobile navigation, device tabs, export controls, and task filters. Scan
+and export requests are intercepted; it does not launch real scans or consume
+Shodan credits. The older `launch` and `workbench` modes **do perform live actions**.
+
 ---
 
 ## Quick start (recommended)
