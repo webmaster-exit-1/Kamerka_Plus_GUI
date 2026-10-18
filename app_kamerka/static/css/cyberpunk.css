@@ -40,7 +40,7 @@ a { color: var(--cp-cyan); }
 a:hover, a:focus { color: #a7eee8; }
 a:focus-visible, button:focus-visible, input:focus-visible,
 select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
-  outline: 2px solid var(--cp-cyan);
+  outline: 2px solid var(--cp-cyan) !important;
   outline-offset: 3px;
 }
 h1, h2, h3, h4, h5, h6 {

@@ -322,6 +322,10 @@
   var pendingRequest = null;
   var lastTrigger = null;
   var requestVersion = 0;
+  var searchButtons = Array.from(root.querySelectorAll('.km-search-form [type="submit"]'));
+  var searchButtonLabels = searchButtons.map(function (button) { return button.innerHTML; });
+  var importButton = document.querySelector('#km-import-form [type="submit"]');
+  var importButtonLabel = importButton.innerHTML;
 
   function labelCountryPicker() {
     var select = this;
@@ -495,8 +499,24 @@
     button.disabled = true;
     button.textContent = 'Importing scan…';
   });
-  root.querySelectorAll('.km-search-form [type="submit"]').forEach(function (button) {
+  searchButtons.forEach(function (button) {
     button.disabled = false;
+  });
+  window.addEventListener('pageshow', function (event) {
+    if (!event.persisted) return;
+    ++requestVersion;
+    if (pendingRequest) pendingRequest.abort();
+    pendingRequest = null;
+    pendingForm = null;
+    searchButtons.forEach(function (button, index) {
+      button.disabled = false;
+      button.innerHTML = searchButtonLabels[index];
+    });
+    importButton.disabled = false;
+    importButton.innerHTML = importButtonLabel;
+    confirm.disabled = false;
+    confirm.textContent = 'Launch search';
+    modal.modal('hide');
   });
   root.classList.add('km-launch-ready');
 }());
