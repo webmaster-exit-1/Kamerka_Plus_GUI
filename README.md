@@ -79,7 +79,7 @@ layout and interactions live in `kamerka-shell.css` and `kamerka-shell.js`.
 Page-specific styles load before these shared styles. Navigation is defined once
 in `app_kamerka/context_processors.py` for both desktop and mobile.
 
-### Interface previews
+### Screenshots
 
 Captured from the running application; the overview uses a local demonstration
 case, not live scan results.
@@ -222,26 +222,6 @@ Full list: [docs/INSTALL.md](docs/INSTALL.md) and `.env.example`.
 <https://us-cert.cisa.gov/ncas/alerts/aa20-205a>
 
 **Use only on systems you are authorised to assess.**
-
----
-
-## Screenshots
-
-### Search
-
-![Search — cyberpunk UI](screens/cyberpunk_search.png)
-
-### Dashboard
-
-![Dashboard — cyberpunk UI](screens/cyberpunk_dashboard.png)
-
-### Devices
-
-![Devices list — cyberpunk UI](screens/cyberpunk_devices_list.png)
-
-### Map (Leaflet + OpenStreetMap)
-
-![Map — cyberpunk UI](screens/cyberpunk_map.png)
 
 ---
 
