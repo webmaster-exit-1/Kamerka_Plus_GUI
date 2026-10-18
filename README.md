@@ -8,7 +8,7 @@
 
 ### Powered by Shodan · enriched with OSINT feeds, layers, and optional local AI
 
-Modernized fork of [Kamerka-GUI](https://github.com/woj-ciech/Kamerka-GUI) for analysts who want **cases → maps → device workbench → exports** in one cyberpunk-styled web UI, with background scanning on Celery and Redis.
+Modernized fork of [Kamerka-GUI](https://github.com/woj-ciech/Kamerka-GUI) for analysts who want **cases → maps → device workbench → exports** in one terminal-inspired web workspace, with background scanning on Celery and Redis.
 
 ---
 
@@ -16,6 +16,7 @@ Modernized fork of [Kamerka-GUI](https://github.com/woj-ciech/Kamerka-GUI) for a
 
 | Area | Highlights |
 | ------ | ------------ |
+| **Workspace** | Unified desktop/mobile navigation, restrained cyan terminal styling, accessible keyboard controls, guided search categories, credit confirmation, and worker telemetry with explicit unavailable states. |
 | **Maps** | **2D** Leaflet + OpenStreetMap (no API key). **3D** [`/map3d`](http://127.0.0.1:8000/map3d) via MapLibre + [OpenFreeMap](https://openfreemap.org/) by default; optional `MAPBOX_ACCESS_TOKEN` for richer building meshes. GeoJSON / KML / CSV exports for QGIS, Kepler.gl, SandDance. Legacy `/globe` redirects to the web 3D map; optional **PyVista + PyQt6** desktop globe still available. |
 | **Intel** | RSS/Atom ingestion (`feedparser`), OPML import (bundled + your Feeder export), **Feed Intel** panel + **Region Brief** (Ollama or extractive summariser). Plain-text briefs — no raw HTML tags in the UI. |
 | **Exploit & CVE workspace** | Per-device identity, CVE context, exploit actions, Shodan evidence, risk context, and export status in one workflow. |
@@ -56,6 +57,27 @@ Modernized fork of [Kamerka-GUI](https://github.com/woj-ciech/Kamerka-GUI) for a
 - **Watchlists** — scheduled Shodan re-runs
 - **Exploit & CVE workspace** — connect device evidence, vulnerabilities, exploit actions, and report scope
 - **Exports** — Shodan's `convert` utility is the primary CSV/KML/GeoJSON path, with validated device/search fallbacks when conversion is unavailable
+
+### Navigating the workspace
+
+Start with **New search**, choose a category, and configure its scope and device
+presets. Review the Shodan credit estimate before confirming, or import an
+existing Nmap XML file. **Cases** returns to saved investigations; the active case
+remains available in navigation and the 3D map link. Device workbench buttons
+switch between tool outputs without leaving the target, and **Export** opens the
+case's available formats.
+
+The same navigation appears as a drawer on smaller screens. Use **Tab** to move
+through controls and **Escape** to close the drawer or exports. A skip link leads
+directly to the workspace. Worker telemetry distinguishes connected workers from
+an unavailable status service; it pauses polling while the browser tab is hidden.
+
+The interface uses the existing Django templates and locally hosted assets—no
+additional frontend build or package installation is required. Shared design
+tokens and components live in `app_kamerka/static/css/cyberpunk.css`; application
+layout and interactions live in `kamerka-shell.css` and `kamerka-shell.js`.
+Page-specific styles load before these shared styles. Navigation is defined once
+in `app_kamerka/context_processors.py` for both desktop and mobile.
 
 ---
 

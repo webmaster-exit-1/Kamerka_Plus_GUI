@@ -1,634 +1,489 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block page_title %}Launch - ꓘamerka{% endblock %}
-
+{% block page_title %}Launch search · Kamerka{% endblock %}
 {% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/bootstrap/bootstrap-select.min.css' %}">
+<link rel="stylesheet" href="{% static 'css/bootstrap/bootstrap-select-country.min.css' %}">
+<link rel="stylesheet" href="{% static 'css/selectr.min.css' %}">
 <link rel="stylesheet" href="{% static 'css/search_style.css' %}">
-    <link rel="stylesheet" href="{% static 'css/bootstrap/bootstrap.min.css' %}" type="text/css" />
-  <link rel="stylesheet" href="{% static 'css/bootstrap/bootstrap-select.min.css' %}" type="text/css" />
-  <link rel="stylesheet" href="{% static 'css/bootstrap/bootstrap-select-country.min.css' %}" type="text/css" />
-    <link href="{% static 'css/selectr.min.css' %}" rel="stylesheet" type="text/css">
-<script src="{% static 'js/plugins/selectr.min.js' %}" type="text/javascript"></script>
-<style>.dropdown-toggle.btn-default {
-  position: relative;
-padding: 0px 20px 5px 5px;
-border: 4px solid #444;
-width: 100%;
-background: #FFF;
-z-index: 1;
-margin: 0px;
-font-size: 16px;
-min-height: 58px;
-width:360%;
-}
-</style>
-    <style>
-.dropdown-menu {
-     width:360%;
-}
-</style>
-    <style>
-        .selectr-selected {
-    position: relative;
-padding: 0px 20px 5px 5px;
-border: 4px solid #444;
-width: 100%;
-background: #FFF;
-z-index: 1;
-margin: 0px;
-font-size: 16px;
-min-height: 58px;
-}
-.selectr-placeholder {
-    color: black;
-    margin-top: 15px;
-}
-.selectr-tags {
-    padding: 5px;
-    }
-    .selectr-tag {
-
-    background: #1caf9a;
-    }
-    </style>
-    <style>
-        .file-upload {
-  background-color: #ffffff;
-  width: 600px;
-  margin: 0 auto;
-  padding: 20px;
-}
-
-
-.file-upload-content {
-  display: none;
-  text-align: center;
-}
-
-.file-upload-input {
-  position: absolute;
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  outline: none;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.image-upload-wrap {
-  margin-top: 20px;
-  border: 4px dashed  #ff00cd;
-  position: relative;
-}
-
-.image-dropping,
-.image-upload-wrap:hover {
-  background-color: #00E1FF;
-  border: 4px dashed #ff00cd;
-}
-
-.image-title-wrap {
-  padding: 0 15px 15px 15px;
-  color: #222;
-}
-
-.drag-text {
-  text-align: center;
-}
-
-.drag-text h3 {
-  text-transform: uppercase;
-  color: #0064d7;
-  padding: 60px 0;
-  font-family: "Poppins", "Arial", "Helvetica Neue", sans-serif;
-font-weight: 500;
-font-size: 22px;
-}
-
-.file-upload-image {
-  max-height: 200px;
-  max-width: 200px;
-  margin: auto;
-  padding: 20px;
-}
-
-
-    </style>
-    <link href="{% static 'css/search.css' %}" rel="stylesheet" media="all">
 {% endblock %}
 
 {% block content %}
-                <div class="cp-page-header" style="text-align:center; padding:14px 0 6px;">
-                  <h1 class="cp-page-title" style="text-align:center;">
-                    <span class="cp-glitch" data-text="ICS &amp; IoT Reconnaissance">ICS &amp; IoT Reconnaissance</span>
-                  </h1>
-                  <div style="font-family:var(--cp-font);font-size:0.95em;letter-spacing:0.18em;color:var(--cp-dim);padding-bottom:6px;">
-                    LAUNCH · SHODAN PRESETS · CREDIT-AWARE SEARCH
-                  </div>
-                </div>
-        <div class="km-launch-wrap">
-            <div class="km-launch-card card card-4">
-                <div class="card-body">
-                    <ul class="tab-list">
-                        <li class="tab-list__item active">
-                            <a class="tab-list__link" href="#tab1" onclick="replaceback()" data-toggle="tab">Industrial Control Systems</a>
-                        </li>
-                        <li class="tab-list__item">
-                            <a class="tab-list__link" href="#tab2"  id='tab' onclick="replace()" data-toggle="tab">Internet of Things</a>
-                        </li>
-                        <li class="tab-list__item">
-                            <a class="tab-list__link" href="#tab8"  id='tab7' onclick="replace4()" data-toggle="tab">Infrastructure</a>
-                        </li>
-                         <li class="tab-list__item">
-                            <a class="tab-list__link" href="#tab3"  id='tab4' onclick="replace2()" data-toggle="tab">Healthcare</a>
-                        </li>
-                        <li class="tab-list__item">
-                            <a class="tab-list__link" href="#tab5"  id='tab6' onclick="replace3()" data-toggle="tab">Upload NMAP Scan</a>
-                        </li>
-
-
-
-                    </ul>
-                    <div class="tab-content">
-                        <div class="tab-pane active" id="tab1">
-                                                                           <h3><center style="color: #00E1FF;">Country</center></h3>
-                            <form method="POST" action="">
-{% csrf_token %}
-	 <select class="selectpicker countrypicker" name='country' id='country' data-default="US" data-flag="true" ></select>
-
-<br>
-                                <br>
-                                                <h3><center style="color: #00E1FF;">Device</center></h3>
-
-                                                <select id="ics_country" multiple name="ics_country">
-{% for key, label in ics_presets %}
-                                                    <option value="{{ key }}">{{ label }}</option>
-{% endfor %}
-                                                                                                   </select>
-<br>
-
-
-<input type="checkbox" id="test1" name="all" /><label for="test1"><span class="ui"></span> <h4>All results </h4></label>
-
-
-                                <br>
-                                <br>
-
-<button class="btn-submit m-t-0" type="submit">search</button>
-
-
-                            </form>
-                        </div>
-
-                        <div class="tab-pane" id="tab2">
-
-
-                                                        <form method="POST" action="">
-{% csrf_token %}
-                                                           <h3><center style="color:#00E1FF;">Coordinates</center></h3>
-
-                                                            <section class="webdesigntuts-workshop">
-		<input type="search" name="coordinates" id="coordinates" placeholder="Search...">
-</section>
-                          <br>    <br><br><h3><center style="color:#00E1FF;">Camera</center></h3>
-
-                                                                                                                      <select multiple name="coordinates_search" id="cam" >
-{% for key, label in iot_camera_presets %}
-                                                    <option value="{{ key }}">{{ label }}</option>
-{% endfor %}
-                                                </select>
-
-                                        <br>
-                                                                                   <h3><center style="color:#00E1FF;">Other</center></h3>
-
-                                                                <select name="coordinates_search" id='other' multiple>
-{% for key, label in iot_other_presets %}
-                                                    <option value="{{ key }}">{{ label }}</option>
-{% endfor %}
-                                                </select>
-                               <br>
-                                   <h3><center style="color: #00E1FF;">ICS</center></h3>
-                                                                                                <select name="coordinates_search" multiple id="icsiot">
-{% for key, label in iot_ics_presets %}
-                                                    <option value="{{ key }}">{{ label }}</option>
-{% endfor %}
-                                                </select>
-<br>
-                                                            <input type="checkbox" id="test3" name="all" /><label for="test3"><span class="ui"></span> <h4>All results </h4></label>
-
-
-                                <br>
-                                <br>
-<button class="btn-submit m-t-0" type="submit">search</button>
-
-
-
-
-
-
-
-                            </form>
-
-
-                        </div>
-                         <div class="tab-pane" id="tab3">
-                                                                           <h3><center style="color: #00E1FF;">Country</center></h3>
-                            <form method="POST" action="">
-{% csrf_token %}
-	 <select class="selectpicker countrypicker" name='country_healthcare' id='country_healthcare' data-default="CA" data-flag="true" ></select>
-
-<br>
-                                <br>
-                                                <h3><center style="color: #00E1FF;">Device</center></h3>
-
-                                                <select id="healthcare" multiple name="healthcare">
-                                                    <option value="dicom">Dicom</option>
-                                                    <option value="zoll">Zoll</option>
-  													<option value="perioperative">GE Perioperative</option>
-  													<option value="wall_of_analytics">Wall of Analytics</option>
-                                                    <option value="viztek_exa">VIZTEK EXA</option>
-  													<option value="medweb">Medweb</option>
-  													<option value="intuitim">Intuitim</option>
-                                                    <option value="medcon_archiving_system">Medcon Archiving System</option>
-  													<option value="orthanc_explorer">Orthanc Explorer</option>
-  													<option value="osirix">OsiriX</option>
-                                                    <option value="clari_pacs">ClariPACS</option>
-  													<option value="siste_lab">SisteLAB</option>
-  													<option value="opalweb">Opalweb</option>
-                                                    <option value="neuropro">Neuropro</option>
-  													<option value="tmw_document_imaging">TMW Document Imaging</option>
-  													<option value="erez">eRez Imaging</option>
-                                                    <option value="gluco_care">GlucoCare igc</option>
-                                                    <option value="glucose_guide">Glucose guide</option>
-  													<option value="grandmed_glucose">Grandmed Glucose</option>
-  													<option value="philips_digital_pathology">Philips Digital Pathology</option>
-                                                    <option value="tricore_pathology">Tricore Pathology</option>
-  													<option value="appsmart_ophthalmology">Appsmart Pathology</option>
-  													<option value="chs_ophthalmology">CHS Ophthalmology</option>
-                                                    <option value="ram_soft">RamSoft</option>
-  													<option value="xnat">XNAT</option>
-  													<option value="iris_emr">Iris EMR</option>
-                                                    <option value="eclinicalworks_emr">eClinicalWorks EMR</option>
-                                                    <option value="open_emr">OpenEMR</option>
-                                                    <option value="oscar_emr">OSCAR EMR</option>
-                                                    <option value="wm_emr">WM EMR</option>
-                                                    <option value="doctors_partner_emr">DoctorsPartner EMR</option>
-  													<option value="mckesson_radiology">McKesson Radiology</option>
-  													<option value="kodak_carestream">KODAK CARESTREAM PACS</option>
-                                                    <option value="meded">MedEd</option>
-  													<option value="centricity_radiology">Centricity Radiology</option>
-  													<option value="openeyes">OpenEyes</option>
-                                                    <option value="orthanc">Orthanc</option>
-  													<option value="horos">Horos</option>
-  													<option value="open_mrs">OpenMRS</option>
-                                                    <option value="mirth_connect">Mirth Connect</option>
-                                                    <option value="acuity_logic">AcuityLogic</option>
-                                                    <option value="optical_coherence_tomography">Optical Coherence Tomography</option>
-                                                    <option value="philips_intellispace">Philips Intellispace</option>
-                                                     <option value="vitrea_intelligence">Vitrea intelligence</option>
-                                                    <option value="phenom_electron_microscope">Phenom-World Microscope</option>
-  													<option value="meddream_dicom_viewer">MedDream DICOM Viewer</option>
-  													<option value="merge_pacs">Merge PACS</option>
-                                                    <option value="synapse_3d">Synapse 3D</option>
-  													<option value="navify">NAVIFY® Oncology Workflow</option>
-  													<option value="telemis_tmp">Telemis TMP</option>
-                                                    <option value="brainlab">Brainlab</option>
-  													<option value="nexus360">Nexus360</option>
-  													<option value="brain_scope">BrainScope</option>
-                                                    <option value="omero_microscopy">OMERO Microscopy</option>
-                                                    <option value="meditech">Meditech</option>
-                                                    <option value="cynetics">Cynetics</option>
-                                                    <option value="promed">Promed</option>
-  													<option value="carestream">Carestream</option>
-                                                    <option value="carestream_web">Carestream web</option>
-  													<option value="vet_rocket">Vet Rocket</option>
-  													<option value="vet_view">VetView</option>
-                                                    <option value="lumed">LUMED</option>
-                                                    <option value="infinitt">INFINITT</option>
-                                                    <option value="labtech">Labtech</option>
-                                                    <option value="progetti">Progetti</option>
-                                                    <option value="qt_medical">QT Medical</option>
-  													<option value="huvitz_optometric">Huvitz Optometric</option>
-  													<option value="optos_advance">OptosAdvance</option>
-                                                    <option value="optovue">Optovue</option>
-                                                    <option value="asthma_monitoring_adamm">Asthma Monitoring ADAMM</option>
-                                                    <option value="pregnabit">Pregnabit</option>
-                                                    <option value="prime_clinical_systems">Prime Clinical Systems</option>
-  													<option value="omni_explorer">OmniExplorer</option>
-                                                    <option value="avizia">Avizia</option>
-  													<option value="operamed">Operamed</option>
-  													<option value="early_sense">EarlySense</option>
-                                                    <option value="tunstall">Tunstall</option>
-                                                    <option value="clini_net">CliniNet</option>
-                                                    <option value="intelesens">Intelesens</option>
-                                                    <option value="kb_port">KbPort</option>
-                                                    <option value="nursecall_message_service">Nursecall Message Service</option>
-                                                    <option value="image_information_systems">IMAGE Information Systems</option>
-                                                    <option value="agilent_technologies">Agilent Technologies</option>
-                                                    <option value="praxis_portal2">Medigration PraxisPortal2</option>
-                                                    <option value="xero_viewer">XERO Viewer</option>
-                                                    <option value="dicom_port_104">DICOM Port 104</option>
-                                                    <option value="hl7_fhir">HL7 FHIR</option>
-                                                    <option value="ge_healthcare">GE Healthcare</option>
-                                                    <option value="philips_healthcare">Philips Healthcare</option>
-                                                    <option value="siemens_healthineers">Siemens Healthineers</option>
-                                                    <option value="dental_imaging">Dental Imaging</option>
-                                                    <option value="radiant_dicom">RadiAnt DICOM</option>
-                                                    <option value="baxter_infusion">Baxter Infusion</option>
-                                                    <option value="draeger_medical">Draeger Medical</option>
-                                                    <option value="planmeca_romexis">Planmeca Romexis</option>
-
-                                                                                                   </select>
-<br>
-
-
-<input type="checkbox" id="test9" name="all" /><label for="test9"><span class="ui"></span> <h4>All results </h4></label>
-
-
-                                <br>
-                                <br>
-
-<button class="btn-submit m-t-0" type="submit">search</button>
-
-
-                            </form>
-                        </div>
-
-
-
-
-                            <div class="tab-pane" id="tab5">
-                            <form method="post" action="" enctype="multipart/form-data">
-{% csrf_token %}
-  <div class="image-upload-wrap">
-    <input class="file-upload-input" type='file' name="myfile" onchange="readURL(this);"/>
-    <div class="drag-text">
-      <h3>Upload NMAP scan in XML format </h3>
+<div class="km-launch">
+  <noscript><div class="alert alert-info">JavaScript is disabled. Enable it to configure Shodan searches and review query credits before launching. You can still import an Nmap XML report below.</div></noscript>
+  <header class="km-launch-hero">
+    <div>
+      <p class="km-launch-eyebrow">RECONNAISSANCE / NEW SEARCH</p>
+      <h1>Define your search.</h1>
+      <p>Explore exposed devices with curated Shodan presets, or bring an existing Nmap scan into your workspace.</p>
     </div>
-  </div>
-                                <div class="file-upload-content">
-    <div class="image-title-wrap">
-        <span style='color:white;font-family: "Poppins", "Arial", "Helvetica Neue", sans-serif;
-font-weight: 500;
-font-size: 22px;' class="image-title">
-            </span>
-    </div>
-  </div>
-                                <br>
+    <div class="km-launch-source">DATA SOURCE <strong>SHODAN / XML</strong></div>
+  </header>
+  <ol class="km-launch-steps" aria-label="Search workflow">
+    <li><span class="km-step-number">01</span><div><strong>Choose a category</strong><small>Match the systems you investigate.</small></div></li>
+    <li><span class="km-step-number">02</span><div><strong>Set your scope</strong><small>Select a location and device presets.</small></div></li>
+    <li><span class="km-step-number">03</span><div><strong>Review &amp; launch</strong><small>Check API credit usage before searching.</small></div></li>
+  </ol>
 
-<!--    <input type="file" name="myfile">-->
-    <button class="btn-submit m-t-0" type="submit">Upload</button>
-  </form>
-                        </div>
-
-
-
-                        <div class="tab-pane" id="tab8">
-                                                                           <h3><center style="color: #00E1FF;">Country</center></h3>
-                            <form method="POST" action="">
-{% csrf_token %}
-	 <select class="selectpicker countrypicker" name='country_infra' id='country_infra' data-default="CA" data-flag="true" ></select>
-
-<br>
-                                <br>
-                                                <h3><center style="color: #00E1FF;">Device</center></h3>
-
-                                                <select id="infra" multiple name="infra">
-
-                                                    <option value="cobaltstrike">Cobalt Strike</option>
-                                                    <option value="msf">Metasploit</option>
-                                                    <option value="covenant">Covenant</option>
-                                                    <option value="mythic">Mythic</option>
-                                                    <option value="bruteratel">BruteRatel</option>
-                                                    <option value="sliver">Sliver</option>
-                                                    <option value="havoc">Havoc</option>
-                                                    <option value="posh_c2">PoshC2</option>
-                                                    <option value="deimos_c2">DeimosC2</option>
-                                                    <option value="merlin_c2">Merlin</option>
-                                                    <option value="nighthawk_c2">Nighthawk</option>
-                                                    <option value="nimplant">NimPlant</option>
-                                                    <option value="villain_c2">Villain</option>
-
-                                                                                                   </select>
-<br>
-
-
-<input type="checkbox" id="test7" name="all" /><label for="test7"><span class="ui"></span> <h4>All results </h4></label>
-
-
-                                <br>
-                                <br>
-
-<button class="btn-submit m-t-0" type="submit">search</button>
-
-
-                            </form>
-                        </div>
-
-
-
-
-
-
-
-                    </div>
-                </div>
+  <section class="km-launch-card" aria-label="Search configuration">
+    <ul class="km-launch-tabs" role="tablist" aria-label="Search category">
+      <li class="active" role="presentation"><a id="ics-tab" href="#tab1" role="tab" aria-controls="tab1" aria-selected="true" data-toggle="tab">Industrial systems</a></li>
+      <li role="presentation"><a id="iot-tab" href="#tab2" role="tab" aria-controls="tab2" aria-selected="false" tabindex="-1" data-toggle="tab">Internet of Things</a></li>
+      <li role="presentation"><a id="infra-tab" href="#tab8" role="tab" aria-controls="tab8" aria-selected="false" tabindex="-1" data-toggle="tab">Infrastructure</a></li>
+      <li role="presentation"><a id="healthcare-tab" href="#tab3" role="tab" aria-controls="tab3" aria-selected="false" tabindex="-1" data-toggle="tab">Healthcare</a></li>
+      <li role="presentation"><a id="nmap-tab" href="#tab5" role="tab" aria-controls="tab5" aria-selected="false" tabindex="-1" data-toggle="tab">Import Nmap</a></li>
+    </ul>
+    <div class="tab-content">
+      <section class="tab-pane active" id="tab1" role="tabpanel" aria-labelledby="ics-tab">
+        <h2>Industrial control systems</h2>
+        <p class="km-launch-intro">Find industrial protocols and connected control systems within a country.</p>
+        <form method="POST" action="" class="km-search-form">
+          {% csrf_token %}
+          <div class="km-launch-grid">
+            <div class="km-launch-field">
+              <label for="country">Country</label>
+              <select class="selectpicker countrypicker" name="country" id="country" data-default="US" data-live-search="true" data-flag="true" aria-describedby="country-help"><option value="US">United States of America</option></select>
+              <p class="help-block" id="country-help">Limit results to one country.</p>
             </div>
+            <div class="km-launch-field">
+              <label for="ics_country">Device presets</label>
+              <select id="ics_country" multiple name="ics_country" aria-describedby="ics-help">
+                {% for key, label in ics_presets %}
+                <option value="{{ key }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+              <p class="help-block" id="ics-help">Search and select one or more protocols or device families.</p>
+            </div>
+          </div>
+          <div class="km-launch-credit">
+            <label for="test1"><input type="checkbox" id="test1" name="all" aria-describedby="ics-credit"> Retrieve all results</label>
+            <p id="ics-credit">Off by default: fetch up to 100 results per preset. All results can consume substantially more Shodan query credits. Review the estimate before you launch.</p>
+          </div>
+          <p class="km-launch-error" role="alert"></p>
+          <div class="km-launch-actions"><button class="btn btn-primary btn-submit" type="submit" disabled>Review &amp; launch search <span aria-hidden="true">→</span></button><p>Your Shodan API key is required for live searches.</p></div>
+        </form>
+      </section>
 
+      <section class="tab-pane" id="tab2" role="tabpanel" aria-labelledby="iot-tab">
+        <h2>Internet of Things</h2>
+        <p class="km-launch-intro">Search cameras, connected devices, and industrial systems near a location.</p>
+        <form method="POST" action="" class="km-search-form">
+          {% csrf_token %}
+          <div class="km-launch-field">
+            <label for="coordinates">Coordinates</label>
+            <input class="form-control" type="search" name="coordinates" id="coordinates" placeholder="51.5074,-0.1278" required aria-describedby="coordinates-help">
+            <p class="help-block" id="coordinates-help">Enter latitude,longitude in decimal degrees. For example: 51.5074,-0.1278.</p>
+          </div>
+          <div class="km-launch-grid">
+            <div class="km-launch-field">
+              <label for="cam">Camera presets</label>
+              <select multiple name="coordinates_search" id="cam">
+                {% for key, label in iot_camera_presets %}
+                <option value="{{ key }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <div class="km-launch-field">
+                <label for="other">Other connected devices</label>
+                <select name="coordinates_search" id="other" multiple>
+                  {% for key, label in iot_other_presets %}
+                  <option value="{{ key }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="km-launch-field">
+                <label for="icsiot">Industrial systems</label>
+                <select name="coordinates_search" multiple id="icsiot">
+                  {% for key, label in iot_ics_presets %}
+                  <option value="{{ key }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <p class="help-block">Select at least one preset from any of these groups.</p>
+              </div>
+            </div>
+          </div>
+          <div class="km-launch-credit">
+            <label for="test3"><input type="checkbox" id="test3" name="all" aria-describedby="iot-credit"> Retrieve all results</label>
+            <p id="iot-credit">Off by default: fetch up to 100 results per preset. All results can consume substantially more query credits. Location-specific credit estimates are not available.</p>
+          </div>
+          <p class="km-launch-error" role="alert"></p>
+          <div class="km-launch-actions"><button class="btn btn-primary btn-submit" type="submit" disabled>Review &amp; launch search <span aria-hidden="true">→</span></button><p>Review the selected scope before launching.</p></div>
+        </form>
+      </section>
 
-        </div>
+      <section class="tab-pane" id="tab8" role="tabpanel" aria-labelledby="infra-tab">
+        <h2>Infrastructure</h2>
+        <p class="km-launch-intro">Identify indexed command-and-control infrastructure using known platform signatures.</p>
+        <form method="POST" action="" class="km-search-form">
+          {% csrf_token %}
+          <div class="km-launch-grid">
+            <div class="km-launch-field">
+              <label for="country_infra">Country</label>
+              <select class="selectpicker countrypicker" name="country_infra" id="country_infra" data-default="CA" data-live-search="true" data-flag="true"><option value="CA">Canada</option></select>
+            </div>
+            <div class="km-launch-field">
+              <label for="infra">Platform presets</label>
+              <select id="infra" multiple name="infra">
+                <option value="cobaltstrike">Cobalt Strike</option>
+                <option value="msf">Metasploit</option>
+                <option value="covenant">Covenant</option>
+                <option value="mythic">Mythic</option>
+                <option value="bruteratel">BruteRatel</option>
+                <option value="sliver">Sliver</option>
+                <option value="havoc">Havoc</option>
+                <option value="posh_c2">PoshC2</option>
+                <option value="deimos_c2">DeimosC2</option>
+                <option value="merlin_c2">Merlin</option>
+                <option value="nighthawk_c2">Nighthawk</option>
+                <option value="nimplant">NimPlant</option>
+                <option value="villain_c2">Villain</option>
+              </select>
+              <p class="help-block">Select one or more platforms to investigate.</p>
+            </div>
+          </div>
+          <div class="km-launch-credit">
+            <label for="test7"><input type="checkbox" id="test7" name="all" aria-describedby="infra-credit"> Retrieve all results</label>
+            <p id="infra-credit">Off by default: fetch up to 100 results per preset. All results can consume substantially more Shodan query credits. Review the estimate before you launch.</p>
+          </div>
+          <p class="km-launch-error" role="alert"></p>
+          <div class="km-launch-actions"><button class="btn btn-primary btn-submit" type="submit" disabled>Review &amp; launch search <span aria-hidden="true">→</span></button><p>Results reflect Shodan's latest indexed observations.</p></div>
+        </form>
+      </section>
+
+      <section class="tab-pane" id="tab3" role="tabpanel" aria-labelledby="healthcare-tab">
+        <h2>Healthcare systems</h2>
+        <p class="km-launch-intro">Locate exposed clinical platforms, imaging services, and connected medical systems.</p>
+        <form method="POST" action="" class="km-search-form">
+          {% csrf_token %}
+          <div class="km-launch-grid">
+            <div class="km-launch-field">
+              <label for="country_healthcare">Country</label>
+              <select class="selectpicker countrypicker" name="country_healthcare" id="country_healthcare" data-default="CA" data-live-search="true" data-flag="true"><option value="CA">Canada</option></select>
+            </div>
+            <div class="km-launch-field">
+              <label for="healthcare">Healthcare presets</label>
+              <select id="healthcare" multiple name="healthcare">
+                <option value="dicom">Dicom</option>
+                <option value="zoll">Zoll</option>
+                <option value="perioperative">GE Perioperative</option>
+                <option value="wall_of_analytics">Wall of Analytics</option>
+                <option value="viztek_exa">VIZTEK EXA</option>
+                <option value="medweb">Medweb</option>
+                <option value="intuitim">Intuitim</option>
+                <option value="medcon_archiving_system">Medcon Archiving System</option>
+                <option value="orthanc_explorer">Orthanc Explorer</option>
+                <option value="osirix">OsiriX</option>
+                <option value="clari_pacs">ClariPACS</option>
+                <option value="siste_lab">SisteLAB</option>
+                <option value="opalweb">Opalweb</option>
+                <option value="neuropro">Neuropro</option>
+                <option value="tmw_document_imaging">TMW Document Imaging</option>
+                <option value="erez">eRez Imaging</option>
+                <option value="gluco_care">GlucoCare igc</option>
+                <option value="glucose_guide">Glucose guide</option>
+                <option value="grandmed_glucose">Grandmed Glucose</option>
+                <option value="philips_digital_pathology">Philips Digital Pathology</option>
+                <option value="tricore_pathology">Tricore Pathology</option>
+                <option value="appsmart_ophthalmology">Appsmart Pathology</option>
+                <option value="chs_ophthalmology">CHS Ophthalmology</option>
+                <option value="ram_soft">RamSoft</option>
+                <option value="xnat">XNAT</option>
+                <option value="iris_emr">Iris EMR</option>
+                <option value="eclinicalworks_emr">eClinicalWorks EMR</option>
+                <option value="open_emr">OpenEMR</option>
+                <option value="oscar_emr">OSCAR EMR</option>
+                <option value="wm_emr">WM EMR</option>
+                <option value="doctors_partner_emr">DoctorsPartner EMR</option>
+                <option value="mckesson_radiology">McKesson Radiology</option>
+                <option value="kodak_carestream">KODAK CARESTREAM PACS</option>
+                <option value="meded">MedEd</option>
+                <option value="centricity_radiology">Centricity Radiology</option>
+                <option value="openeyes">OpenEyes</option>
+                <option value="orthanc">Orthanc</option>
+                <option value="horos">Horos</option>
+                <option value="open_mrs">OpenMRS</option>
+                <option value="mirth_connect">Mirth Connect</option>
+                <option value="acuity_logic">AcuityLogic</option>
+                <option value="optical_coherence_tomography">Optical Coherence Tomography</option>
+                <option value="philips_intellispace">Philips Intellispace</option>
+                <option value="vitrea_intelligence">Vitrea intelligence</option>
+                <option value="phenom_electron_microscope">Phenom-World Microscope</option>
+                <option value="meddream_dicom_viewer">MedDream DICOM Viewer</option>
+                <option value="merge_pacs">Merge PACS</option>
+                <option value="synapse_3d">Synapse 3D</option>
+                <option value="navify">NAVIFY® Oncology Workflow</option>
+                <option value="telemis_tmp">Telemis TMP</option>
+                <option value="brainlab">Brainlab</option>
+                <option value="nexus360">Nexus360</option>
+                <option value="brain_scope">BrainScope</option>
+                <option value="omero_microscopy">OMERO Microscopy</option>
+                <option value="meditech">Meditech</option>
+                <option value="cynetics">Cynetics</option>
+                <option value="promed">Promed</option>
+                <option value="carestream">Carestream</option>
+                <option value="carestream_web">Carestream web</option>
+                <option value="vet_rocket">Vet Rocket</option>
+                <option value="vet_view">VetView</option>
+                <option value="lumed">LUMED</option>
+                <option value="infinitt">INFINITT</option>
+                <option value="labtech">Labtech</option>
+                <option value="progetti">Progetti</option>
+                <option value="qt_medical">QT Medical</option>
+                <option value="huvitz_optometric">Huvitz Optometric</option>
+                <option value="optos_advance">OptosAdvance</option>
+                <option value="optovue">Optovue</option>
+                <option value="asthma_monitoring_adamm">Asthma Monitoring ADAMM</option>
+                <option value="pregnabit">Pregnabit</option>
+                <option value="prime_clinical_systems">Prime Clinical Systems</option>
+                <option value="omni_explorer">OmniExplorer</option>
+                <option value="avizia">Avizia</option>
+                <option value="operamed">Operamed</option>
+                <option value="early_sense">EarlySense</option>
+                <option value="tunstall">Tunstall</option>
+                <option value="clini_net">CliniNet</option>
+                <option value="intelesens">Intelesens</option>
+                <option value="kb_port">KbPort</option>
+                <option value="nursecall_message_service">Nursecall Message Service</option>
+                <option value="image_information_systems">IMAGE Information Systems</option>
+                <option value="agilent_technologies">Agilent Technologies</option>
+                <option value="praxis_portal2">Medigration PraxisPortal2</option>
+                <option value="xero_viewer">XERO Viewer</option>
+                <option value="dicom_port_104">DICOM Port 104</option>
+                <option value="hl7_fhir">HL7 FHIR</option>
+                <option value="ge_healthcare">GE Healthcare</option>
+                <option value="philips_healthcare">Philips Healthcare</option>
+                <option value="siemens_healthineers">Siemens Healthineers</option>
+                <option value="dental_imaging">Dental Imaging</option>
+                <option value="radiant_dicom">RadiAnt DICOM</option>
+                <option value="baxter_infusion">Baxter Infusion</option>
+                <option value="draeger_medical">Draeger Medical</option>
+                <option value="planmeca_romexis">Planmeca Romexis</option>
+              </select>
+              <p class="help-block">Search and select one or more clinical platforms.</p>
+            </div>
+          </div>
+          <div class="km-launch-credit">
+            <label for="test9"><input type="checkbox" id="test9" name="all" aria-describedby="healthcare-credit"> Retrieve all results</label>
+            <p id="healthcare-credit">Off by default: fetch up to 100 results per preset. All results can consume substantially more Shodan query credits. Review the estimate before you launch.</p>
+          </div>
+          <p class="km-launch-error" role="alert"></p>
+          <div class="km-launch-actions"><button class="btn btn-primary btn-submit" type="submit" disabled>Review &amp; launch search <span aria-hidden="true">→</span></button><p>Investigate only systems within your authorized scope.</p></div>
+        </form>
+      </section>
+
+      <section class="tab-pane" id="tab5" role="tabpanel" aria-labelledby="nmap-tab">
+        <h2>Import an existing scan</h2>
+        <p class="km-launch-intro">Add hosts and services from an Nmap XML report. No Shodan query credits are used for the import.</p>
+        <form method="post" action="" enctype="multipart/form-data" id="km-import-form">
+          {% csrf_token %}
+          <div class="km-launch-field km-launch-upload">
+            <label for="nmap-file">Nmap XML report</label>
+            <p class="help-block" id="nmap-help">Choose an XML report generated with Nmap's <code>-oX</code> option.</p>
+            <input type="file" name="myfile" id="nmap-file" accept=".xml,text/xml,application/xml" required aria-describedby="nmap-help nmap-file-status">
+            <p class="help-block" id="nmap-file-status" role="status">No report selected.</p>
+          </div>
+          <div class="km-launch-actions"><button class="btn btn-primary btn-submit" type="submit">Import scan <span aria-hidden="true">→</span></button><p>Importing a report does not run a new network scan.</p></div>
+        </form>
+      </section>
+    </div>
+  </section>
+  <p class="km-launch-footnote">Use Kamerka for authorized research. Indexed exposure is an observation, not proof of a vulnerability.</p>
+</div>
+
+<div class="modal" id="credit-cost-modal" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="credit-cost-title" aria-describedby="credit-cost-content">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header"><h2 class="modal-title" id="credit-cost-title">Review search</h2></div>
+      <div class="modal-body" id="credit-cost-content" aria-live="polite"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-default" id="credit-cost-cancel" data-dismiss="modal">Back to configuration</button>
+        <button type="button" class="btn btn-primary" id="credit-cost-confirm">Launch search</button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
-  <script src="{% static 'js/plugins/bootstrap/bootstrap-select.min.js' %}"></script>
-  <script src="{% static 'js/bootstrap-select-country.js'  %}"></script>
+<script src="{% static 'js/plugins/bootstrap/bootstrap-select.min.js' %}"></script>
+<script src="{% static 'js/bootstrap-select-country.js' %}"></script>
+<script src="{% static 'js/plugins/selectr.min.js' %}"></script>
 <script>
-    function readURL(input) {
-  if (input.files && input.files[0]) {
+(function () {
+  'use strict';
+  var root = document.querySelector('.km-launch');
+  var tabs = Array.from(root.querySelectorAll('[role="tab"]'));
+  var modal = $('#credit-cost-modal');
+  var content = document.getElementById('credit-cost-content');
+  var confirm = document.getElementById('credit-cost-confirm');
+  var pendingForm = null;
+  var pendingRequest = null;
+  var lastTrigger = null;
+  var requestVersion = 0;
 
-    var reader = new FileReader();
-
-    reader.onload = function(e) {
-      $('.image-upload-wrap').hide();
-      $('.image-title').html(input.files[0].name);
-
-<!--      $('.file-upload-image').html(input.files[0].name);-->
-      $('.file-upload-content').show();
-
-    };
-
-    reader.readAsDataURL(input.files[0]);
-
-  } else {
-    removeUpload();
+  if (typeof Selectr !== 'undefined') {
+    root.querySelectorAll('select[multiple]').forEach(function (select) {
+      var picker = new Selectr(select, {searchable: true, multiple: true, width: '100%', placeholder: 'Search and select presets'});
+      var label = root.querySelector('label[for="' + select.id + '"]');
+      if (label) {
+        label.id = select.id + '-label';
+        picker.container.setAttribute('aria-labelledby', label.id);
+        picker.selected.setAttribute('aria-labelledby', label.id);
+        picker.input.setAttribute('aria-label', 'Search ' + label.textContent.toLowerCase());
+      }
+    });
   }
-}
-</script>
 
-    <script>
-function _kmLaunchBg(url) {
-  var card = document.querySelector(".km-launch-card");
-  if (card) { card.style.backgroundImage = "url(" + url + ")"; card.style.backgroundSize = "cover"; }
-}
-function replaceback() { _kmLaunchBg("{% static 'images/back1.jpg' %}"); }
-function replace() { _kmLaunchBg("{% static 'images/back2.jpg' %}"); }
-function replace2() { _kmLaunchBg("{% static 'images/back3.jpg' %}"); }
-function replace3() { _kmLaunchBg("{% static 'images/back4.jpg' %}"); }
-function replace4() { _kmLaunchBg("{% static 'images/back5.jpg' %}"); }
-</script>
-    <script>
-			$('.country').countrypicker();
-		</script>
+  $(tabs).on('shown.bs.tab', function (event) {
+    tabs.forEach(function (tab) {
+      var active = tab === event.target;
+      tab.setAttribute('aria-selected', String(active));
+      tab.tabIndex = active ? 0 : -1;
+    });
+  });
+  tabs.forEach(function (tab, index) {
+    tab.addEventListener('keydown', function (event) {
+      var next;
+      if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+      if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
+      if (event.key === 'Home') next = 0;
+      if (event.key === 'End') next = tabs.length - 1;
+      if (next !== undefined) {
+        event.preventDefault();
+        $(tabs[next]).tab('show');
+        tabs[next].focus();
+      }
+    });
+  });
 
+  function paragraph(text, className) {
+    var p = document.createElement('p');
+    p.textContent = text;
+    if (className) p.className = className;
+    content.appendChild(p);
+  }
 
-        <script>
-        a = new Selectr('#infra', {
-	searchable: true,
-	width: 300,
-		multiple: true,
+  function selectedKeys(form) {
+    var keys = [];
+    form.querySelectorAll('select[multiple]').forEach(function (select) {
+      var values = select.selectr ? select.selectr.getValue() : Array.from(select.selectedOptions).map(function (option) { return option.value; });
+      keys = keys.concat(Array.isArray(values) ? values : (values ? [values] : []));
+    });
+    return keys.filter(function (key) { return key; });
+  }
 
-});
-a.selectedValues = [];
-</script>
-
-    <script>
-        a = new Selectr('#ics_country', {
-	searchable: true,
-	width: 300,
-		multiple: true,
-
-});
-a.selectedValues = [];
-</script>
-    <script>
-        a = new Selectr('#healthcare', {
-	searchable: true,
-	width: 300,
-		multiple: true,
-
-});
-a.selectedValues = [];
-</script>
-    <script>
-new Selectr('#icsiot', {
-	searchable: true,
-	width: 300,
-	multiple: true,
-});
-new Selectr('#cam', {
-	searchable: true,
-	width: 300,
-	multiple: true,
-});new Selectr('#other', {
-	searchable: true,
-	width: 300,
-	multiple: true,
-});
-    </script>
-
-<!-- ═══════════════════════════════════════════════════════════════════ -->
-<!-- CREDIT-COST CONFIRMATION MODAL                                    -->
-<!-- ═══════════════════════════════════════════════════════════════════ -->
-<div id="credit-cost-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;justify-content:center;align-items:center;">
-    <div style="background:#0a1428;border:2px solid #0064d7;border-radius:8px;padding:30px;max-width:450px;width:90%;text-align:center;box-shadow:0 0 30px rgba(0,100,215,0.3);">
-        <h3 style="color:#00e1ff;margin:0 0 16px;letter-spacing:0.1em;">&#128176; API Credit Estimate</h3>
-        <div id="credit-cost-content" style="color:#fff;font-size:1.1em;margin-bottom:20px;">
-            <p>Estimating cost...</p>
-        </div>
-        <button id="credit-cost-confirm" style="background:#00e1ff;color:#000;border:none;padding:10px 30px;font-weight:bold;border-radius:4px;cursor:pointer;margin-right:10px;">Proceed</button>
-        <button id="credit-cost-cancel" style="background:#ff2050;color:#fff;border:none;padding:10px 30px;font-weight:bold;border-radius:4px;cursor:pointer;">Cancel</button>
-    </div>
-</div>
-
-<script>
-(function() {
-    function getSelectrValues(selectEl) {
-        if (!selectEl) return [];
-        if (selectEl.selectr) {
-            var values = selectEl.selectr.getValue();
-            return Array.isArray(values) ? values : (values ? [values] : []);
+  root.querySelectorAll('.km-search-form').forEach(function (form) {
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var error = form.querySelector('.km-launch-error');
+      error.textContent = '';
+      var keys = selectedKeys(form);
+      if (!keys.length) {
+        error.textContent = 'Select at least one device or platform preset to continue.';
+        var first = form.querySelector('.selectr-selected') || form.querySelector('select[multiple]');
+        first.focus();
+        return;
+      }
+      var coordinates = form.querySelector('[name="coordinates"]');
+      if (coordinates) {
+        var parts = coordinates.value.trim().split(',');
+        var valid = parts.length === 2 && parts.every(function (part) { return part.trim() !== '' && Number.isFinite(Number(part)); });
+        if (!valid || Math.abs(Number(parts[0])) > 90 || Math.abs(Number(parts[1])) > 180) {
+          error.textContent = 'Enter valid latitude,longitude coordinates (latitude −90 to 90; longitude −180 to 180).';
+          coordinates.focus();
+          return;
         }
-        return Array.from(selectEl.selectedOptions).map(function(o) { return o.value; });
-    }
+      }
+      pendingForm = form;
+      lastTrigger = form.querySelector('[type="submit"]');
+      var version = ++requestVersion;
+      var all = form.querySelector('[name="all"]').checked;
+      content.textContent = '';
+      paragraph(keys.length + ' preset' + (keys.length === 1 ? '' : 's') + ' selected.');
+      paragraph(all ? 'All results enabled. This can use a substantial number of Shodan query credits.' : 'Limited search: up to 100 results per preset.', all ? 'cp-warn' : 'text-muted');
+      confirm.disabled = true;
+      modal.modal('show');
 
-    function getFormSelectionKeys(form) {
-        var keys = [];
-        form.querySelectorAll('select[multiple]').forEach(function(sel) {
-            keys = keys.concat(getSelectrValues(sel));
-        });
-        return keys.filter(function(k) { return k; });
-    }
-
-    var forms = document.querySelectorAll('form[method="POST"]');
-    var modal = document.getElementById('credit-cost-modal');
-    var content = document.getElementById('credit-cost-content');
-    var pendingForm = null;
-
-    forms.forEach(function(form) {
-        form.addEventListener('submit', function(e) {
-            if (form.querySelector('input[type="file"]')) return;
-
-            e.preventDefault();
-            pendingForm = form;
-
-            var keys = getFormSelectionKeys(form);
-            if (!keys.length) {
-                alert('Select at least one device or query preset.');
-                return;
-            }
-
-            var queryStr = keys.join(', ');
-            var countryField = form.querySelector(
-                'select[name="country"], select[name="country_healthcare"], select[name="country_infra"]'
-            );
-            var country = countryField ? countryField.value : '';
-
-            modal.style.display = 'flex';
-            content.innerHTML = '<p style="color:#00e1ff;">&#9203; Checking Shodan result count for ' +
-                keys.length + ' selection(s)...</p><p style="color:#888;font-size:0.85em;">' + queryStr + '</p>';
-
-            $.ajax({
-                type: "GET",
-                url: "/search_cost",
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
-                traditional: true,
-                data: {
-                    keys: keys,
-                    country: country
-                },
-                success: function(data) {
-                    if (data.error) {
-                        content.innerHTML = '<p style="color:#ffe600;">&#9888; ' + data.error + '</p><p style="color:#888;">Proceed anyway?</p>';
-                    } else {
-                        var labels = (data.selection_labels || keys).join(', ');
-                        var selectionNote = keys.length > 1
-                            ? '<p style="color:#888;font-size:0.85em;">' + keys.length + ' presets: ' + labels + '</p>'
-                            : '<p style="color:#888;font-size:0.85em;">Preset: ' + labels + '</p>';
-                        content.innerHTML = '<p><b style="color:#00e1ff;font-size:1.3em;">' + data.count.toLocaleString() + '</b> total results</p>' +
-                            '<p>Estimated credit cost: <b style="color:' + (data.credits_cost > 10 ? '#ff2050' : '#00ff88') + ';">' + data.credits_cost + ' credits</b></p>' +
-                            selectionNote;
-                    }
-                },
-                error: function() {
-                    content.innerHTML = '<p style="color:#888;">Could not estimate cost. Proceed anyway?</p>';
-                }
-            });
-        });
-    });
-
-    document.getElementById('credit-cost-confirm').addEventListener('click', function() {
-        modal.style.display = 'none';
-        if (pendingForm) {
-            pendingForm.submit();
+      // The cost endpoint does not apply coordinate scope. Do not present a global count as a local estimate.
+      if (coordinates) {
+        paragraph('Location: ' + coordinates.value.trim());
+        paragraph('A credit estimate is unavailable for coordinate searches. Continuing may consume Shodan query credits.', 'cp-warn');
+        confirm.disabled = false;
+        return;
+      }
+      var country = form.querySelector('.countrypicker').value;
+      paragraph('Country: ' + country);
+      var status = document.createElement('p');
+      status.textContent = 'Checking Shodan result count…';
+      content.appendChild(status);
+      pendingRequest = $.ajax({
+        type: 'GET',
+        url: '/search_cost',
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+        traditional: true,
+        timeout: 15000,
+        data: {keys: keys, country: country},
+        success: function (data) {
+          if (version !== requestVersion) return;
+          status.remove();
+          if (data.error) {
+            paragraph('Estimate unavailable: ' + data.error, 'cp-warn');
+            paragraph('You can continue, but the search may consume query credits.');
+          } else {
+            paragraph(Number(data.count).toLocaleString() + ' indexed results across the selected presets.');
+            paragraph('Estimated credits for all results: ' + data.credits_cost + '.', 'cp-cyan');
+            if (!all) paragraph('Your limited search may use fewer credits. The estimate above is for retrieving all results.', 'text-muted');
+            paragraph('Presets: ' + (data.selection_labels || keys).join(', '), 'text-muted');
+          }
+          confirm.disabled = false;
+        },
+        error: function (xhr, state) {
+          if (version !== requestVersion || state === 'abort') return;
+          status.remove();
+          paragraph('Credit estimate unavailable. Check your API configuration or continue knowing the search may consume query credits.', 'cp-warn');
+          confirm.disabled = false;
         }
+      });
     });
+  });
 
-    document.getElementById('credit-cost-cancel').addEventListener('click', function() {
-        modal.style.display = 'none';
-        pendingForm = null;
-    });
-})();
+  modal.on('shown.bs.modal', function () {
+    document.getElementById('credit-cost-cancel').focus();
+  });
+  modal.on('hidden.bs.modal', function () {
+    ++requestVersion;
+    if (pendingRequest) pendingRequest.abort();
+    pendingRequest = null;
+    pendingForm = null;
+    if (lastTrigger) lastTrigger.focus();
+  });
+  confirm.addEventListener('click', function () {
+    if (!pendingForm || confirm.disabled) return;
+    var form = pendingForm;
+    pendingForm = null;
+    confirm.disabled = true;
+    confirm.textContent = 'Launching…';
+    lastTrigger.disabled = true;
+    lastTrigger.textContent = 'Launching search…';
+    form.submit();
+  });
+
+  var fileInput = document.getElementById('nmap-file');
+  fileInput.addEventListener('change', function () {
+    var file = fileInput.files[0];
+    document.getElementById('nmap-file-status').textContent = file ? file.name + ' · ' + Math.max(1, Math.round(file.size / 1024)) + ' KB · Ready to import' : 'No report selected.';
+  });
+  document.getElementById('km-import-form').addEventListener('submit', function () {
+    var button = this.querySelector('[type="submit"]');
+    button.disabled = true;
+    button.textContent = 'Importing scan…';
+  });
+  root.querySelectorAll('.km-search-form [type="submit"]').forEach(function (button) {
+    button.disabled = false;
+  });
+  root.classList.add('km-launch-ready');
+}());
 </script>
 {% endblock %}

@@ -1,163 +1,79 @@
+{% load static i18n %}
+{% get_current_language as LANGUAGE_CODE %}
 <!DOCTYPE html>
-<html lang="en">
-{% load static %}
+<html lang="{{ LANGUAGE_CODE|default:'en' }}">
 <head>
-    <!-- META ──────────────────────────────────────────────────────── -->
     <title>{% block page_title %}ꓘamerka{% endblock %}</title>
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-    <!--
-        CORE JS loaded here in <head> so that inline <script> blocks
-        inside any child template's content block can safely call
-        jQuery / Bootstrap without waiting for the footer bundle.
-    -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0b1219">
+    <!-- Page scripts still rely on jQuery and Bootstrap being available in the head. -->
     <script src="{% static 'js/plugins/jquery/jquery.min.js' %}"></script>
     <script src="{% static 'js/plugins/jquery/jquery-ui.min.js' %}"></script>
     <script src="{% static 'js/plugins/bootstrap/bootstrap.min.js' %}"></script>
-
-    <!-- COMMON CSS ────────────────────────────────────────────────── -->
-    <link rel="stylesheet" type="text/css" id="theme"
-          href="{% static 'css/theme-default.css' %}"/>
-    <link rel="stylesheet" type="text/css"
-          href="{% static 'css/cyberpunk.css' %}"/>
-    <link rel="stylesheet" type="text/css"
-          href="{% static 'css/hamburger-nav.css' %}"/>
-    <link rel="stylesheet" type="text/css"
-          href="{% static 'css/kamerka-shell.css' %}"/>
-
-    <!-- PAGE-SPECIFIC CSS (and any pre-body <script> tags a page needs) -->
+    <link rel="stylesheet" id="theme" href="{% static 'css/theme-default.css' %}">
     {% block extra_css %}{% endblock %}
-
-    <!--
-        HAMBURGER NAV BEHAVIOUR
-        Handles: toggle on button click · click-outside close
-                 ESC-key close · correct aria-expanded state
-        Placed in <head> because it uses DOMContentLoaded and therefore
-        does not need jQuery — pure vanilla JS, safe anywhere.
-    -->
-    <script>
-    (function () {
-        'use strict';
-
-        /** Sync all mutable state to DOM in one place. */
-        function setMenuState(button, overlay, isOpen) {
-            overlay.classList.toggle('open', isOpen);
-            overlay.hidden = !isOpen;
-            button.setAttribute('aria-expanded', String(isOpen));
-            button.setAttribute('aria-label', isOpen ? 'Close navigation menu' : 'Open navigation menu');
-            button.innerHTML = isOpen ? '&times;' : '&#9776;';
-        }
-
-        document.addEventListener('DOMContentLoaded', function () {
-            var button  = document.getElementById('kamerka-hamburger-btn');
-            var overlay = document.getElementById('kamerka-hamburger-overlay');
-            if (!button || !overlay) { return; }
-
-            /* Start closed */
-            setMenuState(button, overlay, false);
-
-            /* Toggle open / close on button click */
-            button.addEventListener('click', function (e) {
-                e.stopPropagation();
-                setMenuState(button, overlay, overlay.hidden);
-            });
-
-            /* Clicks that land inside the overlay panel do not bubble
-               up to the document-level close handler below. */
-            overlay.addEventListener('click', function (e) {
-                e.stopPropagation();
-            });
-
-            /* Click-outside close */
-            document.addEventListener('click', function (e) {
-                if (!overlay.hidden &&
-                    !overlay.contains(e.target) &&
-                    !button.contains(e.target)) {
-                    setMenuState(button, overlay, false);
-                }
-            });
-
-            /* ESC-key close */
-            document.addEventListener('keydown', function (e) {
-                if (e.key === 'Escape' && !overlay.hidden) {
-                    setMenuState(button, overlay, false);
-                    button.focus();   /* return focus to trigger */
-                }
-            });
-
-            /* Auto-close when the user follows a nav link */
-            overlay.querySelectorAll('a').forEach(function (link) {
-                link.addEventListener('click', function () {
-                    setMenuState(button, overlay, false);
-                });
-            });
-        });
-    }());
-    </script>
-
+    <link rel="stylesheet" href="{% static 'css/cyberpunk.css' %}">
+    <link rel="stylesheet" href="{% static 'css/kamerka-shell.css' %}">
+    <script defer src="{% static 'js/kamerka-shell.js' %}"></script>
 </head>
-<body>
+<body class="km-app">
+    <a class="km-skip-link" href="#main-content">Skip to workspace</a>
     <div class="page-container">
-
-        {% include "includes/hamburger_nav.html" %}
-
-        <!-- ── LEFT SIDEBAR (visible on wide screens) ───────────────── -->
-        <div class="page-sidebar">
-            <ul class="x-navigation">
-                {% include "includes/sidebar_nav.html" %}
-                {% block sidebar_extra %}{% endblock %}
-            </ul>
+        <aside class="page-sidebar" id="km-navigation" aria-label="Application navigation">
+            <div class="km-brand-row">
+                <a class="km-brand" href="/" aria-label="Kamerka home">
+                    <span class="km-brand-mark" aria-hidden="true">ꓘ</span>
+                    <span>KAMERKA<small>INTELLIGENCE WORKSPACE</small></span>
+                </a>
+                <button class="km-nav-close" type="button" aria-label="Close navigation" data-km-nav-close>&times;</button>
+            </div>
+            <nav aria-label="Main">
+                <ul class="x-navigation">
+                    {% include "includes/sidebar_nav.html" %}
+                    {% block sidebar_extra %}{% endblock %}
+                </ul>
+            </nav>
+            <section class="km-worker-panel" aria-labelledby="km-worker-heading" data-worker-url="{% url 'worker_status' %}">
+                <h2 id="km-worker-heading">Worker telemetry</h2>
+                <p id="km-worker-status" role="status">Connecting…</p>
+                <dl>
+                    <div><dt>Active</dt><dd id="worker-active">—</dd></div>
+                    <div><dt>Reserved</dt><dd id="worker-reserved">—</dd></div>
+                    <div><dt>Queued</dt><dd id="worker-queue">—</dd></div>
+                </dl>
+                <a href="/tasks">View task queue <span aria-hidden="true">↗</span></a>
+            </section>
+            <div class="km-sidebar-footer">OSINT / ICS / IoT <span>PLUS</span></div>
+        </aside>
+        <div class="km-nav-backdrop" data-km-nav-close hidden></div>
+        <div class="page-content{% block page_content_class %}{% endblock %}" {% block page_content_style %}{% endblock %}>
+            <header class="km-topbar">
+                <button class="km-nav-toggle" id="km-nav-toggle" type="button" aria-controls="km-navigation" aria-expanded="false" aria-label="Open navigation">
+                    <span aria-hidden="true">☰</span>
+                </button>
+                <div class="km-location"><span>WORKSPACE</span><strong>{{ nav_title|default:"Investigation" }}</strong></div>
+                <div class="km-topbar-actions">
+                    {% if active_case_id %}<a class="km-case-link" href="/results/{{ active_case_id }}">Case #{{ active_case_id }}</a>{% endif %}
+                    <a class="km-new-search" href="/"><span aria-hidden="true">+</span> New search</a>
+                </div>
+            </header>
+            <main id="main-content" class="km-workspace" tabindex="-1">
+                {% if messages %}
+                <div class="km-messages" aria-label="Notifications">
+                    {% for message in messages %}
+                    <div class="alert alert-{{ message.tags|default:'info' }}" role="status">{{ message }}</div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% block case_chrome %}{% endblock %}
+                {% block content %}{% endblock %}
+            </main>
+            <footer class="km-workspace-footer"><span>KAMERKA PLUS</span> Investigate responsibly. Only assess systems you are authorized to test.</footer>
         </div>
-        <!-- ── END LEFT SIDEBAR ─────────────────────────────────────── -->
-
-        <!-- ── MAIN CONTENT ─────────────────────────────────────────── -->
-        <div class="page-content{% block page_content_class %}{% endblock %}"
-             {% block page_content_style %}{% endblock %}>
-            {% block case_chrome %}{% endblock %}
-            {% block content %}{% endblock %}
-        </div>
-        <!-- ── END MAIN CONTENT ─────────────────────────────────────── -->
-
-    </div><!-- /.page-container -->
-
-    <!--
-        FOOTER JS BUNDLE
-        plugins.js / actions.js run after the DOM so they work reliably.
-        jQuery / Bootstrap were already loaded in <head> above.
-    -->
+    </div>
     <script src="{% static 'js/plugins.js' %}"></script>
     <script src="{% static 'js/actions.js' %}"></script>
-    <script>
-    (function(){
-      function refreshWorkerStatus(){
-        fetch('/api/worker_status', {credentials: 'same-origin'})
-          .then(function(r){ return r.json(); })
-          .then(function(data){
-            var active = document.getElementById('worker-active');
-            var reserved = document.getElementById('worker-reserved');
-            var queue = document.getElementById('worker-queue');
-            if (active) { active.textContent = data.active_tasks; }
-            if (reserved) { reserved.textContent = data.reserved_tasks; }
-            if (queue) { queue.textContent = (data.queue_depth === null ? 'n/a' : data.queue_depth); }
-          })
-          .catch(function(){});
-      }
-      document.addEventListener('DOMContentLoaded', function(){
-        refreshWorkerStatus();
-        setInterval(refreshWorkerStatus, 30000);
-      });
-    })();
-    </script>
-
-    <!--
-        PAGE-SPECIFIC BUNDLES
-        Each child template drops its own script tags here
-        (datatables, leaflet, morris, owl carousel, etc.)
-    -->
-    <script src="{% static 'js/kamerka-shell.js' %}"></script>
     {% block extra_js %}{% endblock %}
-
 </body>
 </html>

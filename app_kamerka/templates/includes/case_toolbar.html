@@ -5,7 +5,7 @@
     {% if device_count is not None %}{{ device_count }} device{{ device_count|pluralize }}{% endif %}
   </span>
   <div class="km-case-actions">
-    <button type="button" class="km-btn-ghost" data-km-export-toggle aria-expanded="false">Export</button>
+    <button type="button" class="km-btn-ghost" data-km-export-toggle aria-expanded="false" aria-controls="km-export-drawer">Export</button>
     {% if show_globe_link %}
     <a href="/map3d?search={{ search_id }}" class="km-btn-ghost">3D Map</a>
     {% endif %}
@@ -20,7 +20,7 @@
     {% endif %}
   </div>
 </div>
-<div class="km-export-drawer" id="km-export-drawer" hidden>
+<div class="km-export-drawer" id="km-export-drawer" role="region" aria-label="Case exports" hidden>
   <div class="km-export-grid">
     <a href="/export/csv/{{ search_id }}" class="km-btn-ghost">CSV</a>
     <a href="/export/kml/{{ search_id }}" class="km-btn-ghost">KML</a>

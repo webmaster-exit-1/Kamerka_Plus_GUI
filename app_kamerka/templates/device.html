@@ -150,22 +150,6 @@
         </style>
 {% endblock %}
 
-{% block sidebar_extra %}
-                    <li class="xn-title">Scan Tools</li>
-                    <li>
-                        <a href="javascript:void(0)" onclick="window.kmShowDeviceTab('#tab10');return false;" title="Run an Nmap port/service scan against this device">
-                            <span class="fa fa-terminal" style="color:#ff2050"></span> <span class="xn-text">NMAP Scan</span>
-                        </a>
-                    </li>
-                    <li>
-                        <a href="javascript:void(0)" onclick="window.kmShowDeviceTab('#tab11');return false;" title="Run exploit checks against this device">
-                            <span class="fa fa-bug" style="color:#ffe600"></span> <span class="xn-text">Exploit</span>
-                        </a>
-                    </li>
-{% endblock %}
-
-{% block page_content_style %}style="height: 100%"{% endblock %}
-
 {% block content %}
 
                 <div class="page-content-wrap{% if analyst_mode %} km-tab-exploit-hidden{% endif %}">
@@ -314,7 +298,6 @@
 
                                 </div>
                             </div>
-                                </div>
 </div><!-- end tab8 -->
 
 
@@ -1005,8 +988,6 @@
                             </div>
             </div>
 </div>
-            </div>
-        </div>
 
                             <!-- START DATATABLE EXPORT -->
 

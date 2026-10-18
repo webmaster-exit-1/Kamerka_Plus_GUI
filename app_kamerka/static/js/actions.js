@@ -252,6 +252,7 @@ function onload(){
 }
 
 function page_content_onresize(){
+    if (document.body.classList.contains("km-app")) return;
     $(".page-content,.content-frame-body,.content-frame-right,.content-frame-left").css("width","").css("height","");
 
     var content_minus = 0;
@@ -401,6 +402,7 @@ function panel_remove(panel,action,callback){
 
 /* X-NAVIGATION CONTROL FUNCTIONS */
 function x_navigation_onresize(){
+    if (document.body.classList.contains("km-app")) return;
 
     var inner_port = window.innerWidth || $(document).width();
 
@@ -448,6 +450,7 @@ function x_navigation_minimize(action){
 }
 
 function x_navigation(){
+    if (document.body.classList.contains("km-app")) return;
 
     $(".x-navigation-control").click(function(){
         $(this).parents(".x-navigation").toggleClass("x-navigation-open");
@@ -540,6 +543,7 @@ Object.size = function(obj) {
 /* Inserts a hamburger button on narrow screens so the sidebar   */
 /* can be toggled without a top navigation bar.                  */
 $(document).ready(function () {
+    if (document.body.classList.contains("km-app")) { return; }
     if (!$('.page-sidebar').length) { return; }
     var $sidebar = $('.page-sidebar').first();
     if (!$sidebar.attr('id')) {

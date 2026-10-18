@@ -17,7 +17,7 @@
                                 </div>
                                 <div class="panel-body">
                                     <form method="get" class="form-inline" style="margin-bottom:12px;">
-                                        <input type="text" name="q" class="form-control" placeholder="Filter by IP…" value="{{ search_q }}" style="min-width:200px;">
+                                        <input type="text" name="q" class="form-control" placeholder="Filter by IP…" aria-label="Filter devices by IP" value="{{ search_q }}" style="min-width:200px;">
                                         <button type="submit" class="btn btn-default">Filter</button>
                                         {% if search_q %}
                                         <a href="/devices" class="btn btn-link" style="color:#00e1ff;">Clear</a>
@@ -32,6 +32,19 @@
                                         <span id="bulk-progress" style="margin-left:12px;color:#00e1ff;"></span>
                                     </div>
                                     <div id="bulk-results" style="margin-bottom:12px;"></div>
+                                    {% if not devices %}
+                                    <div class="km-empty-state">
+                                        {% if search_q %}
+                                        <h4>No matching devices</h4>
+                                        <p>Try another IP address or clear the filter to see all devices.</p>
+                                        {% else %}
+                                        <h4>Your inventory is empty</h4>
+                                        <p>Start a search to collect devices for your investigation.</p>
+                                        <a href="{% url 'search_main' %}" class="km-btn-ghost">Start a search</a>
+                                        {% endif %}
+                                    </div>
+                                    {% endif %}
+                                    <div class="table-responsive">
                                     <table id="devices-table" class="table">
                                         <thead>
                                             <tr>
@@ -76,6 +89,7 @@
                                             {% endfor %}
                                         </tbody>
                                     </table>
+                                    </div>
                                     {% if page_obj.has_other_pages %}
                                     <nav style="margin-top:14px;font-family:monospace;font-size:0.85em;">
                                         {% if page_obj.has_previous %}
