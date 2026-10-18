@@ -19,6 +19,14 @@
                                             <h3 class="panel-title">Search history</h3>
                                         </div>
                                         <div class="panel-body">
+                                            {% if not history %}
+                                            <div class="km-empty-state">
+                                                <h4>No cases yet</h4>
+                                                <p>Run your first search to create a case and track its results here.</p>
+                                                <a href="{% url 'search_main' %}" class="km-btn-ghost">Start a search</a>
+                                            </div>
+                                            {% endif %}
+                                            <div class="table-responsive">
                                             <table id="customers2" class="table datatable">
                                                 <thead>
                                                     <tr>
@@ -40,6 +48,7 @@
                                                     {% endfor %}
                                                 </tbody>
                                             </table>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -54,7 +63,6 @@
     <script src="{% static 'js/plugins/datatables/jquery.dataTables.min.js' %}"></script>
     <script src="{% static 'js/plugins/owl/owl.carousel.min.js' %}"></script>
 {% endblock %}
-
 
 
 

@@ -16,20 +16,22 @@
 
 {% block content %}
                 <!-- PAGE HEADER -->
-                <div class="cp-page-header" style="text-align:center; padding:14px 0 6px;">
-                  <h1 class="cp-page-title" style="text-align:center; padding:6px 0 4px;">
-                    {# data-text must match element text — both are required by the CSS glitch ::before/::after pseudo-elements #}
-                    <span class="cp-glitch" data-text="Operations Overview">Operations Overview</span>
-                  </h1>
-                  <div style="font-family:var(--cp-font);font-size:0.95em;letter-spacing:0.18em;color:var(--cp-dim);padding-bottom:6px;">
-                    GLOBAL STATS · INTEL FEEDS · RECENT ACTIVITY
+                <div class="km-page-heading">
+                  <div>
+                    <div class="km-eyebrow">Operations workspace</div>
+                    <h1>Operations overview</h1>
+                    <p>Monitor device coverage, review recent cases, and follow live intelligence.</p>
+                  </div>
+                  <div class="km-heading-actions">
+                    <a href="{% url 'search_main' %}" class="km-btn-ghost">New search</a>
+                    <a href="{% url 'history' %}" class="km-btn-ghost">View cases</a>
                   </div>
                 </div>
                 <!-- END PAGE HEADER -->
 
                 <!-- START BREADCRUMB -->
-                <ul class="breadcrumb">
                 {% if task_id %}
+                <ul class="breadcrumb">
                 <li style="width:100%; padding: 0; list-style:none;">
                     <div class="progress" style="margin-bottom:4px; height:18px;">
                         <div id="progress-bar" class="progress-bar"
@@ -39,8 +41,8 @@
                     </div>
                     <div id="progress-bar-message" style="color:#ff00cd;">Scan in progress...</div>
                 </li>
-                {% endif %}
                 </ul>
+                {% endif %}
                 <!-- END BREADCRUMB -->
 
                 <!-- PAGE CONTENT WRAPPER -->
@@ -50,18 +52,15 @@
                     <div class="row">
                         <div class="col-md-3">
 
-                            <!-- START WIDGET SLIDER -->
-                            <div class="widget widget-default widget-carousel">
-                                <div class="owl-carousel" id="owl-example">
-                                    <div>
-                                        <div class="widget-title">Shodan credits</div>
-                                        <div class="widget-int"> {{ credits.0 }}</div>
-                                    </div>
+                            <div class="widget widget-default widget-item-icon">
+                                <div class="widget-item-left">
+                                    <span class="fa fa-database" aria-hidden="true"></span>
                                 </div>
-                                <div class="widget-controls">
+                                <div class="widget-data" id="owl-example">
+                                    <div class="widget-int">{% if credits %}{{ credits.0 }}{% else %}—{% endif %}</div>
+                                    <div class="widget-title">Shodan credits</div>
                                 </div>
                             </div>
-                            <!-- END WIDGET SLIDER -->
 
                         </div>
                         <div class="col-md-3">
@@ -259,12 +258,18 @@
                                         <table class="table">
 
                                             <tbody>
-                                                <tr>{% for object in search %}
-
-                                                        <td><strong><a href="{% url 'results' id=object.id %}">{{object.country}} {{object.coordinates }}  {% if object.country == "NMAP Scan" %} {{object.ics}} {% endif %}</strong></td>
-                                                </a>
+                                                {% for object in search %}
+                                                <tr>
+                                                       <td><strong><a href="{% url 'results' id=object.id %}">{{object.country}} {{object.coordinates }}  {% if object.country == "NMAP Scan" %} {{object.ics}} {% endif %}</a></strong></td>
                                                 </tr>
-
+                                                {% empty %}
+                                                <tr>
+                                                    <td><div class="km-empty-state">
+                                                        <h4>No recent cases</h4>
+                                                        <p>Start a search to begin an investigation.</p>
+                                                        <a href="{% url 'search_main' %}" class="km-btn-ghost">New search</a>
+                                                    </div></td>
+                                                </tr>
                                                 {% endfor %}
 
 

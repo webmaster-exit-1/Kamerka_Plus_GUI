@@ -45,8 +45,50 @@ def kamerka_shell(request):
             active_case_id = None
     active_target_url = getattr(request, "km_active_target_url", None)
 
+    groups = [
+        ("Investigate", [
+            ("launch", "/", "New search", "search"),
+            ("overview", "/index", "Overview", "desktop"),
+            ("cases", "/history", "Cases", "folder-open"),
+            ("devices", "/devices", "Device inventory", "th-list"),
+        ]),
+        ("Visualize", [
+            ("map", "/map", "World map", "globe"),
+            ("map3d", "/map3d", "3D map", "map"),
+            ("camera", "/camera-wall", "Camera wall", "video-camera"),
+            ("gallery", "/gallery", "Screenshots", "camera"),
+            ("briefing", "/feeds-briefing", "Intelligence feeds", "rss"),
+        ]),
+        ("Operate", [
+            ("tasks", "/tasks", "Task queue", "tasks"),
+            ("playbooks", "/playbooks/", "Playbooks", "list-alt"),
+            ("watchlists", "/watchlists", "Watchlists", "eye"),
+            ("hexsploit", "/hexsploit/", "HexSploit", "bolt"),
+        ]),
+        ("System", [
+            ("setup", "/healthz/setup/", "Setup checks", "check-circle"),
+            ("sources", "/sources", "Intel sources", "book"),
+        ]),
+    ]
+    navigation = [
+        {"label": label, "items": [
+            {"key": key, "url": url, "label": title, "icon": icon}
+            for key, url, title, icon in items
+        ]}
+        for label, items in groups
+    ]
+    if active_case_id:
+        for group in navigation:
+            for item in group["items"]:
+                if item["key"] == "map3d":
+                    item["url"] += f"?search={active_case_id}"
+    titles = {key: title for _, items in groups for key, _, title, _ in items}
+    titles.update({"case": "Case workspace", "target": "Target workbench"})
+
     return {
         "nav_active": nav_active,
+        "nav_title": titles.get(nav_active, "Investigation"),
+        "navigation": navigation,
         "active_case_id": active_case_id,
         "active_target_url": active_target_url,
     }

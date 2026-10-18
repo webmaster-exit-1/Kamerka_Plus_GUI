@@ -20,6 +20,7 @@
                                             <h3 class="panel-title">Device Screenshots</h3>
                                         </div>
                                         <div class="panel-body">
+                                            <div class="row">
                                             {% for device in devices %}
                                             <div class="col-md-4">
                                                 <div class="panel panel-default">
@@ -30,12 +31,21 @@
                                                     </div>
                                                     <div class="panel-body padding-0" style="background-color:#0a141d">
                                                         <a href="{% url 'device' id=device.search_id ip=device.ip device_id=device.id %}">
-                                                            <img src="data:image/jpeg;base64,{{ device.screenshot }}" class="screenshot">
+                                                            <img src="data:image/jpeg;base64,{{ device.screenshot }}" class="screenshot" alt="Screenshot of {{ device.ip }}" loading="lazy">
                                                         </a>
                                                     </div>
                                                 </div>
                                             </div>
+                                            {% empty %}
+                                            <div class="col-md-12">
+                                                <div class="km-empty-state">
+                                                    <h4>No screenshots yet</h4>
+                                                    <p>Captured device screenshots will appear here.</p>
+                                                    <a href="{% url 'devices' %}" class="km-btn-ghost">Browse inventory</a>
+                                                </div>
+                                            </div>
                                             {% endfor %}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
