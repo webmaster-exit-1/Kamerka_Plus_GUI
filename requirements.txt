@@ -1,9 +1,9 @@
 requests>=2.28.0,<3.0
-Django>=4.2,<5.0
-celery>=5.2.0,<6.0
+Django>=5.2.18,<5.3
+celery>=5.6.3,<6.0
 celery_progress>=0.4
 redis>=4.0.0,<8.0
-psycopg2-binary>=2.9,<3.0
+psycopg2-binary>=2.9.13,<3.0
 pycountry>=22.3.5
 shodan>=1.28.0
 # Shodan CLI still imports pkg_resources (removed in setuptools 81+)
@@ -25,6 +25,8 @@ wappalyzer
 # Screenshot capture (requires Chrome/Chromium and ChromeDriver installed on system,
 # or Selenium 4.6+ which includes selenium-manager to auto-manage drivers)
 selenium>=4.6.0
+# GUI automation script (browser binaries are installed separately).
+playwright>=1.64.0,<2.0
 # WorldMonitor integration — RSS feed ingestion
 feedparser>=6.0
 # WorldMonitor integration — proximity scoring for device enrichment

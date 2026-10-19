@@ -352,9 +352,33 @@ your default shell. Failed processes remain visible in their panes for diagnosis
 
 ```bash
 python3 manage.py check
+python3 manage.py test
 ```
 
-The repository does not include a persistent automated test suite. CI validates Django system checks, Nuclei template syntax, and the installed security-tool versions. Create focused temporary tests when changing behavior that needs automated coverage.
+### Python versions and missing modules
+
+Use Python 3.10–3.14 and install dependencies with the same interpreter that
+runs Django/Celery. The requirements now select Django 5.2 LTS with Python 3.14
+support; the former Django 4.2 constraint was incompatible with Python 3.14.
+From the project root, create a fresh environment when changing Python versions
+(keep a backup of the old environment rather than reusing its binary packages):
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip check
+```
+
+`playwright` is explicitly included for `scripts/gui_e2e_playwright.py`. Its
+browser download is separate: `.venv/bin/python -m playwright install chromium`.
+On Termux, native dependencies may need to compile because Linux wheels do not
+target Android; install the corresponding Termux development packages or use
+distribution-provided builds. Playwright's bundled browsers do not support
+Android/Termux; run browser automation on a supported desktop/Linux environment.
+The Django/Celery app does not need a Playwright browser to start.
+The optional native 3D desktop viewer still needs `requirements-3d.txt` and Qt/VTK;
+those are not required for the web application.
 
 ---
 

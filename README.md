@@ -104,7 +104,7 @@ Shodan credits. The older `launch` and `workbench` modes **do perform live actio
 
 ## Quick start (recommended)
 
-**Requirements:** Python 3.10+, PostgreSQL, Redis, Shodan API key. Optional: Nmap, Nuclei, Naabu, Ollama, HexStrike.
+**Requirements:** Python 3.10–3.14, PostgreSQL, Redis, Shodan API key. Optional: Nmap, Nuclei, Naabu, Ollama, HexStrike.
 
 ```bash
 git clone https://github.com/webmaster-exit-1/Kamerka_Plus_GUI.git

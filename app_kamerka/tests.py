@@ -26,7 +26,7 @@ class ScriptLauncherTests(SimpleTestCase):
         self.scripts = self.root / "scripts"
         self.scripts.mkdir()
         source = Path(__file__).resolve().parents[1] / "scripts"
-        for name in ("kamerka.sh", "start_stack.sh", "tmux_kamerka_stack.sh", "start_hexstrike.sh"):
+        for name in ("kamerka.sh", "start_stack.sh", "tmux_kamerka_stack.sh", "start_hexstrike.sh", "setup_postgres.sh"):
             shutil.copy(source / name, self.scripts / name)
         self.log = self.root / "commands.log"
         self.env = {
@@ -147,6 +147,72 @@ class ScriptLauncherTests(SimpleTestCase):
         self.assertEqual(self.commands(), [
             str(self.root / "hexstrike-ai/hexstrike_server.py"), "--port", "8888",
         ])
+
+    @skipUnless(shutil.which("tmux"), "tmux is required for pane integration tests")
+    def test_tmux_starts_commands_with_one_based_panes_and_can_restart(self):
+        tmux = shutil.which("tmux")
+        socket = str(self.root / "tmux.socket")
+        config = self.root / "tmux.conf"
+        config.write_text("set -g base-index 1\nsetw -g pane-base-index 1\n")
+        self.write_executable(
+            "bin/tmux",
+            f'#!/bin/sh\nexec "{tmux}" -S "{socket}" -f "{config}" "$@"\n',
+        )
+        self.env["PATH"] = str(self.root / "bin") + os.pathsep + os.environ["PATH"]
+        self.env.pop("TMUX", None)
+        self.addCleanup(subprocess.run, [tmux, "-S", socket, "kill-server"], capture_output=True)
+        self.env["SERVICE_EXIT"] = "7"
+        for args in ((), ("--restart",)):
+            with self.subTest(args=args):
+                result = self.run_script("tmux_kamerka_stack.sh", *args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                panes = subprocess.run(
+                    [tmux, "-S", socket, "list-panes", "-t", "kamerka:stack",
+                     "-F", "#{pane_title}"],
+                    capture_output=True, text=True, check=True,
+                ).stdout.splitlines()
+                self.assertCountEqual(panes, [
+                    "runserver", "celery-worker", "celery-beat", "worker-status",
+                ])
+        result = self.run_script("tmux_kamerka_stack.sh")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("already exists", result.stdout)
+        self.env["MIGRATE_EXIT"] = "1"
+        result = self.run_script("tmux_kamerka_stack.sh", "--restart")
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(subprocess.run(
+            [tmux, "-S", socket, "has-session", "-t", "kamerka"],
+            capture_output=True,
+        ).returncode, 0)
+
+    def test_postgres_setup_creates_only_missing_role_and_database(self):
+        self.write_executable(
+            "bin/psql",
+            '#!/bin/sh\n'
+            'case "$*" in *"SELECT 1"*) exit 0;; esac\n'
+            'query="$(cat)"\n'
+            'case "$query" in\n'
+            '  *pg_roles*) printf "%s" "$TEST_ROLE_EXISTS";;\n'
+            '  *pg_database*) printf "%s" "$TEST_DB_EXISTS";;\n'
+            'esac\n',
+        )
+        for command in ("createuser", "createdb"):
+            self.write_executable(
+                f"bin/{command}",
+                '#!/bin/sh\nprintf "%s %s\\n" "${0##*/}" "$*" >> "$COMMAND_LOG"\n',
+            )
+        self.env["PATH"] = str(self.root / "bin") + os.pathsep + os.environ["PATH"]
+        self.env.update(DB_USER="kamerka", DB_NAME="kamerka")
+        for exists in ("", "1"):
+            with self.subTest(exists=exists):
+                self.log.unlink(missing_ok=True)
+                self.env.update(TEST_ROLE_EXISTS=exists, TEST_DB_EXISTS=exists)
+                result = self.run_script("setup_postgres.sh")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.commands(), [] if exists else [
+                    "createuser --login --pwprompt -- kamerka",
+                    "createdb --owner=kamerka -- kamerka",
+                ])
 
 
 class ShellElements(HTMLParser):
