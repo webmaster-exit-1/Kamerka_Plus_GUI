@@ -234,7 +234,7 @@ def refresh_feeds(self) -> str:
                 try:
                     published = timezone.make_aware(
                         datetime.datetime(*t[:6]),
-                        timezone.utc,
+                        datetime.timezone.utc,
                     )
                 except Exception:
                     pass
