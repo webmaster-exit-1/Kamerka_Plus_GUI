@@ -113,7 +113,7 @@ cd Kamerka_Plus_GUI
 # Guided setup: .env, migrations, superuser, seed layers + bundled feeds
 python3 scripts/install_kamerka.py --venv
 
-# Load secrets (or use fish/bash profile exports)
+# Load secrets (or use Bash profile exports)
 set -a && source .env && set +a   # bash
 # Bash helpers load .env through Django; exported variables take precedence.
 
@@ -141,6 +141,7 @@ python3 manage.py import_feeds_opml /path/to/export.opml --deactivate-missing
 ```bash
 bash scripts/kamerka.sh runserver
 bash scripts/kamerka.sh worker
+bash scripts/setup_postgres.sh       # one-time local role/database setup; see docs/INSTALL.md
 bash scripts/start_stack.sh          # background stack, logs under logs/
 bash scripts/tmux_kamerka_stack.sh   # optional four-pane tmux stack
 bash scripts/start_hexstrike.sh      # HexStrike for HexSploit
