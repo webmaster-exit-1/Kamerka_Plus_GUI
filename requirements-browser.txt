@@ -1,0 +1,4 @@
+# Optional desktop/Linux browser tools; not supported on Android/Termux.
+# Install the base requirements.txt first.
+wappalyzer>=2.0.4,<3.0
+playwright>=1.64.0,<2.0

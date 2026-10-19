@@ -9,9 +9,9 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /app/requirements.txt
+COPY requirements.txt requirements-browser.txt /app/
 RUN pip install --upgrade pip \
-    && pip wheel --wheel-dir /wheels -r /app/requirements.txt
+    && pip wheel --wheel-dir /wheels -r /app/requirements.txt -r /app/requirements-browser.txt
 
 # ── Tool installer stage ────────────────────────────────────────────────────
 FROM debian:bookworm-slim AS tools
@@ -67,7 +67,7 @@ RUN apt-get update \
 COPY --from=tools /usr/local/bin/nuclei /usr/local/bin/nuclei
 COPY --from=tools /usr/local/bin/naabu /usr/local/bin/naabu
 COPY --from=builder /wheels /wheels
-COPY requirements.txt /app/requirements.txt
+COPY requirements.txt requirements-browser.txt /app/
 RUN pip install --no-cache-dir /wheels/*
 
 COPY . /app

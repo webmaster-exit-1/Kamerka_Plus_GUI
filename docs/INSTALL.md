@@ -257,17 +257,26 @@ docker run -d --name kamerka-pg \
 
 # Or install natively on Debian/Ubuntu/Kali (not for Termux — see below)
 sudo apt install postgresql postgresql-contrib
-sudo -u postgres createuser --createdb kamerka
-sudo -u postgres createdb -O kamerka kamerka
+sudo systemctl start postgresql
+bash scripts/setup_postgres.sh
 
 # Termux (Android) — no sudo; postgres runs as your user
-pkg install postgresql
-mkdir -p $PREFIX/var/lib/postgresql
-initdb $PREFIX/var/lib/postgresql
-pg_ctl -D $PREFIX/var/lib/postgresql start
-createuser --createdb kamerka
-createdb -O kamerka kamerka
+pkg install postgresql tmux bash redis
+mkdir -p "$PREFIX/var/lib/postgresql"
+# Only initialize a new cluster; never reinitialize an existing one.
+test -s "$PREFIX/var/lib/postgresql/PG_VERSION" || initdb "$PREFIX/var/lib/postgresql"
+pg_ctl -D "$PREFIX/var/lib/postgresql" start
+bash scripts/setup_postgres.sh
 ```
+
+The setup script creates the local `kamerka` login and database if missing,
+prompts for the new login's password, and leaves existing databases/passwords
+untouched. It connects as the current local PostgreSQL administrator on Termux,
+or uses `sudo -u postgres` when needed on Linux. It does **not** install or start
+PostgreSQL. If you use different names, pass them explicitly:
+`DB_USER=your_user DB_NAME=your_database bash scripts/setup_postgres.sh`.
+This administrative helper does not read `.env`; match the names and password
+you configure there. Remote/Docker databases must be provisioned on their server.
 
 1. Ensure Python dependencies are installed (includes PostgreSQL adapter):
 
@@ -285,21 +294,102 @@ export DB_HOST=localhost
 export DB_PORT=5432
 ```
 
-1. Start Django/Celery with those environment variables set.
-
-2. Run migrations:
+2. Run migrations before starting Django/Celery:
 
 ```bash
 python3 manage.py migrate
 ```
 
+3. Start Django/Celery with those environment variables set.
+
+### Bash scripts: missing database tables
+
+An error such as `relation "app_kamerka_search" does not exist` means the
+configured PostgreSQL database has not had the application migrations applied.
+Check the `DB_*` values in `.env` and any exported environment variables (exported
+variables take precedence), make sure PostgreSQL is running, then run:
+
+```bash
+bash scripts/kamerka.sh manage migrate --noinput
+```
+
+Restart Django and Celery afterward. Both `start_stack.sh` and
+`tmux_kamerka_stack.sh` now apply migrations before starting services, and
+`kamerka.sh runserver` (including `manage runserver`) does so for standalone
+development. Standalone worker/beat commands check for pending migrations and
+stop with recovery instructions instead of processing tasks against missing tables.
+Migration failures stop stack startup before existing services are interrupted.
+The Bash helpers replace the former `.fish` scripts. Put API keys and database
+settings in the project `.env` file or export them in your environment; the helpers
+do not read Fish configuration.
+These commands use the existing database; do not delete it or fake migrations.
+If Django reports no pending migrations but the table is still missing, check
+that you selected the correct database and restore a backup if its schema was damaged.
+
+Errors such as `role "kamerka" does not exist` or `database "kamerka" does not
+exist happen **before** migrations can run. Complete the local PostgreSQL setup
+above first, then put the same `DB_NAME`, `DB_USER`, and `DB_PASSWORD` in `.env`.
+`connection refused` means PostgreSQL is not running at the configured host/port;
+it is not a missing-table error.
+
+### Bash tmux startup
+
+Start PostgreSQL and Redis first (`redis-server` in another terminal), install
+the Python requirements in `.venv`, and configure `.env`. Then:
+
+```bash
+bash scripts/tmux_kamerka_stack.sh
+tmux attach -t kamerka
+```
+
+An existing session is not silently restarted. Replace a stale/empty session with
+`bash scripts/tmux_kamerka_stack.sh --restart`. Database preparation happens before
+the old session is removed. The launcher uses actual pane IDs instead of assuming
+zero-based pane numbering and launches Bash commands directly, independently of
+your default shell. Failed processes remain visible in their panes for diagnosis.
+
 ## Runtime Validation
 
 ```bash
 python3 manage.py check
+python3 manage.py test
 ```
 
-The repository does not include a persistent automated test suite. CI validates Django system checks, Nuclei template syntax, and the installed security-tool versions. Create focused temporary tests when changing behavior that needs automated coverage.
+### Python versions and missing modules
+
+Use Python 3.10–3.14 and install dependencies with the same interpreter that
+runs Django/Celery. The requirements now select Django 5.2 LTS with Python 3.14
+support; the former Django 4.2 constraint was incompatible with Python 3.14.
+From the project root, create a fresh environment when changing Python versions
+(keep a backup of the old environment rather than reusing its binary packages):
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip check
+```
+
+`playwright` and the Python Wappalyzer CLI are explicitly listed in the optional
+`requirements-browser.txt` so they do not block a Termux web-app installation:
+
+```bash
+# Supported desktop/Linux hosts only, after installing the base requirements:
+.venv/bin/python -m pip install -r requirements-browser.txt
+.venv/bin/python -m playwright install chromium
+```
+
+On Termux, native dependencies may need to compile because Linux wheels do not
+target Android; install the corresponding Termux development packages or use
+distribution-provided builds. Playwright's bundled browsers do not support
+Android/Termux; run browser automation on a supported desktop/Linux environment.
+The Django/Celery app does not need a Playwright browser to start.
+The optional native 3D desktop viewer still needs `requirements-3d.txt` and Qt/VTK;
+those are not required for the web application.
+
+If `runserver` or Gunicorn reports `Apps aren't loaded yet` while importing
+`kamerka.wsgi`, update to the fixed WSGI entry point. It initializes Django before
+any model access. The supported server entry point is `kamerka.wsgi:application`.
 
 ---
 

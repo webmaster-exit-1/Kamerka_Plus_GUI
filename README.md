@@ -22,7 +22,7 @@ Modernized fork of [Kamerka-GUI](https://github.com/woj-ciech/Kamerka-GUI) for a
 | **Exploit & CVE workspace** | Per-device identity, CVE context, exploit actions, Shodan evidence, risk context, and export status in one workflow. |
 | **Workbench** | Per-device tools: Nmap, Nuclei, Wappalyzer, RTSP, Shodan intel, NVD/NRICH, honeypot heuristics, screenshots, ExploitDB, bulk actions, risk score + layer context. |
 | **HexSploit** | Optional [HexStrike](https://github.com/0x4m4/hexstrike-ai) bridge at `/hexsploit/` — health, tool catalog, smart scan (requires local HexStrike server). |
-| **Ops** | Celery progress in UI, **Tasks** registry with orphan/stale reconciliation, watchlists, setup health check, Fish stack helpers under `scripts/`. |
+| **Ops** | Celery progress in UI, **Tasks** registry with orphan/stale reconciliation, watchlists, setup health check, Bash stack helpers under `scripts/`. |
 | **Verification** | Tiered pipeline: InternetDB (free) → Naabu → Shodan, with credit reporting; honeypot cluster filtering on dense /24 banners. |
 | **Security & config** | API keys via environment / `.env` (no `keys.json`); interactive [`scripts/install_kamerka.py`](scripts/install_kamerka.py) wizard; CI runs Django system and security-tool checks. |
 
@@ -104,7 +104,7 @@ Shodan credits. The older `launch` and `workbench` modes **do perform live actio
 
 ## Quick start (recommended)
 
-**Requirements:** Python 3.10+, PostgreSQL, Redis, Shodan API key. Optional: Nmap, Nuclei, Naabu, Ollama, HexStrike.
+**Requirements:** Python 3.10–3.14, PostgreSQL, Redis, Shodan API key. Optional: Nmap, Nuclei, Naabu, Ollama, HexStrike.
 
 ```bash
 git clone https://github.com/webmaster-exit-1/Kamerka_Plus_GUI.git
@@ -113,9 +113,9 @@ cd Kamerka_Plus_GUI
 # Guided setup: .env, migrations, superuser, seed layers + bundled feeds
 python3 scripts/install_kamerka.py --venv
 
-# Load secrets (or use fish/bash profile exports)
+# Load secrets (or use Bash profile exports)
 set -a && source .env && set +a   # bash
-# fish: export from ~/.config/fish/config.fish or source .env manually
+# Bash helpers load .env through Django; exported variables take precedence.
 
 redis-server &   # or: docker run -p 6379:6379 redis:7-alpine
 
@@ -136,13 +136,15 @@ python3 manage.py import_feeds_opml /path/to/feeder-export.opml
 python3 manage.py import_feeds_opml /path/to/export.opml --deactivate-missing
 ```
 
-### Fish helpers (optional)
+### Bash helpers (optional)
 
 ```bash
-fish scripts/kamerka.fish runserver
-fish scripts/kamerka.fish worker
-fish scripts/start_stack.fish      # tmux-style stack
-fish scripts/start_hexstrike.fish  # HexStrike for HexSploit
+bash scripts/kamerka.sh runserver
+bash scripts/kamerka.sh worker
+bash scripts/setup_postgres.sh       # one-time local role/database setup; see docs/INSTALL.md
+bash scripts/start_stack.sh          # background stack, logs under logs/
+bash scripts/tmux_kamerka_stack.sh   # optional four-pane tmux stack
+bash scripts/start_hexstrike.sh      # HexStrike for HexSploit
 ```
 
 ### Reconcile stuck tasks
