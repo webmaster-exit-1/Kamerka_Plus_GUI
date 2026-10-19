@@ -293,23 +293,26 @@ python3 manage.py migrate
 
 3. Start Django/Celery with those environment variables set.
 
-### Fish scripts: missing database tables
+### Bash scripts: missing database tables
 
 An error such as `relation "app_kamerka_search" does not exist` means the
 configured PostgreSQL database has not had the application migrations applied.
-Check the `DB_*` values in `.env` and any exported Fish variables (exported
+Check the `DB_*` values in `.env` and any exported environment variables (exported
 variables take precedence), make sure PostgreSQL is running, then run:
 
-```fish
-fish scripts/kamerka.fish manage migrate --noinput
+```bash
+bash scripts/kamerka.sh manage migrate --noinput
 ```
 
-Restart Django and Celery afterward. Both `start_stack.fish` and
-`tmux_kamerka_stack.fish` now apply migrations before starting services, and
-`kamerka.fish runserver` (including `manage runserver`) does so for standalone
+Restart Django and Celery afterward. Both `start_stack.sh` and
+`tmux_kamerka_stack.sh` now apply migrations before starting services, and
+`kamerka.sh runserver` (including `manage runserver`) does so for standalone
 development. Standalone worker/beat commands check for pending migrations and
 stop with recovery instructions instead of processing tasks against missing tables.
 Migration failures stop stack startup before existing services are interrupted.
+The Bash helpers replace the former `.fish` scripts. Put API keys and database
+settings in the project `.env` file or export them in your environment; the helpers
+do not read Fish configuration.
 These commands use the existing database; do not delete it or fake migrations.
 If Django reports no pending migrations but the table is still missing, check
 that you selected the correct database and restore a backup if its schema was damaged.

@@ -16,17 +16,17 @@ from app_kamerka.context_processors import kamerka_shell
 from app_kamerka.models import Device
 
 
-@skipUnless(shutil.which("fish"), "Fish is required for launcher tests")
+@skipUnless(shutil.which("bash"), "Bash is required for launcher tests")
 class ScriptLauncherTests(SimpleTestCase):
     def setUp(self):
-        self.fish = shutil.which("fish")
-        self.temp = tempfile.TemporaryDirectory()
+        self.bash = shutil.which("bash")
+        self.temp = tempfile.TemporaryDirectory(prefix="kamerka scripts ")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.scripts = self.root / "scripts"
         self.scripts.mkdir()
         source = Path(__file__).resolve().parents[1] / "scripts"
-        for name in ("kamerka.fish", "start_stack.fish", "tmux_kamerka_stack.fish"):
+        for name in ("kamerka.sh", "start_stack.sh", "tmux_kamerka_stack.sh", "start_hexstrike.sh"):
             shutil.copy(source / name, self.scripts / name)
         self.log = self.root / "commands.log"
         self.env = {
@@ -52,7 +52,7 @@ class ScriptLauncherTests(SimpleTestCase):
 
     def run_script(self, name, *args):
         return subprocess.run(
-            [self.fish, "--no-config", str(self.scripts / name), *args],
+            [self.bash, "--noprofile", "--norc", str(self.scripts / name), *args],
             cwd="/tmp",
             env=self.env,
             capture_output=True,
@@ -67,14 +67,14 @@ class ScriptLauncherTests(SimpleTestCase):
         for args in (("runserver",), ("manage", "runserver", "127.0.0.1:9000")):
             with self.subTest(args=args):
                 self.log.unlink(missing_ok=True)
-                result = self.run_script("kamerka.fish", *args)
+                result = self.run_script("kamerka.sh", *args)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(self.commands()[0], "manage.py migrate --noinput")
                 self.assertTrue(self.commands()[1].startswith("manage.py runserver "))
 
     def test_migration_failure_prevents_runserver(self):
         self.env["MIGRATE_EXIT"] = "1"
-        result = self.run_script("kamerka.fish", "runserver")
+        result = self.run_script("kamerka.sh", "runserver")
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.commands(), ["manage.py migrate --noinput"])
         self.assertIn("Database setup failed", result.stderr)
@@ -85,28 +85,41 @@ class ScriptLauncherTests(SimpleTestCase):
                 with self.subTest(args=args, migration_exit=migration_exit):
                     self.log.unlink(missing_ok=True)
                     self.env["MIGRATE_EXIT"] = migration_exit
-                    result = self.run_script("kamerka.fish", *args)
+                    result = self.run_script("kamerka.sh", *args)
                     self.assertEqual(self.commands()[0], "manage.py migrate --check")
                     self.assertEqual(result.returncode, int(migration_exit))
                     self.assertEqual(len(self.commands()), 2 if migration_exit == "0" else 1)
 
     def test_manage_migrate_does_not_recurse(self):
-        result = self.run_script("kamerka.fish", "manage", "migrate", "--noinput")
+        result = self.run_script("kamerka.sh", "manage", "migrate", "--noinput")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.commands(), ["manage.py migrate --noinput"])
+
+    def test_manage_migrate_propagates_failure(self):
+        self.env["MIGRATE_EXIT"] = "3"
+        result = self.run_script("kamerka.sh", "manage", "migrate", "--noinput")
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(self.commands(), ["manage.py migrate --noinput"])
+
+    def test_missing_environment_reports_install_command(self):
+        (self.root / ".venv/bin/python").unlink()
+        result = self.run_script("kamerka.sh", "runserver")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("install_kamerka.py", result.stderr)
+        self.assertEqual(self.commands(), [])
 
     def test_venv_fallback_and_service_exit_status(self):
         (self.root / ".venv/bin/python").unlink()
         self.write_executable("venv/bin/python", self.python_stub)
         self.env["SERVICE_EXIT"] = "7"
-        result = self.run_script("kamerka.fish", "runserver")
+        result = self.run_script("kamerka.sh", "runserver")
         self.assertEqual(result.returncode, 7, result.stderr)
         self.assertEqual(len(self.commands()), 2)
 
     def test_stack_migration_failure_does_not_interrupt_or_launch_services(self):
         self.write_executable(
-            "bin/fish",
-            '#!/bin/sh\nprintf "fish %s\\n" "$*" >> "$COMMAND_LOG"\nexit 1\n',
+            "bin/bash",
+            '#!/bin/sh\nprintf "bash %s\\n" "$*" >> "$COMMAND_LOG"\nexit 1\n',
         )
         for command in ("pkill", "tmux", "nohup"):
             self.write_executable(
@@ -114,15 +127,26 @@ class ScriptLauncherTests(SimpleTestCase):
                 '#!/bin/sh\nprintf "%s %s\\n" "${0##*/}" "$*" >> "$COMMAND_LOG"\nexit 1\n',
             )
         self.env["PATH"] = str(self.root / "bin") + os.pathsep + os.environ["PATH"]
-        for name in ("start_stack.fish", "tmux_kamerka_stack.fish"):
+        for name in ("start_stack.sh", "tmux_kamerka_stack.sh"):
             with self.subTest(script=name):
                 self.log.unlink(missing_ok=True)
                 result = self.run_script(name)
                 self.assertEqual(result.returncode, 1, result.stderr)
                 calls = self.commands()
-                self.assertTrue(calls[-1].endswith("kamerka.fish manage migrate --noinput"))
+                self.assertTrue(calls[-1].endswith("kamerka.sh manage migrate --noinput"))
                 self.assertFalse(any(c.startswith(("pkill ", "nohup ", "tmux new-session")) for c in calls))
                 self.assertIn("Database setup failed", result.stderr)
+
+    def test_hexstrike_preserves_arguments_and_exit_status(self):
+        self.write_executable(
+            "hexstrike-ai/venv/bin/python3",
+            '#!/bin/sh\nprintf "%s\\n" "$@" > "$COMMAND_LOG"\nexit 7\n',
+        )
+        result = self.run_script("start_hexstrike.sh", "--port", "8888")
+        self.assertEqual(result.returncode, 7, result.stderr)
+        self.assertEqual(self.commands(), [
+            str(self.root / "hexstrike-ai/hexstrike_server.py"), "--port", "8888",
+        ])
 
 
 class ShellElements(HTMLParser):
