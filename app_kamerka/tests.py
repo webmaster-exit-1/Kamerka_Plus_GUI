@@ -193,15 +193,15 @@ class ScriptLauncherTests(SimpleTestCase):
         self.env["PATH"] = str(self.root / "bin") + os.pathsep + os.environ["PATH"]
         self.env.pop("TMUX", None)
         self.addCleanup(subprocess.run, [tmux, "-S", socket, "kill-server"], capture_output=True)
+        subprocess.run([
+            tmux, "-S", socket, "new-session", "-d", "-s", "kamerka-dev", "-c", str(self.root),
+        ], check=True)
         subprocess.run([tmux, "-S", socket, "set-environment", "-g", "DB_NAME", "stale-db"], check=True)
         subprocess.run([tmux, "-S", socket, "set-environment", "-g", "DB_USER", "stale-user"], check=True)
         subprocess.run([tmux, "-S", socket, "set-environment", "-g", "DB_PASSWORD", "stale-password"], check=True)
         subprocess.run([tmux, "-S", socket, "set-environment", "-g", "DB_CONNECT_TIMEOUT", "stale-timeout"], check=True)
         self.env.update(DB_NAME="caller-db", DB_USER="caller-user", DB_HOST="caller-host", DB_PORT="5444")
         self.env.pop("DB_PASSWORD", None)
-        subprocess.run([
-            tmux, "-S", socket, "new-session", "-d", "-s", "kamerka-dev", "-c", str(self.root),
-        ], check=True)
         self.env["SERVICE_EXIT"] = "7"
         for args in ((), ("--restart",)):
             with self.subTest(args=args):
