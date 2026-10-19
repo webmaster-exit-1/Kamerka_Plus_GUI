@@ -22,6 +22,9 @@ jobs:
       DB_PASSWORD: kamerka
       DB_HOST: localhost
       DB_PORT: "5432"
+      REDIS_URL: redis://127.0.0.1:6379/0
+      CELERY_BROKER_URL: redis://127.0.0.1:6379/0
+      CELERY_RESULT_BACKEND: redis://127.0.0.1:6379/0
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     services:
@@ -42,6 +45,11 @@ jobs:
         image: redis:7
         ports:
           - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
 
     steps:
     - name: Checkout repository
@@ -83,6 +91,88 @@ jobs:
       run: |
         python manage.py check
         python manage.py migrate --run-syncdb
+
+    - name: Verify Django, Celery, and Redis startup
+      timeout-minutes: 5
+      run: |
+        set -euo pipefail
+        log_dir=$(mktemp -d "$RUNNER_TEMP/stack-smoke.XXXXXX")
+        pids=()
+        touch "$log_dir/django.log" "$log_dir/celery.log" "$log_dir/ping.log"
+        cleanup() {
+          status=$?
+          trap - EXIT
+          for pid in "${pids[@]}"; do
+            kill "$pid" 2>/dev/null || true
+          done
+          for pid in "${pids[@]}"; do
+            for attempt in {1..10}; do
+              if ! kill -0 "$pid" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            kill -KILL "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+          done
+          if [ "$status" -ne 0 ]; then
+            for log in "$log_dir"/*.log; do
+              echo "=== $log ==="
+              cat "$log"
+            done
+          fi
+          exit "$status"
+        }
+        trap cleanup EXIT
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+
+        python - <<'PY'
+        import os
+        import redis
+
+        client = redis.Redis.from_url(
+            os.environ["REDIS_URL"], socket_connect_timeout=5, socket_timeout=5
+        )
+        if not client.ping():
+            raise SystemExit("Redis did not respond to PING")
+        print("Redis runner connectivity verified")
+        PY
+
+        python manage.py runserver 127.0.0.1:8000 --noreload >"$log_dir/django.log" 2>&1 &
+        django_pid=$!
+        pids+=("$django_pid")
+        python -m celery --app kamerka worker --loglevel=info --concurrency=1 \
+          --hostname='ci@%h' >"$log_dir/celery.log" 2>&1 &
+        celery_pid=$!
+        pids+=("$celery_pid")
+
+        ready=false
+        for attempt in {1..30}; do
+          kill -0 "$django_pid" || { echo "Django exited before readiness"; exit 1; }
+          kill -0 "$celery_pid" || { echo "Celery exited before readiness"; exit 1; }
+          if [ "$(curl --silent --show-error --fail --max-time 2 \
+              --output /dev/null --write-out '%{http_code}' \
+              http://127.0.0.1:8000/admin/login/)" = 200 ] && \
+            timeout 5 python -m celery --app kamerka inspect ping \
+              --destination="ci@$(hostname)" --timeout=1 >"$log_dir/ping.log" 2>&1; then
+            ready=true
+            break
+          fi
+          echo "Waiting for Django and Celery (attempt $attempt/30)"
+          sleep 1
+        done
+        if [ "$ready" != true ]; then
+          echo "Django/Celery readiness timed out"
+          exit 1
+        fi
+
+        # The existing debug task makes no external requests; verify the broker/result round trip.
+        timeout 30 python manage.py shell -c \
+          'from kamerka.celery import debug_task; result = debug_task.delay(); result.get(timeout=15); assert result.successful(); print("Celery task/result round trip verified")'
+        kill -0 "$django_pid"
+        kill -0 "$celery_pid"
+        curl --fail --silent --show-error --max-time 5 \
+          --output /dev/null http://127.0.0.1:8000/admin/login/
+        echo "Django, Celery, and Redis startup verified"
 
     - name: China-IoT Template Validation
       run: nuclei -validate -t nuclei_templates/china-iot/
