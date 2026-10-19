@@ -13,7 +13,7 @@ elif [[ $# -gt 0 ]]; then
     exit 1
 fi
 
-if tmux has-session -t "$session" 2>/dev/null && ! "$restart"; then
+if tmux has-session -t "=$session" 2>/dev/null && ! "$restart"; then
     echo "Session '$session' already exists — attach with: tmux attach -t $session"
     echo "To replace a stale session: bash \"$root/scripts/tmux_kamerka_stack.sh\" --restart"
     exit 0
@@ -24,11 +24,19 @@ if ! bash "$root/scripts/kamerka.sh" manage migrate --noinput; then
     exit 1
 fi
 
-if "$restart" && tmux has-session -t "$session" 2>/dev/null; then
-    tmux kill-session -t "$session"
+if "$restart" && tmux has-session -t "=$session" 2>/dev/null; then
+    tmux kill-session -t "=$session"
 fi
 
 server_pane="$(tmux new-session -d -s "$session" -c "$root" -n stack -x 160 -y 48 -P -F '#{pane_id}' 'bash --noprofile --norc')"
+for name in DB_NAME DB_USER DB_PASSWORD DB_HOST DB_PORT DB_CONN_MAX_AGE \
+    DB_CONNECT_TIMEOUT DB_KEEPALIVES DB_KEEPALIVES_IDLE DB_KEEPALIVES_INTERVAL DB_KEEPALIVES_COUNT; do
+    if [[ -v $name ]]; then
+        tmux set-environment -t "=$session" "$name" "${!name}"
+    else
+        tmux set-environment -u -t "=$session" "$name"
+    fi
+done
 tmux set-option -w -t "$session:stack" remain-on-exit on
 worker_pane="$(tmux split-window -h -t "$server_pane" -c "$root" -P -F '#{pane_id}' 'bash --noprofile --norc')"
 beat_pane="$(tmux split-window -v -t "$server_pane" -c "$root" -P -F '#{pane_id}' 'bash --noprofile --norc')"

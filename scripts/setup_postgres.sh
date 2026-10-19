@@ -28,7 +28,7 @@ SQL
 )"
 if [[ "$role_exists" != 1 ]]; then
     echo "Creating PostgreSQL login '$db_user'. Enter the password you will use for DB_PASSWORD in .env."
-    "${admin[@]}" createuser --login --pwprompt -- "$db_user"
+    "${admin[@]}" createuser --createdb --login --pwprompt -- "$db_user"
 else
     echo "Role '$db_user' already exists; its password and permissions were not changed."
 fi

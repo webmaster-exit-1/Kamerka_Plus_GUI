@@ -26,6 +26,22 @@ fi
 
 cmd="$1"
 shift
+args=("$@")
+migration_options=()
+for ((i = 0; i < ${#args[@]}; i++)); do
+    case "${args[i]}" in
+        --settings=*|--pythonpath=*)
+            migration_options+=("${args[i]}")
+            ;;
+        --settings|--pythonpath)
+            migration_options+=("${args[i]}")
+            if ((i + 1 < ${#args[@]})); then
+                i=$((i + 1))
+                migration_options+=("${args[i]}")
+            fi
+            ;;
+    esac
+done
 migration_args=()
 if [[ "$cmd" == runserver || ( "$cmd" == manage && "${1:-}" == runserver ) ]]; then
     migration_args=(--noinput)
@@ -34,7 +50,7 @@ elif [[ "$cmd" == worker || ( "$cmd" == celery && ( "${1:-}" == worker || "${1:-
 fi
 
 if [[ ${#migration_args[@]} -gt 0 ]]; then
-    if ! "$py" manage.py migrate "${migration_args[@]}"; then
+    if ! "$py" manage.py "${migration_options[@]}" migrate "${migration_args[@]}"; then
         echo "Database setup failed. Check PostgreSQL and DB_* settings, then run: bash \"$root/scripts/kamerka.sh\" manage migrate --noinput" >&2
         exit 1
     fi

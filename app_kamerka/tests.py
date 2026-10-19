@@ -56,7 +56,7 @@ class ScriptLauncherTests(SimpleTestCase):
         self.python_stub = (
             '#!/bin/sh\n'
             'printf "%s\\n" "$*" >> "$COMMAND_LOG"\n'
-            'if [ "$2" = migrate ]; then exit "$MIGRATE_EXIT"; fi\n'
+            'case " $* " in *" migrate "*) exit "$MIGRATE_EXIT";; esac\n'
             'exit "$SERVICE_EXIT"\n'
         )
         self.write_executable(".venv/bin/python", self.python_stub)
@@ -70,7 +70,7 @@ class ScriptLauncherTests(SimpleTestCase):
     def run_script(self, name, *args):
         return subprocess.run(
             [self.bash, "--noprofile", "--norc", str(self.scripts / name), *args],
-            cwd="/tmp",
+            cwd=self.root.parent,
             env=self.env,
             capture_output=True,
             text=True,
@@ -87,6 +87,21 @@ class ScriptLauncherTests(SimpleTestCase):
                 result = self.run_script("kamerka.sh", *args)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(self.commands()[0], "manage.py migrate --noinput")
+                self.assertTrue(self.commands()[1].startswith("manage.py runserver "))
+
+    def test_runserver_migration_uses_django_settings_options(self):
+        option_cases = (
+            (("--settings=custom_settings", "--pythonpath=/custom/path"),
+             "manage.py --settings=custom_settings --pythonpath=/custom/path migrate --noinput"),
+            (("--settings", "custom_settings", "--pythonpath", "/custom/path"),
+             "manage.py --settings custom_settings --pythonpath /custom/path migrate --noinput"),
+        )
+        for options, expected_migration in option_cases:
+            with self.subTest(options=options):
+                self.log.unlink(missing_ok=True)
+                result = self.run_script("kamerka.sh", "manage", "runserver", *options)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.commands()[0], expected_migration)
                 self.assertTrue(self.commands()[1].startswith("manage.py runserver "))
 
     def test_migration_failure_prevents_runserver(self):
@@ -178,6 +193,15 @@ class ScriptLauncherTests(SimpleTestCase):
         self.env["PATH"] = str(self.root / "bin") + os.pathsep + os.environ["PATH"]
         self.env.pop("TMUX", None)
         self.addCleanup(subprocess.run, [tmux, "-S", socket, "kill-server"], capture_output=True)
+        subprocess.run([tmux, "-S", socket, "set-environment", "-g", "DB_NAME", "stale-db"], check=True)
+        subprocess.run([tmux, "-S", socket, "set-environment", "-g", "DB_USER", "stale-user"], check=True)
+        subprocess.run([tmux, "-S", socket, "set-environment", "-g", "DB_PASSWORD", "stale-password"], check=True)
+        subprocess.run([tmux, "-S", socket, "set-environment", "-g", "DB_CONNECT_TIMEOUT", "stale-timeout"], check=True)
+        self.env.update(DB_NAME="caller-db", DB_USER="caller-user", DB_HOST="caller-host", DB_PORT="5444")
+        self.env.pop("DB_PASSWORD", None)
+        subprocess.run([
+            tmux, "-S", socket, "new-session", "-d", "-s", "kamerka-dev", "-c", str(self.root),
+        ], check=True)
         self.env["SERVICE_EXIT"] = "7"
         for args in ((), ("--restart",)):
             with self.subTest(args=args):
@@ -191,6 +215,16 @@ class ScriptLauncherTests(SimpleTestCase):
                 self.assertCountEqual(panes, [
                     "runserver", "celery-worker", "celery-beat", "worker-status",
                 ])
+                session_env = subprocess.run(
+                    [tmux, "-S", socket, "show-environment", "-t", "=kamerka"],
+                    capture_output=True, text=True, check=True,
+                ).stdout
+                self.assertIn("DB_NAME=caller-db", session_env)
+                self.assertIn("DB_USER=caller-user", session_env)
+                self.assertIn("DB_HOST=caller-host", session_env)
+                self.assertIn("DB_PORT=5444", session_env)
+                self.assertNotIn("stale-password", session_env)
+                self.assertNotIn("stale-timeout", session_env)
         result = self.run_script("tmux_kamerka_stack.sh")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("already exists", result.stdout)
@@ -198,7 +232,11 @@ class ScriptLauncherTests(SimpleTestCase):
         result = self.run_script("tmux_kamerka_stack.sh", "--restart")
         self.assertEqual(result.returncode, 1)
         self.assertEqual(subprocess.run(
-            [tmux, "-S", socket, "has-session", "-t", "kamerka"],
+            [tmux, "-S", socket, "has-session", "-t", "=kamerka"],
+            capture_output=True,
+        ).returncode, 0)
+        self.assertEqual(subprocess.run(
+            [tmux, "-S", socket, "has-session", "-t", "=kamerka-dev"],
             capture_output=True,
         ).returncode, 0)
 
@@ -227,7 +265,7 @@ class ScriptLauncherTests(SimpleTestCase):
                 result = self.run_script("setup_postgres.sh")
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(self.commands(), [] if exists else [
-                    "createuser --login --pwprompt -- kamerka",
+                    "createuser --createdb --login --pwprompt -- kamerka",
                     "createdb --owner=kamerka -- kamerka",
                 ])
 
