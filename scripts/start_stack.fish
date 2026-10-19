@@ -2,6 +2,13 @@
 
 # Start Kamerka Django + Celery worker + beat in background (Fish API keys).
 set -l root (path normalize (dirname (status filename))/..)
+set -l fish_script "$root/scripts/kamerka.fish"
+
+if not fish "$fish_script" manage migrate --noinput
+    echo "Database setup failed; stack was not started. Check PostgreSQL and DB_* settings." >&2
+    exit 1
+end
+
 set -l logdir "$root/logs"
 mkdir -p $logdir
 
@@ -9,8 +16,6 @@ for pat in 'manage.py runserver' 'celery --app kamerka worker' 'celery --app kam
     pkill -f $pat 2>/dev/null
 end
 sleep 1
-
-set -l fish_script "$root/scripts/kamerka.fish"
 
 echo "Starting runserver..."
 nohup fish $fish_script runserver >>$logdir/runserver.log 2>&1 &

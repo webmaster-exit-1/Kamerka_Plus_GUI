@@ -1,6 +1,12 @@
 """Regression coverage for the shared application shell."""
 
 from html.parser import HTMLParser
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+from unittest import skipUnless
 
 from django.contrib.messages.storage.fallback import FallbackStorage
 from django.template.loader import render_to_string
@@ -8,6 +14,115 @@ from django.test import RequestFactory, SimpleTestCase
 
 from app_kamerka.context_processors import kamerka_shell
 from app_kamerka.models import Device
+
+
+@skipUnless(shutil.which("fish"), "Fish is required for launcher tests")
+class ScriptLauncherTests(SimpleTestCase):
+    def setUp(self):
+        self.fish = shutil.which("fish")
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.scripts = self.root / "scripts"
+        self.scripts.mkdir()
+        source = Path(__file__).resolve().parents[1] / "scripts"
+        for name in ("kamerka.fish", "start_stack.fish", "tmux_kamerka_stack.fish"):
+            shutil.copy(source / name, self.scripts / name)
+        self.log = self.root / "commands.log"
+        self.env = {
+            **os.environ,
+            "HOME": str(self.root),
+            "COMMAND_LOG": str(self.log),
+            "MIGRATE_EXIT": "0",
+            "SERVICE_EXIT": "0",
+        }
+        self.python_stub = (
+            '#!/bin/sh\n'
+            'printf "%s\\n" "$*" >> "$COMMAND_LOG"\n'
+            'if [ "$2" = migrate ]; then exit "$MIGRATE_EXIT"; fi\n'
+            'exit "$SERVICE_EXIT"\n'
+        )
+        self.write_executable(".venv/bin/python", self.python_stub)
+
+    def write_executable(self, name, content):
+        target = self.root / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+        target.chmod(0o755)
+
+    def run_script(self, name, *args):
+        return subprocess.run(
+            [self.fish, "--no-config", str(self.scripts / name), *args],
+            cwd="/tmp",
+            env=self.env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+    def commands(self):
+        return self.log.read_text().splitlines() if self.log.exists() else []
+
+    def test_runserver_migrates_before_starting(self):
+        for args in (("runserver",), ("manage", "runserver", "127.0.0.1:9000")):
+            with self.subTest(args=args):
+                self.log.unlink(missing_ok=True)
+                result = self.run_script("kamerka.fish", *args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.commands()[0], "manage.py migrate --noinput")
+                self.assertTrue(self.commands()[1].startswith("manage.py runserver "))
+
+    def test_migration_failure_prevents_runserver(self):
+        self.env["MIGRATE_EXIT"] = "1"
+        result = self.run_script("kamerka.fish", "runserver")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.commands(), ["manage.py migrate --noinput"])
+        self.assertIn("Database setup failed", result.stderr)
+
+    def test_worker_and_beat_require_migrations(self):
+        for args in (("worker",), ("celery", "worker"), ("celery", "beat")):
+            for migration_exit in ("0", "1"):
+                with self.subTest(args=args, migration_exit=migration_exit):
+                    self.log.unlink(missing_ok=True)
+                    self.env["MIGRATE_EXIT"] = migration_exit
+                    result = self.run_script("kamerka.fish", *args)
+                    self.assertEqual(self.commands()[0], "manage.py migrate --check")
+                    self.assertEqual(result.returncode, int(migration_exit))
+                    self.assertEqual(len(self.commands()), 2 if migration_exit == "0" else 1)
+
+    def test_manage_migrate_does_not_recurse(self):
+        result = self.run_script("kamerka.fish", "manage", "migrate", "--noinput")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.commands(), ["manage.py migrate --noinput"])
+
+    def test_venv_fallback_and_service_exit_status(self):
+        (self.root / ".venv/bin/python").unlink()
+        self.write_executable("venv/bin/python", self.python_stub)
+        self.env["SERVICE_EXIT"] = "7"
+        result = self.run_script("kamerka.fish", "runserver")
+        self.assertEqual(result.returncode, 7, result.stderr)
+        self.assertEqual(len(self.commands()), 2)
+
+    def test_stack_migration_failure_does_not_interrupt_or_launch_services(self):
+        self.write_executable(
+            "bin/fish",
+            '#!/bin/sh\nprintf "fish %s\\n" "$*" >> "$COMMAND_LOG"\nexit 1\n',
+        )
+        for command in ("pkill", "tmux", "nohup"):
+            self.write_executable(
+                f"bin/{command}",
+                '#!/bin/sh\nprintf "%s %s\\n" "${0##*/}" "$*" >> "$COMMAND_LOG"\nexit 1\n',
+            )
+        self.env["PATH"] = str(self.root / "bin") + os.pathsep + os.environ["PATH"]
+        for name in ("start_stack.fish", "tmux_kamerka_stack.fish"):
+            with self.subTest(script=name):
+                self.log.unlink(missing_ok=True)
+                result = self.run_script(name)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                calls = self.commands()
+                self.assertTrue(calls[-1].endswith("kamerka.fish manage migrate --noinput"))
+                self.assertFalse(any(c.startswith(("pkill ", "nohup ", "tmux new-session")) for c in calls))
+                self.assertIn("Database setup failed", result.stderr)
 
 
 class ShellElements(HTMLParser):

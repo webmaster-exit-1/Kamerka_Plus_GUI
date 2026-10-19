@@ -35,6 +35,20 @@ end
 set -l cmd $argv[1]
 set -l rest $argv[2..]
 
+set -l migration_args
+if test "$cmd" = runserver; or test "$cmd" = manage -a "$rest[1]" = runserver
+    set migration_args --noinput
+else if test "$cmd" = worker; or test "$cmd" = celery -a "$rest[1]" = worker; or test "$cmd" = celery -a "$rest[1]" = beat
+    set migration_args --check
+end
+
+if test (count $migration_args) -gt 0
+    if not $py manage.py migrate $migration_args
+        echo "Database setup failed. Check PostgreSQL and DB_* settings, then run: fish \"$root/scripts/kamerka.fish\" manage migrate --noinput" >&2
+        exit 1
+    end
+end
+
 switch $cmd
     case manage
         $py manage.py $rest

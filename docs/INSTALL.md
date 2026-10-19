@@ -285,13 +285,34 @@ export DB_HOST=localhost
 export DB_PORT=5432
 ```
 
-1. Start Django/Celery with those environment variables set.
-
-2. Run migrations:
+2. Run migrations before starting Django/Celery:
 
 ```bash
 python3 manage.py migrate
 ```
+
+3. Start Django/Celery with those environment variables set.
+
+### Fish scripts: missing database tables
+
+An error such as `relation "app_kamerka_search" does not exist` means the
+configured PostgreSQL database has not had the application migrations applied.
+Check the `DB_*` values in `.env` and any exported Fish variables (exported
+variables take precedence), make sure PostgreSQL is running, then run:
+
+```fish
+fish scripts/kamerka.fish manage migrate --noinput
+```
+
+Restart Django and Celery afterward. Both `start_stack.fish` and
+`tmux_kamerka_stack.fish` now apply migrations before starting services, and
+`kamerka.fish runserver` (including `manage runserver`) does so for standalone
+development. Standalone worker/beat commands check for pending migrations and
+stop with recovery instructions instead of processing tasks against missing tables.
+Migration failures stop stack startup before existing services are interrupted.
+These commands use the existing database; do not delete it or fake migrations.
+If Django reports no pending migrations but the table is still missing, check
+that you selected the correct database and restore a backup if its schema was damaged.
 
 ## Runtime Validation
 

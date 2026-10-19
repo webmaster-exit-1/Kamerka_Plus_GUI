@@ -5,12 +5,17 @@
 set -l root (path normalize (dirname (status filename))/..)
 set -l session kamerka
 
-tmux start-server 2>/dev/null
-
 if tmux has-session -t $session 2>/dev/null
     echo "Session '$session' already exists — attach with: tmux attach -t $session"
     exit 0
 end
+
+if not fish "$root/scripts/kamerka.fish" manage migrate --noinput
+    echo "Database setup failed; tmux stack was not started. Check PostgreSQL and DB_* settings." >&2
+    exit 1
+end
+
+tmux start-server 2>/dev/null
 
 tmux new-session -d -s $session -c $root -n stack
 tmux split-window -h -t "$session:stack"
