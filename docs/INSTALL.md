@@ -370,8 +370,15 @@ python3 -m venv .venv
 .venv/bin/python -m pip check
 ```
 
-`playwright` is explicitly included for `scripts/gui_e2e_playwright.py`. Its
-browser download is separate: `.venv/bin/python -m playwright install chromium`.
+`playwright` and the Python Wappalyzer CLI are explicitly listed in the optional
+`requirements-browser.txt` so they do not block a Termux web-app installation:
+
+```bash
+# Supported desktop/Linux hosts only, after installing the base requirements:
+.venv/bin/python -m pip install -r requirements-browser.txt
+.venv/bin/python -m playwright install chromium
+```
+
 On Termux, native dependencies may need to compile because Linux wheels do not
 target Android; install the corresponding Termux development packages or use
 distribution-provided builds. Playwright's bundled browsers do not support
@@ -379,6 +386,10 @@ Android/Termux; run browser automation on a supported desktop/Linux environment.
 The Django/Celery app does not need a Playwright browser to start.
 The optional native 3D desktop viewer still needs `requirements-3d.txt` and Qt/VTK;
 those are not required for the web application.
+
+If `runserver` or Gunicorn reports `Apps aren't loaded yet` while importing
+`kamerka.wsgi`, update to the fixed WSGI entry point. It initializes Django before
+any model access. The supported server entry point is `kamerka.wsgi:application`.
 
 ---
 

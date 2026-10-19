@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 from unittest import skipUnless
 
@@ -14,6 +15,22 @@ from django.test import RequestFactory, SimpleTestCase
 
 from app_kamerka.context_processors import kamerka_shell
 from app_kamerka.models import Device
+
+
+class WsgiStartupTests(SimpleTestCase):
+    def test_wsgi_initializes_django_in_a_fresh_process(self):
+        env = os.environ.copy()
+        env.pop("DJANGO_SETTINGS_MODULE", None)
+        result = subprocess.run(
+            [sys.executable, "-c",
+             "from kamerka.wsgi import application; assert callable(application)"],
+            cwd=Path(__file__).resolve().parents[1],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 @skipUnless(shutil.which("bash"), "Bash is required for launcher tests")

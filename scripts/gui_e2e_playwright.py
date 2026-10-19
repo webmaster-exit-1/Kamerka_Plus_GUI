@@ -8,7 +8,7 @@ Usage:
     python scripts/gui_e2e_playwright.py smoke
     python scripts/gui_e2e_playwright.py smoke --base-url http://127.0.0.1:8000 --device-path /results/1/1/192.0.2.1
 
-Requires: pip install playwright && playwright install chromium
+Requires: pip install -r requirements-browser.txt && python -m playwright install chromium
 
 Smoke uses live local pages, but blocks external browser requests and mocks action
 and export requests. It never submits searches or starts real scans. Set
