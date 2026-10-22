@@ -75,7 +75,7 @@ class FeedMapRuntimeTests(SimpleTestCase):
         javascript = re.findall(
             r"<script>(.*?)</script>",
             render_to_string("feeds_briefing.html", {"feed_map_config": {}}),
-            re.S,
+            re.S | re.I,
         )[-1]
         harness = r"""
 const assert = require('node:assert/strict');
