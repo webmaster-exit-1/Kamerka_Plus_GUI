@@ -35,7 +35,75 @@ chmod +x scripts/install_kamerka.py   # once
 
 **Admin account:** the wizard can generate a 20-character password (shown once) or accept your own (minimum 12 characters with mixed case and digits). Avoid the default `admin` / `admin` pair in production. For automation, set `DJANGO_SUPERUSER_USERNAME`, `DJANGO_SUPERUSER_EMAIL`, and `DJANGO_SUPERUSER_PASSWORD` before `--yes`.
 
-**After the wizard:** start Redis, then `source .env`, `manage.py runserver`, and `celery --app kamerka worker --beat`. Optional: HexStrike for the HexSploit page (`HEXSTRIKE_SERVER_URL` in `.env`).
+**After the wizard:** start Redis, then `manage.py runserver` and `celery --app kamerka worker --beat`. Django automatically loads the project-root `.env` using the required `python-dotenv` package, including for WSGI and the Bash launch helpers. Exported environment variables take precedence. Restart web and workers after configuration changes. Optional: HexStrike for the HexSploit page (`HEXSTRIKE_SERVER_URL` in `.env`).
+
+### HexSploit backend connections
+
+These are **server-to-server** addresses, resolved from trusted deployment settings,
+never from the browser's Host header or request parameters:
+
+| Variable | Native default | Purpose |
+| --- | --- | --- |
+| `HEXSTRIKE_SERVER_URL` | `http://127.0.0.1:8888` | Backend actions, health checks and the URL displayed on HexSploit |
+| `HEXSTRIKE_TIMEOUT` | `300` | Action timeout in seconds (health GET capped at 30 seconds) |
+| `HEXSPLOIT_OLLAMA_SERVER_URL` | `http://127.0.0.1:11434` | HexSploit Ollama generation |
+| `HEXSPLOIT_OLLAMA_MODEL` | `DeepHat/DeepHat-V1-7B:latest` | Model installed on that Ollama server |
+
+For remote services, put their complete trusted base URLs in `.env`, for example
+`HEXSTRIKE_SERVER_URL=https://hexstrike.internal.example` and
+`HEXSPLOIT_OLLAMA_SERVER_URL=https://ollama.internal.example`. Paths/prefixes in base
+URLs are preserved. Blank endpoint settings fall back to loopback.
+Use TLS and network access controls for remote backends; do not expose these APIs
+publicly. The browser talks to Django, so these addresses need not be browser-accessible.
+`OLLAMA_HOST` is a separate setting for feed briefs, not HexSploit.
+
+`scripts/start_hexstrike.sh` starts a **local** HexStrike process and forwards CLI
+arguments to its server; it does not start or configure a remote service. If using
+a remote endpoint, start that backend separately. The install wizard checks the
+HexStrike address entered by the operator; edit `.env` for Ollama and map settings.
+For containers, see [Docker networking](docker.md#hexsploit-connections).
+
+### Feeds briefing basemap
+
+Only `/feeds-briefing` uses `FEED_MAP_TILE_URL` and `FEED_MAP_TILE_ATTRIBUTION`.
+The default is `https://tile.openstreetmap.org/{z}/{x}/{y}.png` with linked
+OpenStreetMap contributor attribution. No API key is needed for this default,
+but it is **not unrestricted**. Follow the official
+[OSMF raster tile usage policy](https://operations.osmfoundation.org/policies/tiles/):
+modest human-interactive use only, visible attribution, accurate browser Referer,
+normal browser caching honoring provider headers, no bulk/offline prefetch, no
+cache-busting, and no spoofed identity. Availability is best-effort with no SLA;
+publish operator contact details and use a suitable contracted or self-hosted
+provider for larger deployments.
+
+The old `same-origin` Referrer-Policy suppressed the Referer on cross-origin tile
+requests. This page now sends `strict-origin-when-cross-origin`, exposing the real
+origin but not cross-origin paths/query strings. Other pages keep their existing
+policy. Ensure your reverse proxy/CDN does not replace this header with
+`same-origin`/`no-referrer`, and check actual tile requests in browser DevTools.
+The existing CSP permits HTTPS tile images; no proxy or header spoofing is used.
+Existing provider blocks are not bypassed and may require contacting the provider.
+
+To switch providers, set both values in `.env`:
+
+```dotenv
+FEED_MAP_TILE_URL=https://tiles.your-provider.example/{z}/{x}/{y}.png
+FEED_MAP_TILE_ATTRIBUTION='Provider-required attribution HTML'
+```
+
+Use an absolute **HTTPS raster XYZ** URL compatible with zooms 1–17 and the
+provider's required attribution (including underlying data credits). Attribution
+is trusted operator-supplied HTML. Review that provider's official terms,
+quotas, caching, origin/domain authorization and key requirements before use;
+substituting another public endpoint does not confer permission. Any key in the
+tile URL is visible to browsers: use only a browser-public, origin-restricted key,
+never a server secret. Configuration is JSON-serialized into the page.
+
+Set `FEED_MAP_TILE_URL=` to disable external tile requests. On a tile HTTP/network
+failure the map removes the entire basemap once, shows one status message, and
+keeps markers/popups/bounds and no-data behavior. There is no automatic provider
+fallback or retry loop. Providers that return HTTP 200 error pictures cannot
+always be detected as tile failures; inspect DevTools and provider account status.
 
 ## Environment Variables
 

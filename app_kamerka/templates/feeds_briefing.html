@@ -41,6 +41,7 @@
             <div class="panel panel-default">
                 <div class="panel-heading"><h3 class="panel-title">Integrated Feed Map</h3></div>
                 <div class="panel-body panel-body-map">
+                    <div id="cp-feed-map-status" role="status" hidden style="padding:8px;color:#ffb366;background:#0a141d;"></div>
                     <div id="cp-feed-map" style="width:100%;height:360px;border:1px solid #153046;"></div>
                 </div>
             </div>
@@ -104,6 +105,7 @@
 
 {% block extra_js %}
 <script src="{% static 'js/leaflet.js' %}"></script>
+{{ feed_map_config|json_script:"cp-feed-map-config" }}
 <script>
 (function() {
     var MAX_SUMMARY_LENGTH = Number('{{ intel_feed_summary_max|default:"200"|escapejs }}');
@@ -148,10 +150,29 @@
     }
 
     var map = L.map('cp-feed-map', {minZoom: 1, maxZoom: 17}).setView([20, 0], 2);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 17,
-        attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
+    var mapConfig = JSON.parse(document.getElementById('cp-feed-map-config').textContent);
+    var mapStatusEl = document.getElementById('cp-feed-map-status');
+    function showMapStatus(message) {
+        mapStatusEl.textContent = message;
+        mapStatusEl.hidden = false;
+    }
+    if (mapConfig.url) {
+        var tilesFailed = false;
+        var tiles = L.tileLayer(mapConfig.url, {
+            maxZoom: 17,
+            attribution: mapConfig.attribution
+        });
+        tiles.on('tileerror', function() {
+            if (tilesFailed) return;
+            tilesFailed = true;
+            showMapStatus('Basemap unavailable. Feed markers remain available. Ask the administrator to check the tile provider, credentials and usage policy.');
+            // Defer removal until Leaflet finishes processing the failing tile.
+            setTimeout(function() { map.removeLayer(tiles); }, 0);
+        });
+        tiles.addTo(map);
+    } else {
+        showMapStatus('Basemap disabled by the administrator. Feed markers remain available.');
+    }
     var markerLayer = L.layerGroup().addTo(map);
 
     function renderMarkers(entries) {

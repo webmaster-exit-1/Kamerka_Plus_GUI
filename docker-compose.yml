@@ -10,9 +10,6 @@ services:
       CELERY_BROKER_URL: redis://redis:6379
       CELERY_RESULT_BACKEND: redis://redis:6379
       DB_HOST: postgres
-      HEXSTRIKE_SERVER_URL: http://192.168.1.103:8888
-      HEXSPLOIT_OLLAMA_SERVER_URL: http://192.168.1.103:11434
-      HEXSPLOIT_OLLAMA_MODEL: DeepHat/DeepHat-V1-7B:latest
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -45,9 +42,6 @@ services:
       CELERY_BROKER_URL: redis://redis:6379
       CELERY_RESULT_BACKEND: redis://redis:6379
       DB_HOST: postgres
-      HEXSTRIKE_SERVER_URL: http://192.168.1.103:8888
-      HEXSPLOIT_OLLAMA_SERVER_URL: http://192.168.1.103:11434
-      HEXSPLOIT_OLLAMA_MODEL: DeepHat/DeepHat-V1-7B:latest
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -71,9 +65,6 @@ services:
       CELERY_BROKER_URL: redis://redis:6379
       CELERY_RESULT_BACKEND: redis://redis:6379
       DB_HOST: postgres
-      HEXSTRIKE_SERVER_URL: http://192.168.1.103:8888
-      HEXSPLOIT_OLLAMA_SERVER_URL: http://192.168.1.103:11434
-      HEXSPLOIT_OLLAMA_MODEL: DeepHat/DeepHat-V1-7B:latest
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

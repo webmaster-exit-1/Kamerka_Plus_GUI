@@ -201,13 +201,19 @@ REDIS_URL=redis://localhost:6379
 | `SHODAN_API_KEY` | Required for Shodan searches and scans |
 | `NVD_API_KEY` | Optional — higher NVD rate limits |
 | `OLLAMA_HOST` | Optional — AI region briefs (`http://localhost:11434`) |
-| `HEXSPLOIT_OLLAMA_SERVER_URL` | Optional — Ollama endpoint for HexSploit chain planning |
+| `HEXSPLOIT_OLLAMA_SERVER_URL` | Optional — HexSploit Ollama endpoint (default `http://127.0.0.1:11434`) |
 | `HEXSPLOIT_OLLAMA_MODEL` | Optional — Ollama model for HexSploit (default `DeepHat/DeepHat-V1-7B:latest`) |
 | `MAPBOX_ACCESS_TOKEN` | Optional — enhanced 3D buildings on `/map3d` |
 | `HEXSTRIKE_SERVER_URL` | Optional — HexSploit backend (default `http://127.0.0.1:8888`) |
+| `FEED_MAP_TILE_URL`, `FEED_MAP_TILE_ATTRIBUTION` | Feeds briefing HTTPS raster basemap and provider attribution; [policy/configuration](docs/INSTALL.md#feeds-briefing-basemap) |
 | `TASK_RUN_STALE_MINUTES` | Mark orphaned pending tasks failed (default `90`) |
 
 Full list: [docs/INSTALL.md](docs/INSTALL.md) and `.env.example`.
+
+The project-root `.env` is loaded by Django/WSGI/Celery; exported variables take
+precedence. Backend URLs must be reachable from the **server**, not the browser.
+For remote or container deployments, see [connection setup](docs/INSTALL.md#hexsploit-backend-connections)
+and [Docker networking](docs/docker.md#hexsploit-connections).
 
 ---
 

@@ -39,6 +39,30 @@ Use `.env` (copy from `.env.example`) and adjust values:
 PostgreSQL is the only supported backend. With Compose, set `DB_HOST=postgres`;
 for a host-installed server, use `DB_HOST=localhost`.
 
+### HexSploit connections
+
+Compose passes `.env` to web, celery and celery-beat without overriding HexSploit
+endpoints or the Ollama model. Native loopback defaults refer to the **container**
+in Docker, not your laptop, Docker host, or browser. Configure reachable URLs:
+
+```dotenv
+HEXSTRIKE_SERVER_URL=http://host.docker.internal:8888
+HEXSPLOIT_OLLAMA_SERVER_URL=http://host.docker.internal:11434
+```
+
+The Compose services already map `host.docker.internal` to the host gateway.
+Host backends must listen on a reachable interface, with firewall restrictions to
+trusted containers. For backends in the same Docker network use their service DNS
+names instead; for remote backends use their trusted HTTPS endpoints. No HexStrike
+or Ollama service is started by this Compose file. Restart/recreate web and workers
+after changing settings. The displayed HexStrike URL and health/actions use the
+same configured address; the browser itself never connects to that backend.
+
+Feed map tiles, unlike backend connections, are fetched by the **browser**.
+Configure a browser-reachable HTTPS tile URL and provider attribution in `.env`;
+see [basemap requirements](INSTALL.md#feeds-briefing-basemap). Any tile key will be
+public to browsers and must be restricted accordingly.
+
 ## Migrations and upgrades
 
 Containers run migrations at startup for the `web` service. For manual control:
