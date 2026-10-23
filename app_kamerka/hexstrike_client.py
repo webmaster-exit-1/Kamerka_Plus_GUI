@@ -33,7 +33,7 @@ ALLOWED_ACTIONS: Dict[str, Tuple[str, str, Tuple[str, ...]]] = {
 
 
 def server_url() -> str:
-    return (getattr(settings, "HEXSTRIKE_SERVER_URL", "") or "http://127.0.0.1:8888").rstrip("/")
+    return (getattr(settings, "HEXSTRIKE_SERVER_URL", "").strip().rstrip("/") or "http://127.0.0.1:8888")
 
 
 def validate_target(value: str) -> Optional[str]:

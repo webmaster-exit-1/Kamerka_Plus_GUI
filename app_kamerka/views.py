@@ -760,8 +760,15 @@ def feeds_briefing(request):
         "feed_sources": sources,
         "country_coverage": country_coverage,
         "intel_feed_summary_max": INTEL_FEED_SUMMARY_MAX,
+        "feed_map_config": {
+            "url": settings.FEED_MAP_TILE_URL,
+            "attribution": settings.FEED_MAP_TILE_ATTRIBUTION,
+        },
     }
-    return render(request, "feeds_briefing.html", context)
+    response = render(request, "feeds_briefing.html", context)
+    # Tile providers need the browser's real origin, not page paths or query strings.
+    response["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 
 def devices(request):

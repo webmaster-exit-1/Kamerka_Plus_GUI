@@ -16,7 +16,7 @@ from app_kamerka.models import Device, Playbook, VulnIntelligence, Watchlist
 
 def ollama_url() -> str:
     """Get Ollama server URL from settings."""
-    return (getattr(settings, "HEXSPLOIT_OLLAMA_SERVER_URL", "") or "http://192.168.1.103:11434").rstrip("/")
+    return (getattr(settings, "HEXSPLOIT_OLLAMA_SERVER_URL", "").strip().rstrip("/") or "http://127.0.0.1:11434")
 
 
 def ollama_model() -> str:

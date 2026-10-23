@@ -11,16 +11,19 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 import os
 import warnings
 from pathlib import Path
+from urllib.parse import urlsplit
+from django.core.exceptions import ImproperlyConfigured
 from django.core.management.utils import get_random_secret_key
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(os.path.join(BASE_DIR, ".env"))
 except ImportError:
     pass
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _LOG_DIR = os.path.join(BASE_DIR, "logs")
 _LOG_FILE = os.path.join(_LOG_DIR, "kamerka.log")
 _log_file_available = False
@@ -362,15 +365,15 @@ SHODAN_API_KEY: str = os.environ.get("SHODAN_API_KEY", "")
 
 # Local HexStrike tools server (HTTP API used by hexstrike_mcp.py and HexSploit page).
 # Example: export HEXSTRIKE_SERVER_URL=http://127.0.0.1:8888
-HEXSTRIKE_SERVER_URL: str = os.environ.get("HEXSTRIKE_SERVER_URL", "http://192.168.1.103:8888")
+HEXSTRIKE_SERVER_URL: str = os.environ.get("HEXSTRIKE_SERVER_URL", "").strip().rstrip("/") or "http://127.0.0.1:8888"
 HEXSTRIKE_TIMEOUT: int = int(os.environ.get("HEXSTRIKE_TIMEOUT", "300"))
 
 # Ollama AI server for smart payload generation and attack chain planning (HexSploit).
 # Example: export HEXSPLOIT_OLLAMA_SERVER_URL=http://127.0.0.1:11434
 # Example: export HEXSPLOIT_OLLAMA_MODEL=DeepHat/DeepHat-V1-7B:latest
 HEXSPLOIT_OLLAMA_SERVER_URL: str = os.environ.get(
-    "HEXSPLOIT_OLLAMA_SERVER_URL", "http://192.168.1.103:11434"
-)
+    "HEXSPLOIT_OLLAMA_SERVER_URL", ""
+).strip().rstrip("/") or "http://127.0.0.1:11434"
 HEXSPLOIT_OLLAMA_MODEL: str = os.environ.get(
     "HEXSPLOIT_OLLAMA_MODEL", "DeepHat/DeepHat-V1-7B:latest"
 )
@@ -378,6 +381,21 @@ HEXSPLOIT_OLLAMA_MODEL: str = os.environ.get(
 
 # Optional Mapbox token — enhances /map3d building detail. Default basemap is OpenFreeMap (no key).
 MAPBOX_ACCESS_TOKEN: str = os.environ.get("MAPBOX_ACCESS_TOKEN", "")
+
+# Feeds briefing raster basemap only. An empty URL disables external tile requests.
+_OSM_FEED_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+FEED_MAP_TILE_URL = os.environ.get("FEED_MAP_TILE_URL", _OSM_FEED_TILE_URL).strip()
+FEED_MAP_TILE_ATTRIBUTION = os.environ.get(
+    "FEED_MAP_TILE_ATTRIBUTION",
+    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    if FEED_MAP_TILE_URL == _OSM_FEED_TILE_URL else "",
+)
+if FEED_MAP_TILE_URL:
+    _feed_tile_parts = urlsplit(FEED_MAP_TILE_URL)
+    if _feed_tile_parts.scheme != "https" or not _feed_tile_parts.netloc:
+        raise ImproperlyConfigured("FEED_MAP_TILE_URL must be an absolute HTTPS tile URL.")
+    if not FEED_MAP_TILE_ATTRIBUTION.strip():
+        raise ImproperlyConfigured("Set FEED_MAP_TILE_ATTRIBUTION for the configured tile provider.")
 
 # ---------------------------------------------------------------------------
 # WorldMonitor integration settings
