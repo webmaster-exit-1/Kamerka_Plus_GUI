@@ -353,6 +353,9 @@ ics_queries = {
 coordinates_queries = {
     "videoiq": 'title:"VideoIQ Camera Login"',
     "hikvision": 'product:"Hikvision IP Camera"',
+    "dahua": '"Dahua Rtsp Server"',
+    "foscam": 'html:"Foscam"',
+    "reolink": '"Reolink"',
     "webcam": "device:webcam",
     "webcamxp": "webcamxp",
     "vivotek": "vivotek",

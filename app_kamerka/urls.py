@@ -128,6 +128,7 @@ urlpatterns = [
     # Playbook CRUD + execution
     path("hexsploit/", hexstrike_views.hexsploit_view, name="hexsploit"),
     path("api/hexstrike/health/", hexstrike_views.hexstrike_health_api, name="hexstrike_health"),
+    path("api/hexstrike/tools/", hexstrike_views.hexstrike_tools_api, name="hexstrike_tools"),
     path("api/hexstrike/action/", hexstrike_views.hexstrike_action_api, name="hexstrike_action"),
     path("playbooks/", views.playbooks_list, name="playbooks_list"),
     path("playbooks/<int:pk>/", views.playbook_detail, name="playbook_detail"),

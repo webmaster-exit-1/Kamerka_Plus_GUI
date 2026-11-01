@@ -10,6 +10,12 @@
 .hexsploit-status-offline { color: #ff2050; font-weight: bold; }
 .hexsploit-output { font-family: monospace; font-size: 0.85em; white-space: pre-wrap; max-height: 420px; overflow: auto; background: #0a1428; border: 1px solid #0064d7; padding: 12px; border-radius: 6px; color: #cceeff; }
 .hexsploit-actions .btn { margin: 4px 6px 4px 0; }
+.hs-tool-group-title { color:#ffe600; font-weight:bold; margin:8px 0 4px; font-size:0.9em; text-transform:uppercase; letter-spacing:0.5px; }
+.hs-tool-row { display:flex; align-items:center; gap:8px; padding:3px 0; flex-wrap:wrap; }
+.hs-tool-row label { font-weight:normal; color:#cceeff; margin:0; cursor:pointer; min-width:150px; }
+.hs-tool-row .hs-tool-val { max-width:220px; height:28px; font-size:0.82em; }
+.hs-tool-row .hs-run-one { padding:1px 8px; font-size:0.78em; }
+.hs-tool-row.hs-hidden { display:none; }
 </style>
 {% endblock %}
 
@@ -94,6 +100,23 @@
             <button type="button" class="btn btn-danger btn-sm hs-msf-btn" data-module="{{ m.module }}" title="{{ m.cve_id }}">{{ m.cve_id }}</button>
             {% endfor %}
             {% endif %}
+          </div>
+
+          <div class="hexsploit-panel">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+              <h4 style="color:#00e1ff;margin:0;">Tool catalog <span id="hs-tool-count" style="color:#888;font-size:0.7em;"></span></h4>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                <input type="search" id="hs-tool-filter" class="form-control" style="max-width:220px;" placeholder="Filter tools…">
+                <button type="button" class="btn btn-success btn-sm" id="hs-run-selected">Run selected ▶</button>
+                <button type="button" class="btn btn-default btn-sm" id="hs-clear-selected">Clear</button>
+              </div>
+            </div>
+            <p style="color:#888;margin:8px 0 10px;font-size:0.85em;">
+              Pick any HexStrike tools to run against the target above. <code>target</code>/<code>url</code>/<code>domain</code> tools auto-fill from the target; tools needing a file, module or interface expose an input.
+            </p>
+            <div id="hs-tool-catalog" style="max-height:360px;overflow:auto;border:1px solid #0064d7;border-radius:6px;padding:10px;background:#0a1428;">
+              <span style="color:#888;">Loading tool catalog…</span>
+            </div>
           </div>
 
           <div class="hexsploit-panel">
@@ -295,6 +318,160 @@
             }).then(function(res) { log(res.data); });
         });
     });
+
+    // ---- Tool catalog picker -------------------------------------------------
+    var catalogEl = document.getElementById('hs-tool-catalog');
+
+    function currentTarget() {
+        return document.getElementById('hs-target').value.trim();
+    }
+
+    function defaultValueFor(tool) {
+        var t = currentTarget();
+        if (tool.input === 'url') {
+            return t ? (/^https?:\/\//i.test(t) ? t : 'http://' + t) : '';
+        }
+        if (tool.input === 'target' || tool.input === 'domain') {
+            return t;
+        }
+        return '';
+    }
+
+    function buildToolPayload(tool, rawVal) {
+        var payload = {};
+        var val = rawVal;
+        if (val === undefined || val === null || val === '') {
+            val = defaultValueFor(tool);
+        }
+        payload[tool.param] = val;
+        // Mirror into `target` for auto-filled tools so server-side target
+        // validation/device context stays consistent.
+        if (tool.input === 'target') {
+            payload.target = val;
+        }
+        var obj = document.getElementById('hs-objective').value;
+        if (obj) { payload.objective = obj; }
+        return payload;
+    }
+
+    function runOneTool(tool, rowValInput) {
+        var rawVal = rowValInput ? rowValInput.value.trim() : '';
+        var payload = buildToolPayload(tool, rawVal);
+        if (!payload[tool.param]) {
+            append('[' + tool.slug + '] skipped – needs a ' + tool.param + ' value');
+            return Promise.resolve(false);
+        }
+        append('▶ ' + tool.slug + ' (' + tool.param + '=' + payload[tool.param] + ')');
+        return postAction(tool.slug, payload).then(function(res) {
+            append(JSON.stringify(res.data, null, 2) + '\n');
+            return !!(res.ok && res.data && res.data.success !== false && !res.data.error);
+        }).catch(function(e) {
+            append('Error running ' + tool.slug + ': ' + e + '\n');
+            return false;
+        });
+    }
+
+    function renderCatalog(data) {
+        var groups = (data && data.groups) || [];
+        document.getElementById('hs-tool-count').textContent = '(' + (data.count || 0) + ' tools)';
+        catalogEl.innerHTML = '';
+        groups.forEach(function(group) {
+            var title = document.createElement('div');
+            title.className = 'hs-tool-group-title';
+            title.textContent = group.group;
+            catalogEl.appendChild(title);
+            group.tools.forEach(function(tool) {
+                var row = document.createElement('div');
+                row.className = 'hs-tool-row';
+                row.setAttribute('data-slug', tool.slug);
+
+                var cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.className = 'hs-tool-cb';
+                cb.id = 'hs-cb-' + tool.slug;
+
+                var label = document.createElement('label');
+                label.setAttribute('for', cb.id);
+                label.textContent = tool.label;
+                label.title = tool.slug + ' – primary param: ' + tool.param;
+
+                var valInput = document.createElement('input');
+                valInput.type = 'text';
+                valInput.className = 'form-control hs-tool-val';
+                valInput.placeholder = tool.input === 'manual'
+                    ? tool.param + ' (required)'
+                    : tool.param + ' (auto)';
+                row.valInput = valInput;
+                row.tool = tool;
+
+                var runBtn = document.createElement('button');
+                runBtn.type = 'button';
+                runBtn.className = 'btn btn-default hs-run-one';
+                runBtn.textContent = 'Run';
+                runBtn.addEventListener('click', function() {
+                    output.textContent = '';
+                    runOneTool(tool, valInput).then(function() {
+                        append('– done –');
+                    });
+                });
+
+                row.appendChild(cb);
+                row.appendChild(label);
+                row.appendChild(valInput);
+                row.appendChild(runBtn);
+                catalogEl.appendChild(row);
+            });
+        });
+    }
+
+    function loadCatalog() {
+        fetch('/api/hexstrike/tools/', {
+            credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        }).then(function(r) { return r.json(); })
+          .then(renderCatalog)
+          .catch(function(e) {
+              catalogEl.innerHTML = '<span style="color:#ff2050;">Failed to load tool catalog: ' + e + '</span>';
+          });
+    }
+
+    var filterInput = document.getElementById('hs-tool-filter');
+    if (filterInput) {
+        filterInput.addEventListener('input', function() {
+            var q = this.value.trim().toLowerCase();
+            catalogEl.querySelectorAll('.hs-tool-row').forEach(function(row) {
+                var slug = (row.getAttribute('data-slug') || '').toLowerCase();
+                row.classList.toggle('hs-hidden', q && slug.indexOf(q) === -1);
+            });
+        });
+    }
+
+    document.getElementById('hs-run-selected').addEventListener('click', function() {
+        var rows = Array.prototype.slice.call(catalogEl.querySelectorAll('.hs-tool-row'))
+            .filter(function(row) {
+                var cb = row.querySelector('.hs-tool-cb');
+                return cb && cb.checked;
+            });
+        if (!rows.length) {
+            log('Select one or more tools first.');
+            return;
+        }
+        output.textContent = '';
+        append('Running ' + rows.length + ' selected tool(s) against ' + (currentTarget() || '(no target)') + '\n');
+        var promise = Promise.resolve();
+        rows.forEach(function(row) {
+            promise = promise.then(function() {
+                return runOneTool(row.tool, row.valInput);
+            });
+        });
+        promise.then(function() { append('– All selected tools complete –'); });
+    });
+
+    document.getElementById('hs-clear-selected').addEventListener('click', function() {
+        catalogEl.querySelectorAll('.hs-tool-cb').forEach(function(cb) { cb.checked = false; });
+    });
+
+    loadCatalog();
 
     document.getElementById('hs-refresh-health').addEventListener('click', function() {
         fetch('/api/hexstrike/health/', {

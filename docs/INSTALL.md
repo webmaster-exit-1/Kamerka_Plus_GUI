@@ -63,6 +63,11 @@ a remote endpoint, start that backend separately. The install wizard checks the
 HexStrike address entered by the operator; edit `.env` for Ollama and map settings.
 For containers, see [Docker networking](docker.md#hexsploit-connections).
 
+### HexSploit tool picker
+
+The HexSploit console (`/hexsploit/`) includes a **Tool catalog** panel that lists the full HexStrike `/api/tools/` set (grouped by Network/Recon, Web, Passwords, Binary/RE, Forensics and Cloud). Select one or more tools and press **Run selected**, or run a single tool inline. The catalog is served from `GET /api/hexstrike/tools/` (sourced from `app_kamerka/hexstrike_catalog.py`); each tool declares its primary parameter so `target`/`url`/`domain` tools auto-fill from the console target while tools that need a local artifact (file path, module, interface, ...) expose an input. Tools execute against your local HexStrike server via the dynamic pass-through in `app_kamerka/hexstrike_client.py`, so a tool only succeeds when its underlying binary is installed on the HexStrike host.
+
+
 ### Feeds briefing basemap
 
 Only `/feeds-briefing` uses `FEED_MAP_TILE_URL` and `FEED_MAP_TILE_ATTRIBUTION`.

@@ -11,7 +11,8 @@ from django.conf import settings
 from django.test import RequestFactory, SimpleTestCase, override_settings
 
 from app_kamerka.hexstrike_client import HexStrikeClient, server_url
-from app_kamerka.hexstrike_views import hexsploit_view
+from app_kamerka.hexstrike_catalog import TOOL_CATALOG, catalog_by_group
+from app_kamerka.hexstrike_views import hexsploit_view, hexstrike_tools_api
 from app_kamerka.ollama_payload_generator import ollama_url, query_ollama
 
 
@@ -103,3 +104,32 @@ class HexSploitEndpointTests(SimpleTestCase):
             json={"model": "deployment-model", "prompt": "test prompt", "stream": False},
             timeout=30,
         )
+
+class HexStrikeToolCatalogTests(SimpleTestCase):
+    def test_catalog_is_grouped_and_well_formed(self):
+        groups = catalog_by_group()
+        slugs = {t["slug"] for g in groups for t in g["tools"]}
+        self.assertEqual(len(slugs), len(TOOL_CATALOG))
+        for group in groups:
+            self.assertTrue(group["tools"])
+            for tool in group["tools"]:
+                self.assertIn(tool["input"], ("target", "url", "domain", "manual"))
+                self.assertTrue(tool["param"])
+                self.assertTrue(tool["label"])
+
+    def test_tools_api_requires_xhr(self):
+        request = RequestFactory().get("/api/hexstrike/tools/")
+        self.assertEqual(hexstrike_tools_api(request).status_code, 400)
+
+    def test_tools_api_returns_catalog(self):
+        request = RequestFactory().get(
+            "/api/hexstrike/tools/",
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest"
+        )
+        response = hexstrike_tools_api(request)
+        self.assertEqual(response.status_code, 200)
+        import json
+        payload = json.loads(response.content)
+        self.assertEqual(payload["count"], len(TOOL_CATALOG))
+        self.assertTrue(payload["groups"])
+
