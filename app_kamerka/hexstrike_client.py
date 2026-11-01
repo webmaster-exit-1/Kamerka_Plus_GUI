@@ -28,7 +28,7 @@ ALLOWED_ACTIONS: Dict[str, Tuple[str, str, Tuple[str, ...]]] = {
     "rustscan": ("POST", "api/tools/rustscan", ("target",)),
     "nmap_advanced": ("POST", "api/tools/nmap-advanced", ("target",)),
     "enum4linux_ng": ("POST", "api/tools/enum4linux-ng", ("target",)),
-    "responder": ("POST", "api/tools/responder", ("target",)),
+    "responder": ("POST", "api/tools/responder", ("interface",)),
 }
 
 

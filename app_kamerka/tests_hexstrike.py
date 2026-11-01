@@ -91,6 +91,27 @@ class HexSploitEndpointTests(SimpleTestCase):
             json={"target": "example.com"}, timeout=settings.HEXSTRIKE_TIMEOUT,
         )
 
+    @override_settings(HEXSTRIKE_SERVER_URL="https://tools.example/prefix/")
+    @patch("app_kamerka.hexstrike_client.requests.Session")
+    def test_standalone_responder_posts_interface_without_target(self, session):
+        response = session.return_value.post.return_value
+        response.content = b'{"success": true}'
+        response.json.return_value = {"success": True}
+        result = HexStrikeClient().run_action("responder", {"interface": "eth0"})
+        self.assertTrue(result.get("success"))
+        self.assertNotIn("Missing required field", str(result.get("error", "")))
+        session.return_value.post.assert_called_once_with(
+            "https://tools.example/prefix/api/tools/responder",
+            json={"interface": "eth0"},
+            timeout=settings.HEXSTRIKE_TIMEOUT,
+        )
+
+    def test_standalone_responder_requires_interface(self):
+        missing = HexStrikeClient().run_action("responder", {})
+        self.assertEqual(missing["error"], "Missing required field: interface")
+        target_only = HexStrikeClient().run_action("responder", {"target": "10.0.0.12"})
+        self.assertEqual(target_only["error"], "Missing required field: interface")
+
     @override_settings(
         HEXSPLOIT_OLLAMA_SERVER_URL="https://llm.example/prefix/",
         HEXSPLOIT_OLLAMA_MODEL="deployment-model",
