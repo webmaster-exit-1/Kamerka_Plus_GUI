@@ -10,6 +10,7 @@ from django.shortcuts import get_object_or_404, render
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 
+from app_kamerka.hexstrike_catalog import catalog_by_group
 from app_kamerka.hexstrike_client import HexStrikeClient, server_url, validate_target
 from app_kamerka.models import Device, VulnIntelligence
 from app_kamerka.ollama_payload_generator import (
@@ -92,6 +93,16 @@ def hexstrike_health_api(request):
     if request.headers.get("X-Requested-With") != "XMLHttpRequest":
         return JsonResponse({"error": "Invalid request"}, status=400)
     return JsonResponse(HexStrikeClient().health())
+
+
+@require_GET
+def hexstrike_tools_api(request):
+    """Return the HexStrike tool catalog (grouped) for the HexSploit picker."""
+    if request.headers.get("X-Requested-With") != "XMLHttpRequest":
+        return JsonResponse({"error": "Invalid request"}, status=400)
+    groups = catalog_by_group()
+    total = sum(len(g["tools"]) for g in groups)
+    return JsonResponse({"groups": groups, "count": total})
 
 
 @require_POST
