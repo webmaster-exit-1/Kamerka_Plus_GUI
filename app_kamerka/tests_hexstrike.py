@@ -112,6 +112,30 @@ class HexSploitEndpointTests(SimpleTestCase):
         target_only = HexStrikeClient().run_action("responder", {"target": "10.0.0.12"})
         self.assertEqual(target_only["error"], "Missing required field: interface")
 
+    @override_settings(HEXSTRIKE_SERVER_URL="https://tools.example/prefix/")
+    @patch("app_kamerka.hexstrike_client.requests.Session")
+    def test_trivy_posts_image_reference_not_hostname(self, session):
+        response = session.return_value.post.return_value
+        response.content = b'{"success": true}'
+        response.json.return_value = {"success": True}
+        client = HexStrikeClient()
+        for image in ("alpine:3.20", "registry.example/team/image:latest"):
+            with self.subTest(image=image):
+                session.return_value.post.reset_mock()
+                result = client.run_action("trivy", {"image": image})
+                self.assertTrue(result.get("success"))
+                session.return_value.post.assert_called_once_with(
+                    "https://tools.example/prefix/api/tools/trivy",
+                    json={"target": image},
+                    timeout=settings.HEXSTRIKE_TIMEOUT,
+                )
+
+    def test_trivy_rejects_bad_refs_and_hosts_stay_hostnames(self):
+        bad = HexStrikeClient().run_action("trivy", {"image": "alpine;id"})
+        self.assertEqual(bad["error"], "Invalid Trivy image reference")
+        host = HexStrikeClient().run_action("nuclei", {"target": "alpine:3.20"})
+        self.assertEqual(host["error"], "Invalid target (use hostname or IPv4)")
+
     @override_settings(
         HEXSPLOIT_OLLAMA_SERVER_URL="https://llm.example/prefix/",
         HEXSPLOIT_OLLAMA_MODEL="deployment-model",
@@ -153,4 +177,7 @@ class HexStrikeToolCatalogTests(SimpleTestCase):
         payload = json.loads(response.content)
         self.assertEqual(payload["count"], len(TOOL_CATALOG))
         self.assertTrue(payload["groups"])
+        trivy = next(tool for tool in TOOL_CATALOG if tool["slug"] == "trivy")
+        self.assertEqual(trivy["param"], "image")
+        self.assertEqual(trivy["input"], "manual")
 

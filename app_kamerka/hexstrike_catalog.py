@@ -112,7 +112,7 @@ TOOL_CATALOG = [
     {"slug": "prowler", "group": "Cloud & Container", "param": "provider", "input": "manual"},
     {"slug": "scout-suite", "group": "Cloud & Container", "param": "provider", "input": "manual"},
     {"slug": "terrascan", "group": "Cloud & Container", "param": "scan_type", "input": "manual"},
-    {"slug": "trivy", "group": "Cloud & Container", "param": "target", "input": "target"},
+    {"slug": "trivy", "group": "Cloud & Container", "param": "image", "input": "manual"},
 ]
 
 # Preserve declaration order of groups for stable UI rendering.
