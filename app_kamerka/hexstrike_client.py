@@ -13,6 +13,12 @@ _TARGET_RE = re.compile(
     r"(?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$|^(?:\d{1,3}\.){3}\d{1,3}$"
 )
 _ACTION_RE = re.compile(r"^[a-zA-Z0-9_-]{1,80}$")
+_IMAGE_REF_RE = re.compile(
+    r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,127})?"
+    r"(?:/[A-Za-z0-9](?:[A-Za-z0-9._-]{0,127})?)*"
+    r"(?::[A-Za-z0-9_][A-Za-z0-9._-]{0,127})?"
+    r"(?:@sha256:[A-Fa-f0-9]{64})?$"
+)
 
 # Whitelisted proxy actions: name -> (method, path, required payload keys)
 ALLOWED_ACTIONS: Dict[str, Tuple[str, str, Tuple[str, ...]]] = {
@@ -28,7 +34,7 @@ ALLOWED_ACTIONS: Dict[str, Tuple[str, str, Tuple[str, ...]]] = {
     "rustscan": ("POST", "api/tools/rustscan", ("target",)),
     "nmap_advanced": ("POST", "api/tools/nmap-advanced", ("target",)),
     "enum4linux_ng": ("POST", "api/tools/enum4linux-ng", ("target",)),
-    "responder": ("POST", "api/tools/responder", ("target",)),
+    "responder": ("POST", "api/tools/responder", ("interface",)),
 }
 
 
@@ -44,6 +50,17 @@ def validate_target(value: str) -> Optional[str]:
         return None
     if _TARGET_RE.match(target):
         return target
+    return None
+
+
+def validate_image_ref(value: str) -> Optional[str]:
+    image = (value or "").strip()
+    if not image or len(image) > 255:
+        return None
+    if " " in image or any(c in image for c in ";|&$`<>"):
+        return None
+    if _IMAGE_REF_RE.match(image):
+        return image
     return None
 
 
@@ -112,7 +129,14 @@ class HexStrikeClient:
             if key not in data or data[key] in (None, ""):
                 return {"success": False, "error": f"Missing required field: {key}"}
 
-        if "target" in data:
+        if action == "trivy":
+            raw = data.get("image", data.get("target", ""))
+            image = validate_image_ref("" if raw is None else str(raw))
+            if not image:
+                return {"success": False, "error": "Invalid Trivy image reference"}
+            data.pop("image", None)
+            data["target"] = image
+        elif "target" in data:
             validated = validate_target(str(data["target"]))
             if not validated:
                 return {"success": False, "error": "Invalid target (use hostname or IPv4)"}

@@ -349,14 +349,18 @@
         if (tool.input === 'target') {
             payload.target = val;
         }
+        if (tool.slug === 'metasploit') {
+            var host = currentTarget();
+            if (host) {
+                payload.options = { RHOSTS: host };
+            }
+        }
         var obj = document.getElementById('hs-objective').value;
         if (obj) { payload.objective = obj; }
         return payload;
     }
 
-    function runOneTool(tool, rowValInput) {
-        var rawVal = rowValInput ? rowValInput.value.trim() : '';
-        var payload = buildToolPayload(tool, rawVal);
+    function dispatchTool(tool, payload) {
         if (!payload[tool.param]) {
             append('[' + tool.slug + '] skipped – needs a ' + tool.param + ' value');
             return Promise.resolve(false);
@@ -369,6 +373,11 @@
             append('Error running ' + tool.slug + ': ' + e + '\n');
             return false;
         });
+    }
+
+    function runOneTool(tool, rowValInput) {
+        var rawVal = rowValInput ? rowValInput.value.trim() : '';
+        return dispatchTool(tool, buildToolPayload(tool, rawVal));
     }
 
     function renderCatalog(data) {
@@ -457,11 +466,16 @@
             return;
         }
         output.textContent = '';
-        append('Running ' + rows.length + ' selected tool(s) against ' + (currentTarget() || '(no target)') + '\n');
+        var announced = currentTarget() || '(no target)';
+        var jobs = rows.map(function(row) {
+            var rawVal = row.valInput ? row.valInput.value.trim() : '';
+            return { tool: row.tool, payload: buildToolPayload(row.tool, rawVal) };
+        });
+        append('Running ' + jobs.length + ' selected tool(s) against ' + announced + '\n');
         var promise = Promise.resolve();
-        rows.forEach(function(row) {
+        jobs.forEach(function(job) {
             promise = promise.then(function() {
-                return runOneTool(row.tool, row.valInput);
+                return dispatchTool(job.tool, job.payload);
             });
         });
         promise.then(function() { append('– All selected tools complete –'); });
