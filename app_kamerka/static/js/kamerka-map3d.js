@@ -1,12 +1,35 @@
 /**
- * Kamerka 3D map — MapLibre GL JS (default: OpenFreeMap, no API key).
- * Optional MAPBOX_ACCESS_TOKEN enables Mapbox dark-v11 + richer building mesh.
+ * Kamerka 3D map — MapLibre GL JS.
+ * Default: Esri World Imagery satellite plus OpenFreeMap building extrusions (no API key).
+ * Optional MAPBOX_ACCESS_TOKEN uses Mapbox satellite-streets and its building mesh.
  */
 (function (global) {
     'use strict';
 
-    var OPENFREEMAP_STYLE = 'https://tiles.openfreemap.org/styles/dark';
-    var MAPBOX_STYLE = 'mapbox://styles/mapbox/dark-v11';
+    var MAPBOX_STYLE = 'mapbox://styles/mapbox/satellite-streets-v12';
+    var SATELLITE_STYLE = {
+        version: 8,
+        sources: {
+            satellite: {
+                type: 'raster',
+                tiles: [
+                    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                ],
+                tileSize: 256,
+                maxzoom: 19,
+                attribution: 'Esri, Maxar, Earthstar Geographics',
+            },
+            openmaptiles: {
+                type: 'vector',
+                tiles: ['https://tiles.openfreemap.org/planet/{z}/{x}/{y}.pbf'],
+                maxzoom: 14,
+                attribution: 'OpenFreeMap, OpenMapTiles, OpenStreetMap',
+            },
+        },
+        layers: [
+            { id: 'satellite', type: 'raster', source: 'satellite' },
+        ],
+    };
 
     var SEVERITY_COLOR = {
         info: '#0064d7',
@@ -23,7 +46,7 @@
         this.container = opts.container || 'map3d-canvas';
         this.map = null;
         this.gl = null;
-        this.basemap = 'openfreemap';
+        this.basemap = 'satellite';
         this.buildingsOn = true;
         this.heatmapOn = true;
         this.columnsOn = false;
@@ -48,8 +71,8 @@
             this.basemap = 'mapbox';
             return MAPBOX_STYLE;
         }
-        this.basemap = 'openfreemap';
-        return OPENFREEMAP_STYLE;
+        this.basemap = 'satellite';
+        return SATELLITE_STYLE;
     };
 
     KamerkaMap3D.prototype._setBasemapNote = function (text) {
@@ -72,8 +95,8 @@
         var style = this._resolveStyle();
         this._setBasemapNote(
             this.basemap === 'mapbox'
-                ? 'Basemap: Mapbox (optional token) · enhanced buildings'
-                : 'Basemap: OpenFreeMap · free, no account'
+                ? 'Basemap: Mapbox satellite · 3D buildings'
+                : 'Basemap: satellite · 3D buildings from zoom 13'
         );
 
         this.map = new this.gl.Map({
@@ -167,10 +190,10 @@
                 type: 'fill-extrusion',
                 minzoom: 14,
                 paint: {
-                    'fill-extrusion-color': '#1a2744',
+                    'fill-extrusion-color': '#e4dfd6',
                     'fill-extrusion-height': ['get', 'height'],
                     'fill-extrusion-base': ['get', 'min_height'],
-                    'fill-extrusion-opacity': 0.65,
+                    'fill-extrusion-opacity': 0.78,
                 },
             };
         } else if (map.getSource('openmaptiles')) {
@@ -181,7 +204,7 @@
                 type: 'fill-extrusion',
                 minzoom: 13,
                 paint: {
-                    'fill-extrusion-color': '#1a2744',
+                    'fill-extrusion-color': '#e4dfd6',
                     'fill-extrusion-height': [
                         'coalesce',
                         ['get', 'render_height'],
@@ -189,7 +212,7 @@
                         12,
                     ],
                     'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
-                    'fill-extrusion-opacity': 0.6,
+                    'fill-extrusion-opacity': 0.78,
                 },
             };
         }

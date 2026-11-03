@@ -379,7 +379,8 @@ HEXSPLOIT_OLLAMA_MODEL: str = os.environ.get(
 )
 
 
-# Optional Mapbox token — enhances /map3d building detail. Default basemap is OpenFreeMap (no key).
+# Optional Mapbox token — /map3d uses Mapbox satellite-streets when set.
+# Without it the page uses Esri World Imagery plus OpenFreeMap building extrusions.
 MAPBOX_ACCESS_TOKEN: str = os.environ.get("MAPBOX_ACCESS_TOKEN", "")
 
 # Feeds briefing raster basemap. CARTO Dark (OpenStreetMap data) loads in a normal

@@ -11,6 +11,7 @@ class SecurityHeadersMiddleware:
         "child-src 'self' blob:; "
         "frame-src https://www.youtube-nocookie.com https://www.youtube.com; "
         "connect-src 'self' https://tiles.openfreemap.org https://*.openfreemap.org "
+        "https://server.arcgisonline.com https://services.arcgisonline.com "
         "https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com; "
         "frame-ancestors 'none';"
     )

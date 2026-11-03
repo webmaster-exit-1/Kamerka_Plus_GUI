@@ -17,7 +17,7 @@ Modernized fork of [Kamerka-GUI](https://github.com/woj-ciech/Kamerka-GUI) for a
 | Area | Highlights |
 | ------ | ------------ |
 | **Workspace** | Unified desktop/mobile navigation, restrained cyan terminal styling, accessible keyboard controls, guided search categories, credit confirmation, and worker telemetry with explicit unavailable states. |
-| **Maps** | **2D** Leaflet + OpenStreetMap (no API key). **3D** [`/map3d`](http://127.0.0.1:8000/map3d) via MapLibre + [OpenFreeMap](https://openfreemap.org/) by default; optional `MAPBOX_ACCESS_TOKEN` for richer building meshes. GeoJSON / KML / CSV exports for QGIS, Kepler.gl, SandDance. Legacy `/globe` redirects to the web 3D map; optional **PyVista + PyQt6** desktop globe still available. |
+| **Maps** | **2D** Leaflet + OpenStreetMap (no API key). **3D** [`/map3d`](http://127.0.0.1:8000/map3d) via MapLibre: Esri satellite imagery plus OpenFreeMap 3D buildings by default (zoom 13+); optional `MAPBOX_ACCESS_TOKEN` switches that page to Mapbox satellite-streets. GeoJSON / KML / CSV exports for QGIS, Kepler.gl, SandDance. Legacy `/globe` redirects to the web 3D map; optional **PyVista + PyQt6** desktop globe still available. |
 | **Intel** | RSS/Atom ingestion (`feedparser`), OPML import (bundled + your Feeder export), **Feed Intel** panel + **Region Brief** (Ollama or extractive summariser). Plain-text briefs — no raw HTML tags in the UI. |
 | **Exploit & CVE workspace** | Per-device identity, CVE context, exploit actions, Shodan evidence, risk context, and export status in one workflow. |
 | **Workbench** | Per-device tools: Nmap, Nuclei, Wappalyzer, RTSP, Shodan intel, NVD/NRICH, honeypot heuristics, screenshots, ExploitDB, bulk actions, risk score + layer context. |
