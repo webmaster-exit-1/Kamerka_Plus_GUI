@@ -16,6 +16,7 @@ from app_kamerka.models import Device, VulnIntelligence
 from app_kamerka.ollama_payload_generator import (
     generate_smart_attack_chain,
     generate_watchlist_and_playbook,
+    suggest_tool_flags,
 )
 from app_kamerka.views import _CVE_TO_MSF
 
@@ -151,6 +152,21 @@ def hexstrike_action_api(request):
             use_ollama=True,
         )
         status = 200
+    elif action == "suggest_tool_flags":
+        raw_target = str(payload.get("target") or "")
+        safe_target = validate_target(raw_target)
+        if not safe_target:
+            return JsonResponse({"success": False, "error": "Invalid target (use hostname or IPv4)"}, status=400)
+        tools = payload.get("tools") or []
+        if not isinstance(tools, list):
+            return JsonResponse({"success": False, "error": "tools must be a list"}, status=400)
+        result = suggest_tool_flags(
+            safe_target,
+            tools,
+            objective=str(payload.get("objective") or ""),
+            device_id=device_id,
+        )
+        status = 200 if result.get("success") else 502
     elif action == "derive_watchlist_playbook":
         return JsonResponse({"success": False, "error": "Missing required field: target"}, status=400)
     else:

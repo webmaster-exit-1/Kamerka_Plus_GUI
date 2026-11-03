@@ -27,6 +27,7 @@ ALLOWED_ACTIONS: Dict[str, Tuple[str, str, Tuple[str, ...]]] = {
     "smart_scan": ("POST", "api/intelligence/smart-scan", ("target",)),
     "select_tools": ("POST", "api/intelligence/select-tools", ("target",)),
     "attack_chain": ("POST", "api/intelligence/create-attack-chain", ("target",)),
+    "optimize_parameters": ("POST", "api/intelligence/optimize-parameters", ("target", "tool")),
     "process_dashboard": ("GET", "api/processes/dashboard", ()),
     "nuclei": ("POST", "api/tools/nuclei", ("target",)),
     "metasploit": ("POST", "api/tools/metasploit", ("module",)),
@@ -53,6 +54,16 @@ def validate_target(value: str) -> Optional[str]:
     return None
 
 
+def sanitize_cli_args(value: str) -> str:
+    """Keep flag text. Drop anything that can break out of a shell command."""
+    text = " ".join(str(value or "").split())
+    if not text:
+        return ""
+    if any(ch in text for ch in ";|&$`<>\\(){}'\"\n\r"):
+        return ""
+    return text[:400]
+
+
 def validate_image_ref(value: str) -> Optional[str]:
     image = (value or "").strip()
     if not image or len(image) > 255:
@@ -67,7 +78,7 @@ def validate_image_ref(value: str) -> Optional[str]:
 class HexStrikeClient:
     def __init__(self, base_url: Optional[str] = None, timeout: Optional[int] = None):
         self.base_url = (base_url or server_url()).rstrip("/")
-        self.timeout = timeout or int(getattr(settings, "HEXSTRIKE_TIMEOUT", 300))
+        self.timeout = timeout or int(getattr(settings, "HEXSTRIKE_TIMEOUT", 1800))
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": "Kamerka-HexSploit/1.0"})
 
@@ -146,6 +157,15 @@ class HexStrikeClient:
             module = str(data.get("module", "")).strip()
             if not re.match(r"^[a-zA-Z0-9_/\-]+$", module):
                 return {"success": False, "error": "Invalid Metasploit module path"}
+
+        if "additional_args" in data:
+            cleaned_args = sanitize_cli_args(data.get("additional_args"))
+            if str(data.get("additional_args") or "").strip() and not cleaned_args:
+                return {"success": False, "error": "Flags rejected (shell metacharacters)"}
+            if cleaned_args:
+                data["additional_args"] = cleaned_args
+            else:
+                data.pop("additional_args", None)
 
         result = self.request(method, path, data)
         if (

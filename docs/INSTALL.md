@@ -45,7 +45,7 @@ never from the browser's Host header or request parameters:
 | Variable | Native default | Purpose |
 | --- | --- | --- |
 | `HEXSTRIKE_SERVER_URL` | `http://127.0.0.1:8888` | Backend actions, health checks and the URL displayed on HexSploit |
-| `HEXSTRIKE_TIMEOUT` | `300` | Action timeout in seconds (health GET capped at 30 seconds) |
+| `HEXSTRIKE_TIMEOUT` | `1800` | Action timeout in seconds (health GET capped at 30 seconds) |
 | `HEXSPLOIT_OLLAMA_SERVER_URL` | `http://127.0.0.1:11434` | HexSploit Ollama generation |
 | `HEXSPLOIT_OLLAMA_MODEL` | `DeepHat/DeepHat-V1-7B:latest` | Model installed on that Ollama server |
 
@@ -58,7 +58,10 @@ publicly. The browser talks to Django, so these addresses need not be browser-ac
 `OLLAMA_HOST` is a separate setting for feed briefs, not HexSploit.
 
 `scripts/start_hexstrike.sh` starts a **local** HexStrike process and forwards CLI
-arguments to its server; it does not start or configure a remote service. If using
+arguments to its server; it does not start or configure a remote service. On first
+start it rewrites a hardcoded `COMMAND_TIMEOUT = 300` in `hexstrike_server.py` so
+tools use `HEXSTRIKE_COMMAND_TIMEOUT` (default 1800 seconds) instead of dying at
+five minutes. Restart HexStrike after pulling this change. If using
 a remote endpoint, start that backend separately. The install wizard checks the
 HexStrike address entered by the operator; edit `.env` for Ollama and map settings.
 For containers, see [Docker networking](docker.md#hexsploit-connections).
@@ -71,15 +74,11 @@ The HexSploit console (`/hexsploit/`) includes a **Tool catalog** panel that lis
 ### Feeds briefing basemap
 
 Only `/feeds-briefing` uses `FEED_MAP_TILE_URL` and `FEED_MAP_TILE_ATTRIBUTION`.
-The default is `https://tile.openstreetmap.org/{z}/{x}/{y}.png` with linked
-OpenStreetMap contributor attribution. No API key is needed for this default,
-but it is **not unrestricted**. Follow the official
-[OSMF raster tile usage policy](https://operations.osmfoundation.org/policies/tiles/):
-modest human-interactive use only, visible attribution, accurate browser Referer,
-normal browser caching honoring provider headers, no bulk/offline prefetch, no
-cache-busting, and no spoofed identity. Availability is best-effort with no SLA;
-publish operator contact details and use a suitable contracted or self-hosted
-provider for larger deployments.
+The default is CARTO's dark raster style
+(`https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png`), which is
+OpenStreetMap data and does not need an API key. The OSMF tile server
+(`tile.openstreetmap.org`) is not the default: it rejects a lot of application
+traffic, and a rejected tile used to leave this page with a blank map.
 
 The old `same-origin` Referrer-Policy suppressed the Referer on cross-origin tile
 requests. This page now sends `strict-origin-when-cross-origin`, exposing the real
@@ -105,10 +104,9 @@ tile URL is visible to browsers: use only a browser-public, origin-restricted ke
 never a server secret. Configuration is JSON-serialized into the page.
 
 Set `FEED_MAP_TILE_URL=` to disable external tile requests. On a tile HTTP/network
-failure the map removes the entire basemap once, shows one status message, and
-keeps markers/popups/bounds and no-data behavior. There is no automatic provider
-fallback or retry loop. Providers that return HTTP 200 error pictures cannot
-always be detected as tile failures; inspect DevTools and provider account status.
+failure the map removes the remote basemap once and shows one status message.
+A local grid stays underneath, and markers, popups, and bounds behavior are
+kept. There is no second remote provider and no retry loop.
 
 ## Environment Variables
 

@@ -27,8 +27,12 @@ class FeedMapSettingsTests(SimpleTestCase):
 
     def test_osm_default_has_canonical_https_url_and_linked_attribution(self):
         config = self.load_settings({})
-        self.assertEqual(config["FEED_MAP_TILE_URL"], "https://tile.openstreetmap.org/{z}/{x}/{y}.png")
+        self.assertEqual(
+            config["FEED_MAP_TILE_URL"],
+            "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+        )
         self.assertIn('href="https://www.openstreetmap.org/copyright"', config["FEED_MAP_TILE_ATTRIBUTION"])
+        self.assertIn('href="https://carto.com/attributions"', config["FEED_MAP_TILE_ATTRIBUTION"])
 
     def test_custom_provider_requires_https_and_attribution(self):
         for env in (
@@ -72,11 +76,14 @@ class FeedMapPageTests(TestCase):
 @skipUnless(shutil.which("node"), "Node is required for the mocked Leaflet runtime test")
 class FeedMapRuntimeTests(SimpleTestCase):
     def test_failure_disabled_markers_and_no_data(self):
-        javascript = re.findall(
-            r"<script>(.*?)</script>",
-            render_to_string("feeds_briefing.html", {"feed_map_config": {}}),
-            re.S | re.I,
-        )[-1]
+        javascript = next(
+            script for script in re.findall(
+                r"<script>(.*?)</script>",
+                render_to_string("feeds_briefing.html", {"feed_map_config": {}}),
+                re.S | re.I,
+            )
+            if "cp-feed-map" in script
+        )
         harness = r"""
 const assert = require('node:assert/strict');
 const vm = require('node:vm');

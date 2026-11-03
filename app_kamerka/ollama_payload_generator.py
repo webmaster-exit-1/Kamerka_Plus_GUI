@@ -522,3 +522,160 @@ def generate_watchlist_and_playbook(
         "reasoning": reasoning,
         "message": "Watchlist and playbook created from successful execution.",
     }
+
+
+_FLAG_SKIP = {
+    "target", "url", "domain", "image", "endpoint", "base_url", "schema_url",
+    "binary", "file_path", "payload", "module", "script_content", "jwt_token",
+}
+_FLAG_KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,40}$")
+_FLAG_SCALAR_RE = re.compile(r"^[A-Za-z0-9_.:/=,@+\-\[\], ]{1,200}$")
+
+
+def clean_tool_params(params: Any) -> Dict[str, Any]:
+    """Keep scalar scan settings. Drop shell-breaking flags and primary targets."""
+    from app_kamerka.hexstrike_client import sanitize_cli_args
+
+    if not isinstance(params, dict):
+        return {}
+    cleaned: Dict[str, Any] = {}
+    for key, value in params.items():
+        if not isinstance(key, str) or key.startswith("_") or key in _FLAG_SKIP:
+            continue
+        if not _FLAG_KEY_RE.match(key):
+            continue
+        if isinstance(value, bool) or isinstance(value, int):
+            cleaned[key] = value
+            continue
+        if not isinstance(value, str):
+            continue
+        text = value.strip()
+        if key == "additional_args":
+            safe = sanitize_cli_args(text)
+            if safe:
+                cleaned[key] = safe
+            continue
+        if _FLAG_SCALAR_RE.match(text):
+            cleaned[key] = text
+    return cleaned
+
+
+def visible_flags(params: Dict[str, Any]) -> str:
+    parts: List[str] = []
+    for key in ("scan_type", "ports"):
+        value = params.get(key)
+        if isinstance(value, str) and value.strip():
+            parts.append(value.strip())
+    extra = params.get("additional_args") or ""
+    if isinstance(extra, str) and extra.strip():
+        parts.append(extra.strip())
+    seen: List[str] = []
+    for token in " ".join(parts).split():
+        if token not in seen:
+            seen.append(token)
+    return " ".join(seen)[:400]
+
+
+def _parse_json_object(raw: str) -> Dict[str, Any]:
+    text = (raw or "").strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return {}
+    try:
+        parsed = json.loads(text[start:end + 1])
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _deephat_flags(target: str, slugs: List[str], objective: str, device_id: Optional[int]) -> Dict[str, Any]:
+    device = None
+    if device_id:
+        try:
+            device = Device.objects.get(pk=device_id)
+        except Exception:
+            device = None
+    profile = build_target_profile(target, device)
+    prompt = (
+        "You fill reconnaissance flags for security tools. Target: {target}\n"
+        "Profile: {profile}\n"
+        "Objective: {objective}\n"
+        "Tools: {tools}\n"
+        "Return ONLY a JSON object keyed by tool slug. Each value may include "
+        "additional_args, ports, scan_type, severity, tags, threads, wordlist.\n"
+        "Flags only. No exploit payloads, shell commands, credentials, or these characters: ;|&$`<>\n"
+        'Example: {{"nmap": {{"scan_type": "-sV", "additional_args": "-T4 -Pn --open"}}}}\n'
+    ).format(
+        target=target,
+        profile=json.dumps(profile)[:1500],
+        objective=(objective or "")[:200],
+        tools=", ".join(slugs),
+    )
+    raw = query_ollama(prompt, timeout=45)
+    return _parse_json_object(raw or "")
+
+
+def suggest_tool_flags(
+    target: str,
+    tools: List[str],
+    objective: str = "",
+    device_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Ask HexStrike's decision engine for flags, then DeepHat for whatever it skipped."""
+    from app_kamerka.hexstrike_catalog import TOOL_CATALOG
+
+    catalog = {tool["slug"]: tool for tool in TOOL_CATALOG}
+    wanted: List[str] = []
+    for slug in tools[:25]:
+        if isinstance(slug, str) and slug in catalog and slug not in wanted:
+            wanted.append(slug)
+    if not wanted:
+        return {"success": False, "error": "No known tools to fill", "tools": {}}
+
+    client = HexStrikeClient(timeout=20)
+    context: Dict[str, Any] = {}
+    if objective:
+        context["objective"] = str(objective)[:200]
+    filled: Dict[str, Any] = {}
+    missing: List[str] = []
+    for slug in wanted:
+        result = client.run_action(
+            "optimize_parameters",
+            {"target": target, "tool": slug, "context": context},
+        )
+        params = clean_tool_params((result or {}).get("optimized_parameters"))
+        if params and result.get("success") is not False and "error" not in (result or {}):
+            filled[slug] = {
+                "parameters": params,
+                "flags": visible_flags(params),
+                "source": "hexstrike",
+            }
+        else:
+            missing.append(slug)
+
+    deephat_used = False
+    if missing:
+        suggested = _deephat_flags(target, missing, objective, device_id)
+        for slug in missing:
+            params = clean_tool_params(suggested.get(slug) if isinstance(suggested, dict) else None)
+            if params:
+                deephat_used = True
+                filled[slug] = {
+                    "parameters": params,
+                    "flags": visible_flags(params),
+                    "source": "deephat",
+                }
+    if not filled:
+        return {
+            "success": False,
+            "error": "HexStrike AI and DeepHat returned no flags",
+            "tools": {},
+            "deephat_used": deephat_used,
+        }
+    return {
+        "success": True,
+        "tools": filled,
+        "deephat_used": deephat_used,
+        "ollama_model": ollama_model(),
+    }

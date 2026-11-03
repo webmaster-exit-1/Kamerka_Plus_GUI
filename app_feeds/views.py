@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from django.conf import settings
 from django.http import JsonResponse, StreamingHttpResponse
@@ -21,6 +22,7 @@ from django.views.decorators.http import require_GET, require_POST
 from app_feeds.models import Brief, FeedEntry
 from app_feeds.tasks import GLOBAL_BRIEF_ALIASES
 from app_feeds.text_utils import html_to_plain
+from app_feeds.video_search import clean_query, match_videos
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +77,56 @@ def feed_entries(request):
         })
 
     return JsonResponse({"entries": entries, "count": len(entries)})
+
+
+@require_GET
+def feed_playlist(request):
+    """Recent headlines paired with videos whose titles match the RSS item.
+
+    Video lookup runs in a small thread pool. Each headline is cached, so a
+    refresh does not repeat the search.
+    """
+    try:
+        limit = min(int(request.GET.get("limit", 8)), 12)
+    except (ValueError, TypeError):
+        limit = 8
+    if limit < 1:
+        limit = 8
+
+    entries = list(FeedEntry.objects.select_related("source").order_by("-published", "-id")[:limit])
+
+    def _match(entry):
+        try:
+            return entry.pk, match_videos(entry.title, entry.url)
+        except Exception:
+            logger.debug("video match failed for entry %s", entry.pk, exc_info=True)
+            return entry.pk, []
+
+    found = {}
+    if entries:
+        workers = min(4, len(entries))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(_match, entry) for entry in entries]
+            for future in as_completed(futures):
+                pk, videos = future.result()
+                found[pk] = videos
+
+    items = []
+    for entry in entries:
+        title = html_to_plain(entry.title, max_len=500) or "(untitled)"
+        videos = found.get(entry.pk) or []
+        items.append({
+            "id": entry.pk,
+            "title": title,
+            "summary": html_to_plain(entry.summary, max_len=800),
+            "url": entry.url,
+            "published": entry.published.isoformat() if entry.published else None,
+            "source": entry.source.name,
+            "category": entry.source.category,
+            "videos": videos,
+            "search_query": clean_query(title),
+        })
+    return JsonResponse({"items": items, "count": len(items)})
 
 
 def feed_sse(request):

@@ -9,6 +9,7 @@ class SecurityHeadersMiddleware:
         "script-src 'self' 'unsafe-inline'; "
         "worker-src 'self' blob:; "
         "child-src 'self' blob:; "
+        "frame-src https://www.youtube-nocookie.com https://www.youtube.com; "
         "connect-src 'self' https://tiles.openfreemap.org https://*.openfreemap.org "
         "https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com; "
         "frame-ancestors 'none';"

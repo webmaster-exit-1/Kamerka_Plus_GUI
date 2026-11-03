@@ -27,6 +27,7 @@ class DeploymentSettingsTests(SimpleTestCase):
                 config = self.load_settings(env)
                 self.assertEqual(config["HEXSTRIKE_SERVER_URL"], "http://127.0.0.1:8888")
                 self.assertEqual(config["HEXSPLOIT_OLLAMA_SERVER_URL"], "http://127.0.0.1:11434")
+                self.assertEqual(config["HEXSTRIKE_TIMEOUT"], 1800)
 
     def test_environment_endpoints_are_normalized(self):
         config = self.load_settings({
@@ -180,4 +181,51 @@ class HexStrikeToolCatalogTests(SimpleTestCase):
         trivy = next(tool for tool in TOOL_CATALOG if tool["slug"] == "trivy")
         self.assertEqual(trivy["param"], "image")
         self.assertEqual(trivy["input"], "manual")
+
+
+class HexStrikeFlagTests(SimpleTestCase):
+    def test_shell_flags_are_rejected_before_any_request(self):
+        from app_kamerka.hexstrike_client import sanitize_cli_args
+
+        self.assertEqual(sanitize_cli_args("-sV -T4 --open"), "-sV -T4 --open")
+        self.assertEqual(sanitize_cli_args("-sV; id"), "")
+        result = HexStrikeClient().run_action(
+            "nuclei", {"target": "example.com", "additional_args": "-t x; id"}
+        )
+        self.assertFalse(result["success"])
+        self.assertIn("Flags rejected", result["error"])
+
+    def test_suggest_uses_hexstrike_then_deephat(self):
+        from app_kamerka.ollama_payload_generator import suggest_tool_flags
+
+        def fake_action(self, action, payload=None):
+            tool = (payload or {}).get("tool")
+            if tool == "nmap":
+                return {
+                    "success": True,
+                    "optimized_parameters": {
+                        "scan_type": "-sV",
+                        "additional_args": "-T4 -Pn --open",
+                        "_optimization_metadata": {"drop": True},
+                    },
+                }
+            return {"success": False, "error": "offline", "offline": True}
+
+        with (
+            patch.object(HexStrikeClient, "run_action", fake_action),
+            patch(
+                "app_kamerka.ollama_payload_generator.query_ollama",
+                return_value='{"nuclei": {"severity": "high", "additional_args": "-silent; id"}}',
+            ),
+        ):
+            result = suggest_tool_flags("example.com", ["nmap", "nuclei", "not-a-tool"])
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["tools"]["nmap"]["source"], "hexstrike")
+        self.assertEqual(result["tools"]["nmap"]["parameters"]["scan_type"], "-sV")
+        self.assertNotIn("_optimization_metadata", result["tools"]["nmap"]["parameters"])
+        self.assertEqual(result["tools"]["nuclei"]["source"], "deephat")
+        self.assertEqual(result["tools"]["nuclei"]["parameters"].get("severity"), "high")
+        self.assertNotIn("additional_args", result["tools"]["nuclei"]["parameters"])
+        self.assertTrue(result["deephat_used"])
 

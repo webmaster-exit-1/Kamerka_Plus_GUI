@@ -13,7 +13,8 @@
 .hs-tool-group-title { color:#ffe600; font-weight:bold; margin:8px 0 4px; font-size:0.9em; text-transform:uppercase; letter-spacing:0.5px; }
 .hs-tool-row { display:flex; align-items:center; gap:8px; padding:3px 0; flex-wrap:wrap; }
 .hs-tool-row label { font-weight:normal; color:#cceeff; margin:0; cursor:pointer; min-width:150px; }
-.hs-tool-row .hs-tool-val { max-width:220px; height:28px; font-size:0.82em; }
+.hs-tool-row .hs-tool-val { max-width:180px; height:28px; font-size:0.82em; }
+.hs-tool-row .hs-tool-flags { max-width:280px; height:28px; font-size:0.82em; flex:1; min-width:140px; }
 .hs-tool-row .hs-run-one { padding:1px 8px; font-size:0.78em; }
 .hs-tool-row.hs-hidden { display:none; }
 </style>
@@ -107,13 +108,15 @@
               <h4 style="color:#00e1ff;margin:0;">Tool catalog <span id="hs-tool-count" style="color:#888;font-size:0.7em;"></span></h4>
               <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
                 <input type="search" id="hs-tool-filter" class="form-control" style="max-width:220px;" placeholder="Filter tools…">
+                <button type="button" class="btn btn-info btn-sm" id="hs-fill-flags">Fill flags</button>
                 <button type="button" class="btn btn-success btn-sm" id="hs-run-selected">Run selected ▶</button>
                 <button type="button" class="btn btn-default btn-sm" id="hs-clear-selected">Clear</button>
               </div>
             </div>
             <p style="color:#888;margin:8px 0 10px;font-size:0.85em;">
-              Pick any HexStrike tools to run against the target above. <code>target</code>/<code>url</code>/<code>domain</code> tools auto-fill from the target; tools needing a file, module or interface expose an input.
+              Pick any HexStrike tools to run against the target above. <b>Fill flags</b> asks HexStrike's decision engine for scan flags, then DeepHat for anything it left blank. Checked rows are filled; if none are checked, the visible rows are filled (up to 25).
             </p>
+            <div id="hs-flag-status" style="color:#888;font-size:0.8em;min-height:1.2em;"></div>
             <div id="hs-tool-catalog" style="max-height:360px;overflow:auto;border:1px solid #0064d7;border-radius:6px;padding:10px;background:#0a1428;">
               <span style="color:#888;">Loading tool catalog…</span>
             </div>
@@ -337,8 +340,13 @@
         return '';
     }
 
-    function buildToolPayload(tool, rawVal) {
+    function buildToolPayload(tool, rawVal, flagsVal, suggested) {
         var payload = {};
+        var src = suggested || {};
+        Object.keys(src).forEach(function(key) {
+            if (key.charAt(0) === '_') return;
+            payload[key] = src[key];
+        });
         var val = rawVal;
         if (val === undefined || val === null || val === '') {
             val = defaultValueFor(tool);
@@ -354,6 +362,10 @@
             if (host) {
                 payload.options = { RHOSTS: host };
             }
+        }
+        var flags = (flagsVal || '').trim();
+        if (flags) {
+            payload.additional_args = flags;
         }
         var obj = document.getElementById('hs-objective').value;
         if (obj) { payload.objective = obj; }
@@ -375,9 +387,11 @@
         });
     }
 
-    function runOneTool(tool, rowValInput) {
-        var rawVal = rowValInput ? rowValInput.value.trim() : '';
-        return dispatchTool(tool, buildToolPayload(tool, rawVal));
+    function runOneTool(row) {
+        var tool = row.tool;
+        var rawVal = row.valInput ? row.valInput.value.trim() : '';
+        var flags = row.flagsInput ? row.flagsInput.value.trim() : '';
+        return dispatchTool(tool, buildToolPayload(tool, rawVal, flags, row.suggestedParams));
     }
 
     function renderCatalog(data) {
@@ -412,6 +426,13 @@
                     : tool.param + ' (auto)';
                 row.valInput = valInput;
                 row.tool = tool;
+                row.suggestedParams = {};
+
+                var flagsInput = document.createElement('input');
+                flagsInput.type = 'text';
+                flagsInput.className = 'form-control hs-tool-flags';
+                flagsInput.placeholder = 'flags';
+                row.flagsInput = flagsInput;
 
                 var runBtn = document.createElement('button');
                 runBtn.type = 'button';
@@ -419,7 +440,7 @@
                 runBtn.textContent = 'Run';
                 runBtn.addEventListener('click', function() {
                     output.textContent = '';
-                    runOneTool(tool, valInput).then(function() {
+                    runOneTool(row).then(function() {
                         append('– done –');
                     });
                 });
@@ -427,6 +448,7 @@
                 row.appendChild(cb);
                 row.appendChild(label);
                 row.appendChild(valInput);
+                row.appendChild(flagsInput);
                 row.appendChild(runBtn);
                 catalogEl.appendChild(row);
             });
@@ -469,7 +491,8 @@
         var announced = currentTarget() || '(no target)';
         var jobs = rows.map(function(row) {
             var rawVal = row.valInput ? row.valInput.value.trim() : '';
-            return { tool: row.tool, payload: buildToolPayload(row.tool, rawVal) };
+            var flags = row.flagsInput ? row.flagsInput.value.trim() : '';
+            return { tool: row.tool, payload: buildToolPayload(row.tool, rawVal, flags, row.suggestedParams) };
         });
         append('Running ' + jobs.length + ' selected tool(s) against ' + announced + '\n');
         var promise = Promise.resolve();
@@ -484,6 +507,53 @@
     document.getElementById('hs-clear-selected').addEventListener('click', function() {
         catalogEl.querySelectorAll('.hs-tool-cb').forEach(function(cb) { cb.checked = false; });
     });
+
+    var fillBtn = document.getElementById('hs-fill-flags');
+    if (fillBtn) {
+        fillBtn.addEventListener('click', function() {
+            var target = currentTarget();
+            if (!target) {
+                log('Set a target before filling flags.');
+                return;
+            }
+            var rows = Array.prototype.slice.call(catalogEl.querySelectorAll('.hs-tool-row')).filter(function(row) {
+                if (row.classList.contains('hs-hidden')) return false;
+                var cb = row.querySelector('.hs-tool-cb');
+                return cb && cb.checked;
+            });
+            if (!rows.length) {
+                rows = Array.prototype.slice.call(catalogEl.querySelectorAll('.hs-tool-row')).filter(function(row) {
+                    return !row.classList.contains('hs-hidden');
+                }).slice(0, 25);
+            }
+            var status = document.getElementById('hs-flag-status');
+            if (status) status.textContent = 'Asking HexStrike AI, then DeepHat if needed…';
+            postAction('suggest_tool_flags', {
+                target: target,
+                tools: rows.map(function(row) { return row.tool.slug; }),
+                objective: document.getElementById('hs-objective').value
+            }).then(function(res) {
+                var data = res.data || {};
+                var filled = data.tools || {};
+                var count = 0;
+                rows.forEach(function(row) {
+                    var info = filled[row.tool.slug];
+                    if (!info) return;
+                    row.suggestedParams = info.parameters || {};
+                    if (row.flagsInput) {
+                        row.flagsInput.value = info.flags || '';
+                        row.flagsInput.title = (info.source || 'ai') + ' ' + JSON.stringify(info.parameters || {});
+                    }
+                    count += 1;
+                });
+                var via = data.deephat_used ? 'HexStrike AI + DeepHat' : 'HexStrike AI';
+                var msg = count ? (via + ' filled ' + count + ' tool(s).') : (data.error || 'No flags returned.');
+                if (status) status.textContent = msg;
+            }).catch(function(err) {
+                if (status) status.textContent = 'Flag fill failed: ' + err;
+            });
+        });
+    }
 
     loadCatalog();
 

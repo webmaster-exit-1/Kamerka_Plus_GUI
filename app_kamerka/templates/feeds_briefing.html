@@ -5,6 +5,21 @@
 
 {% block extra_css %}
 <link rel="stylesheet" type="text/css" href="{% static 'css/leaflet.css' %}"/>
+<style>
+.news-desk { display:grid; grid-template-columns: minmax(0, 1.7fr) minmax(220px, 0.9fr); gap:12px; }
+.news-screen { position:relative; width:100%; padding-top:56.25%; background:#050b12; border:1px solid #0064d7; box-shadow:0 0 18px rgba(0,100,215,0.25) inset; }
+.news-screen iframe, .news-idle { position:absolute; inset:0; width:100%; height:100%; border:0; }
+.news-idle { display:flex; align-items:center; justify-content:center; text-align:center; padding:16px; color:#00e1ff; font-family:var(--cp-font,monospace); }
+.news-now { margin-top:8px; color:#c9d6e3; font-size:0.86em; }
+.news-now a { color:#00e1ff; }
+.news-controls { display:flex; gap:8px; margin-top:8px; }
+.news-controls button { background:#0a141d; color:#00e1ff; border:1px solid #0064d7; padding:4px 10px; font-family:var(--cp-font,monospace); }
+.news-playlist { list-style:none; margin:0; padding:0; max-height:460px; overflow:auto; border:1px solid #153046; }
+.news-playlist button { display:block; width:100%; text-align:left; background:transparent; border:0; border-bottom:1px dashed #1b2b3a; color:#c9d6e3; padding:8px; cursor:pointer; }
+.news-playlist li.playing button { background:#0c1c2c; color:#00e1ff; box-shadow:inset 3px 0 0 #ff00cd; }
+.news-playlist .src { display:block; color:#6f8092; font-size:0.75em; margin-top:3px; }
+@media (max-width: 800px) { .news-desk { grid-template-columns: 1fr; } }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -24,25 +39,52 @@
         </div>
     </div>
     <div class="row">
-        <div class="col-md-7">
+        <div class="col-md-12">
+            <div class="panel panel-default">
+                <div class="panel-heading"><h3 class="panel-title">News desk</h3></div>
+                <div class="panel-body" style="background-color:#0a141d;">
+                    <div class="news-desk">
+                        <div>
+                            <div class="news-screen" id="news-screen">
+                                <div class="news-idle" id="news-idle">Parsing headlines for a matching video…</div>
+                                <iframe id="news-frame" title="News video" hidden allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
+                            </div>
+                            <div class="news-now" id="news-now"></div>
+                            <div class="news-controls">
+                                <button type="button" id="news-prev">Prev</button>
+                                <button type="button" id="news-next">Next</button>
+                            </div>
+                        </div>
+                        <ol class="news-playlist" id="news-playlist">
+                            <li style="color:#3a4555;padding:8px;font-family:monospace;">Loading playlist…</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-12">
             <div class="panel panel-default">
                 <div class="panel-heading"><h3 class="panel-title">Recent Imported Feed Articles</h3></div>
                 <div class="panel-body" style="background-color:#0a141d;">
                     <div id="cp-feed-status" style="font-family:var(--cp-font,monospace);font-size:0.85em;color:#3a4555;margin-bottom:8px;">
                         Loading feeds…
                     </div>
-                    <div id="cp-feed-list" style="max-height:360px;overflow-y:auto;border:1px solid #153046;padding:8px;">
+                    <div id="cp-feed-list" style="max-height:280px;overflow-y:auto;border:1px solid #153046;padding:8px;">
                         <div style="color:#3a4555;font-family:monospace;">Loading feed entries…</div>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="col-md-5">
+    </div>
+    <div class="row">
+        <div class="col-md-12">
             <div class="panel panel-default">
                 <div class="panel-heading"><h3 class="panel-title">Integrated Feed Map</h3></div>
                 <div class="panel-body panel-body-map">
                     <div id="cp-feed-map-status" role="status" hidden style="padding:8px;color:#ffb366;background:#0a141d;"></div>
-                    <div id="cp-feed-map" style="width:100%;height:360px;border:1px solid #153046;"></div>
+                    <div id="cp-feed-map" style="width:100%;height:420px;border:1px solid #153046;"></div>
                 </div>
             </div>
         </div>
@@ -150,6 +192,29 @@
     }
 
     var map = L.map('cp-feed-map', {minZoom: 1, maxZoom: 17}).setView([20, 0], 2);
+    if (typeof map.invalidateSize === 'function') {
+        map.invalidateSize();
+    }
+    if (L.GridLayer) {
+        var FeedGrid = L.GridLayer.extend({
+            createTile: function() {
+                var canvas = document.createElement('canvas');
+                canvas.width = canvas.height = 256;
+                var ctx = canvas.getContext('2d');
+                if (!ctx) return canvas;
+                ctx.fillStyle = '#071018';
+                ctx.fillRect(0, 0, 256, 256);
+                ctx.strokeStyle = '#0e3a5a';
+                ctx.lineWidth = 1;
+                for (var i = 0; i <= 256; i += 32) {
+                    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 256); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(256, i); ctx.stroke();
+                }
+                return canvas;
+            }
+        });
+        new FeedGrid({minZoom: 1, maxZoom: 17}).addTo(map);
+    }
     var mapConfig = JSON.parse(document.getElementById('cp-feed-map-config').textContent);
     var mapStatusEl = document.getElementById('cp-feed-map-status');
     function showMapStatus(message) {
@@ -158,10 +223,13 @@
     }
     if (mapConfig.url) {
         var tilesFailed = false;
-        var tiles = L.tileLayer(mapConfig.url, {
-            maxZoom: 17,
-            attribution: mapConfig.attribution
-        });
+        var tiles = L.tileLayer(mapConfig.url, (function() {
+            var opts = { maxZoom: 17, attribution: mapConfig.attribution };
+            if (String(mapConfig.url).indexOf('{s}') !== -1) {
+                opts.subdomains = 'abcd';
+            }
+            return opts;
+        })());
         tiles.on('tileerror', function() {
             if (tilesFailed) return;
             tilesFailed = true;
@@ -283,6 +351,98 @@
 
     loadFeedEntries();
     loadBrief(0);
+
+    var playlist = [];
+    var playIndex = 0;
+    var playlistEl = document.getElementById('news-playlist');
+    var frameEl = document.getElementById('news-frame');
+    var idleEl = document.getElementById('news-idle');
+    var nowEl = document.getElementById('news-now');
+
+    function youtubeSearchUrl(query) {
+        return 'https://www.youtube.com/results?search_query=' + encodeURIComponent(query || '');
+    }
+
+    function showVideo(item) {
+        if (!frameEl || !idleEl || !nowEl) return;
+        var video = (item.videos && item.videos[0]) || null;
+        var title = escHtml(item.title || '(untitled)');
+        var source = escHtml(item.source || '');
+        var summary = escHtml(item.summary || '');
+        var article = safeHttpUrl(item.url);
+        var articleHtml = article ? ' <a href="' + escHtml(article) + '" target="_blank" rel="noopener noreferrer">article</a>' : '';
+        if (video && video.embed_url && /^https:\/\/www\.youtube-nocookie\.com\/embed\/[A-Za-z0-9_-]{11}$/.test(video.embed_url)) {
+            frameEl.hidden = false;
+            idleEl.hidden = true;
+            frameEl.src = video.embed_url + '?rel=0';
+            var channel = video.channel ? ' · ' + escHtml(video.channel) : '';
+            nowEl.innerHTML = '<b>' + title + '</b>' + channel + articleHtml + '<div style="margin-top:4px;color:#b7c5d3;">' + summary + '</div>';
+        } else {
+            frameEl.hidden = true;
+            frameEl.removeAttribute('src');
+            idleEl.hidden = false;
+            var query = item.search_query || item.title || '';
+            idleEl.innerHTML = '<div><div style="margin-bottom:8px;">No close video match</div><a href="' + youtubeSearchUrl(query) + '" target="_blank" rel="noopener noreferrer" style="color:#00e1ff;">Search this headline</a></div>';
+            nowEl.innerHTML = '<b>' + title + '</b> <span style="color:#6f8092;">[' + source + ']</span>' + articleHtml + '<div style="margin-top:4px;color:#b7c5d3;">' + summary + '</div>';
+        }
+    }
+
+    function renderPlaylist() {
+        if (!playlistEl) return;
+        if (!playlist.length) {
+            playlistEl.innerHTML = '<li style="color:#3a4555;padding:8px;font-family:monospace;">No headlines yet.</li>';
+            return;
+        }
+        playlistEl.innerHTML = playlist.map(function(item, index) {
+            var matched = item.videos && item.videos.length;
+            var mark = matched ? '▶ ' : '· ';
+            return '<li class="' + (index === playIndex ? 'playing' : '') + '"><button type="button" data-index="' + index + '">' +
+                mark + escHtml(item.title || '(untitled)') +
+                '<span class="src">[' + escHtml(item.source || '') + '] ' + (matched ? 'video match' : 'text only') + '</span></button></li>';
+        }).join('');
+    }
+
+    function playAt(index) {
+        if (!playlist.length) return;
+        playIndex = (index + playlist.length) % playlist.length;
+        renderPlaylist();
+        showVideo(playlist[playIndex]);
+    }
+
+    if (playlistEl && typeof playlistEl.addEventListener === 'function') {
+        playlistEl.addEventListener('click', function(event) {
+            var button = event.target.closest ? event.target.closest('button[data-index]') : null;
+            if (!button) return;
+            playAt(Number(button.getAttribute('data-index')));
+        });
+    }
+    var prevBtn = document.getElementById('news-prev');
+    var nextBtn = document.getElementById('news-next');
+    if (prevBtn && typeof prevBtn.addEventListener === 'function') {
+        prevBtn.addEventListener('click', function() { playAt(playIndex - 1); });
+    }
+    if (nextBtn && typeof nextBtn.addEventListener === 'function') {
+        nextBtn.addEventListener('click', function() { playAt(playIndex + 1); });
+    }
+
+    async function loadPlaylist() {
+        if (!playlistEl) return;
+        try {
+            var response = await fetch('/api/feeds/playlist/?limit=8');
+            if (!response.ok) throw new Error('playlist unavailable');
+            var payload = await response.json();
+            playlist = Array.isArray(payload.items) ? payload.items : [];
+            playIndex = 0;
+            renderPlaylist();
+            if (playlist.length) showVideo(playlist[0]);
+            else if (idleEl) idleEl.textContent = 'No headlines to play.';
+        } catch (err) {
+            if (playlistEl) {
+                playlistEl.innerHTML = '<li style="color:#ff6030;padding:8px;font-family:monospace;">Playlist unavailable.</li>';
+            }
+        }
+    }
+    loadPlaylist();
 })();
 </script>
 {% endblock %}
